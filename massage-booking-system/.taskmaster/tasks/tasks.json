@@ -1,0 +1,168 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2025-01-18T14:00:00Z",
+    "lastModified": "2025-01-18T14:00:00Z",
+    "projectName": "Massage Booking System",
+    "description": "Automated mobile massage booking system with WhatsApp and YClients integration"
+  },
+  "tags": {
+    "master": {
+      "name": "master",
+      "description": "Main development tasks",
+      "created": "2025-01-18T14:00:00Z",
+      "tasks": [
+        {
+          "id": 1,
+          "title": "WhatsApp Integration Setup",
+          "description": "Set up WhatsApp Business API integration for message monitoring and automated responses",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [],
+          "details": "Configure WhatsApp Business API, implement webhook endpoints for receiving messages, and set up message parsing capabilities to extract booking information from client messages.",
+          "testStrategy": "Test with sample WhatsApp messages containing booking requests to verify data extraction accuracy."
+        },
+        {
+          "id": 2,
+          "title": "Message Data Extraction Engine",
+          "description": "Implement intelligent parsing to extract client name, service type, date/time, and location from WhatsApp messages",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [1],
+          "details": "Create regex patterns and NLP algorithms to parse various message formats. Handle different date/time formats, location descriptions, and service variations.",
+          "testStrategy": "Test with various message formats and edge cases to ensure 99% accuracy in data extraction."
+        },
+        {
+          "id": 3,
+          "title": "YClients API Integration",
+          "description": "Integrate with YClients API for calendar management and appointment creation",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [],
+          "details": "Set up YClients API authentication, implement CRUD operations for appointments, clients, and services. Handle error cases and API rate limiting.",
+          "testStrategy": "Create test appointments and verify they appear correctly in YClients calendar."
+        },
+        {
+          "id": 4,
+          "title": "Automated Calendar Entry Creation",
+          "description": "Automatically create calendar entries in YClients when new bookings are processed",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [2, 3],
+          "details": "Link extracted message data to YClients appointment creation. Handle scheduling conflicts, availability checking, and calendar updates.",
+          "testStrategy": "Process booking messages and verify appointments are created with correct details in YClients."
+        },
+        {
+          "id": 5,
+          "title": "Notification System",
+          "description": "Implement WhatsApp notifications for therapists and drivers with booking details",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [1, 4],
+          "details": "Send automated WhatsApp notifications to assigned therapists and drivers with appointment details, location, and timing information.",
+          "testStrategy": "Verify notifications are sent correctly and contain all necessary information."
+        },
+        {
+          "id": 6,
+          "title": "Payment Management System",
+          "description": "Implement payment tracking with automatic 5% VAT calculation",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [4],
+          "details": "Track payment status for each booking, calculate VAT automatically, generate invoices, and handle payment confirmations.",
+          "testStrategy": "Process various payment amounts and verify VAT calculations are accurate."
+        },
+        {
+          "id": 7,
+          "title": "Subscription Package Management",
+          "description": "Manage subscription packages with session tracking and automatic deductions",
+          "status": "pending",
+          "priority": "medium",
+          "dependencies": [6],
+          "details": "Track customer subscription packages, automatically deduct sessions when bookings are made, send alerts for low session counts.",
+          "testStrategy": "Test subscription creation, session deduction, and alert notifications."
+        },
+        {
+          "id": 8,
+          "title": "Database Schema and Models",
+          "description": "Design and implement PostgreSQL database schema for all system entities",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [],
+          "details": "Create tables for bookings, clients, therapists, drivers, payments, subscriptions, and system logs. Implement proper relationships and indexes.",
+          "testStrategy": "Run database migrations and test all CRUD operations."
+        },
+        {
+          "id": 9,
+          "title": "User Authentication and Authorization",
+          "description": "Implement JWT-based authentication for API endpoints",
+          "status": "pending",
+          "priority": "medium",
+          "dependencies": [8],
+          "details": "Set up user roles (admin, therapist, driver), implement login/logout functionality, and protect API endpoints with proper authorization.",
+          "testStrategy": "Test login flows and verify endpoint access control."
+        },
+        {
+          "id": 10,
+          "title": "Admin Dashboard",
+          "description": "Create web dashboard for administrators to manage bookings and view analytics",
+          "status": "pending",
+          "priority": "medium",
+          "dependencies": [9],
+          "details": "Build React-based dashboard with booking management, payment tracking, subscription management, and basic analytics.",
+          "testStrategy": "Test all dashboard features and verify data accuracy."
+        },
+        {
+          "id": 11,
+          "title": "Error Handling and Logging",
+          "description": "Implement comprehensive error handling and logging throughout the system",
+          "status": "pending",
+          "priority": "medium",
+          "dependencies": [],
+          "details": "Add proper error handling for all operations, implement structured logging with Winston, and set up error monitoring.",
+          "testStrategy": "Test error scenarios and verify proper logging and error responses."
+        },
+        {
+          "id": 12,
+          "title": "Testing Suite",
+          "description": "Create comprehensive test suite with unit, integration, and end-to-end tests",
+          "status": "pending",
+          "priority": "medium",
+          "dependencies": [],
+          "details": "Implement Jest-based testing with high code coverage, API endpoint testing, and automated test workflows.",
+          "testStrategy": "Run all tests and achieve minimum 80% code coverage."
+        },
+        {
+          "id": 13,
+          "title": "Deployment and DevOps",
+          "description": "Set up production deployment with Docker and CI/CD pipeline",
+          "status": "pending",
+          "priority": "low",
+          "dependencies": [12],
+          "details": "Create Docker containers, set up deployment scripts, configure environment variables, and implement monitoring.",
+          "testStrategy": "Deploy to staging environment and verify all features work correctly."
+        },
+        {
+          "id": 14,
+          "title": "Documentation and User Guide",
+          "description": "Create comprehensive API documentation and user guides",
+          "status": "pending",
+          "priority": "low",
+          "dependencies": [10],
+          "details": "Document all API endpoints, create user manuals for administrators, and write deployment instructions.",
+          "testStrategy": "Review documentation with stakeholders for completeness and clarity."
+        },
+        {
+          "id": 15,
+          "title": "Performance Optimization",
+          "description": "Optimize system performance and implement caching strategies",
+          "status": "pending",
+          "priority": "low",
+          "dependencies": [13],
+          "details": "Implement Redis caching, optimize database queries, add response compression, and monitor performance metrics.",
+          "testStrategy": "Load test the system and verify performance improvements."
+        }
+      ]
+    }
+  }
+} 

@@ -1,0 +1,291 @@
+/* Профессиональные стили для договоров */
+
+body {
+  font-family: 'Arial', 'Helvetica', sans-serif;
+  font-size: 11pt;
+  line-height: 1.4;
+  margin: 2.5cm 2cm;
+  color: #1a1a1a;
+  background-color: #ffffff;
+}
+
+/* Заголовок документа */
+.document-header {
+  text-align: center;
+  margin-bottom: 30px;
+  border-bottom: 3px solid #2c3e50;
+  padding-bottom: 20px;
+}
+
+.document-title {
+  font-size: 18pt;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.document-subtitle {
+  font-size: 12pt;
+  color: #34495e;
+  margin-bottom: 15px;
+}
+
+.document-info {
+  font-size: 10pt;
+  color: #7f8c8d;
+  margin-top: 10px;
+}
+
+.document-number {
+  font-size: 14pt;
+  font-weight: bold;
+  color: #2c3e50;
+  background-color: #ecf0f1;
+  padding: 8px 15px;
+  border-radius: 5px;
+  display: inline-block;
+  margin: 10px 0;
+}
+
+/* Заголовки */
+h1 {
+  font-size: 16pt;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 25px 0 15px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #3498db;
+}
+
+h2 {
+  font-size: 14pt;
+  font-weight: bold;
+  color: #34495e;
+  margin: 20px 0 12px 0;
+  padding-left: 10px;
+  border-left: 4px solid #3498db;
+}
+
+h3 {
+  font-size: 12pt;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 15px 0 8px 0;
+}
+
+/* Параграфы */
+p {
+  margin-bottom: 10px;
+  text-align: justify;
+  text-indent: 20px;
+}
+
+/* Списки */
+ul, ol {
+  margin: 10px 0 10px 20px;
+  padding-left: 15px;
+}
+
+li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+/* Таблицы */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+th, td {
+  border: 1px solid #bdc3c7;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background-color: #34495e;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+}
+
+tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+tr:hover {
+  background-color: #e8f4fd;
+}
+
+/* Секции подписей */
+.signature-section {
+  margin-top: 40px;
+  page-break-inside: avoid;
+  border-top: 2px solid #3498db;
+  padding-top: 20px;
+}
+
+.signature-block {
+  display: flex;
+  justify-content: space-between;
+  margin: 30px 0;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+.signature-party {
+  flex: 1;
+  margin: 0 20px;
+}
+
+.signature-party-title {
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 10px;
+  font-size: 12pt;
+}
+
+.signature-line {
+  border-top: 2px solid #3498db;
+  width: 250px;
+  margin-top: 40px;
+  display: block;
+  position: relative;
+}
+
+.signature-name {
+  font-weight: bold;
+  margin-top: 8px;
+  color: #2c3e50;
+  font-size: 11pt;
+}
+
+/* Стили для подписи */
+.signature-svg {
+  position: absolute;
+  bottom: 60px;
+  left: 60px;
+  width: 180px;
+  height: 70px;
+  border: 1px solid #bdc3c7;
+  border-radius: 5px;
+  padding: 5px;
+  background-color: white;
+}
+
+/* Стили для нумерации страниц */
+@page {
+  @bottom-center {
+    content: counter(page);
+  }
+}
+
+/* Стили для заголовков разделов */
+.section-title {
+  font-size: 14pt;
+  font-weight: bold;
+  text-align: center;
+  margin: 20px 0;
+  border-bottom: 2px solid #000;
+  padding-bottom: 5px;
+}
+
+/* Стили для списков */
+ul, ol {
+  margin-left: 20px;
+  margin-bottom: 10px;
+}
+
+li {
+  margin-bottom: 5px;
+}
+
+/* Стили для выделения важного текста */
+.important {
+  font-weight: bold;
+  color: #e74c3c;
+}
+
+.highlight {
+  background-color: #fff3cd;
+  padding: 3px 6px;
+  border-left: 4px solid #ffc107;
+  margin: 5px 0;
+}
+
+.contract-amount {
+  font-size: 14pt;
+  font-weight: bold;
+  color: #27ae60;
+  background-color: #d4edda;
+  padding: 8px 12px;
+  border-radius: 5px;
+  display: inline-block;
+  margin: 5px 0;
+}
+
+.contract-duration {
+  font-weight: bold;
+  color: #3498db;
+  background-color: #d1ecf1;
+  padding: 5px 10px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Стили для таблицы этапов */
+.stages-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stages-table th {
+  background-color: #e6e6e6;
+  font-weight: bold;
+  text-align: center;
+}
+
+.stages-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+}
+
+/* Стили для контактов */
+.contacts {
+  background-color: #f9f9f9;
+  padding: 15px;
+  border: 1px solid #ddd;
+  margin: 15px 0;
+}
+
+.contacts h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+/* Стили для условий */
+.conditions {
+  border-left: 3px solid #007acc;
+  padding-left: 15px;
+  margin: 15px 0;
+}
+
+/* Стили для приложений */
+.appendix {
+  page-break-before: always;
+}
+
+.appendix h2 {
+  color: #007acc;
+  border-bottom: 1px solid #007acc;
+  padding-bottom: 5px;
+} 

@@ -1,0 +1,335 @@
+# Massage Booking System - Product Requirements Document
+
+## 1. Introduction
+
+This document outlines the comprehensive product requirements for a Massage Booking System, an automated solution designed to streamline operations for a mobile massage business. The system will integrate WhatsApp communication, YClients booking management, and automated notifications to reduce administrative overhead and improve service delivery efficiency.
+
+## 2. Product overview
+
+The Massage Booking System is a comprehensive automation platform that handles the entire booking workflow for a mobile massage service. It processes WhatsApp messages from clients, automatically extracts booking information, creates appointments in YClients, manages payments with VAT calculations, tracks subscription packages, and coordinates notifications between massage therapists and drivers.
+
+## 3. Goals and objectives
+
+### 3.1 Primary goals
+- Automate the manual booking process currently handled by administrators
+- Reduce administrative workload by 80% through intelligent data extraction and processing
+- Ensure accurate VAT calculations and payment tracking
+- Streamline communication between clients, therapists, and drivers
+- Provide comprehensive subscription package management
+- Maintain data integrity across all integrated platforms
+
+### 3.2 Success metrics
+- Reduction in manual data entry time from 15 minutes to 2 minutes per booking
+- 99% accuracy in data extraction from WhatsApp messages
+- Real-time notification delivery to all stakeholders
+- Automated VAT calculation compliance
+- Complete audit trail for all transactions
+
+## 4. Target audience
+
+### 4.1 Primary users
+- **Administrators**: Business owners and office staff who manage bookings
+- **Massage Therapists**: Service providers who need location and timing information
+- **Drivers**: Transportation providers who need client location details
+- **Clients**: End users who book services via WhatsApp
+
+### 4.2 User needs
+- **Administrators**: Automated data processing, payment tracking, subscription management
+- **Therapists**: Timely location and schedule notifications
+- **Drivers**: Accurate location information and timing
+- **Clients**: Seamless booking experience via WhatsApp
+
+## 5. Features and requirements
+
+### 5.1 WhatsApp integration and data extraction
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| WA-101 | Message monitoring | Monitor incoming WhatsApp messages for booking requests | High |
+| WA-102 | Data extraction | Extract client name, service type, date/time, and location from messages | High |
+| WA-103 | Template recognition | Recognize structured message templates for consistent data parsing | High |
+| WA-104 | Location processing | Convert location links to coordinates and formatted addresses | High |
+| WA-105 | Validation | Validate extracted data before processing | Medium |
+| WA-106 | Error handling | Handle malformed messages and request clarification | Medium |
+
+### 5.2 YClients integration
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| YC-101 | API integration | Connect to YClients API for appointment creation | High |
+| YC-102 | Appointment creation | Automatically create appointments with extracted data | High |
+| YC-103 | Service mapping | Map extracted service names to YClients service IDs | High |
+| YC-104 | Client management | Create or update client records in YClients | Medium |
+| YC-105 | Status synchronization | Sync appointment status between systems | Medium |
+
+### 5.3 Payment and VAT management
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| PM-101 | VAT calculation | Automatically add 5% VAT to all service prices | High |
+| PM-102 | Payment tracking | Track payment status (paid/unpaid) for each appointment | High |
+| PM-103 | Payment methods | Support cash and card payment tracking | Medium |
+| PM-104 | Manual override | Allow manual payment status updates | Medium |
+| PM-105 | Receipt generation | Generate receipts with VAT breakdown | Low |
+
+### 5.4 Subscription package management
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| SP-101 | Package activation | Activate subscription packages (e.g., 10 sessions) | High |
+| SP-102 | Session tracking | Automatically deduct sessions from active packages | High |
+| SP-103 | Balance monitoring | Track remaining sessions in each package | High |
+| SP-104 | Expiration alerts | Notify administrators when packages are running low | Medium |
+| SP-105 | Package renewal | Facilitate package renewal process | Medium |
+
+### 5.5 Notification system
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| NT-101 | Therapist notifications | Send appointment details to massage therapists | High |
+| NT-102 | Driver notifications | Forward location information to drivers | High |
+| NT-103 | WhatsApp delivery | Deliver notifications via WhatsApp Business API | High |
+| NT-104 | Timing optimization | Send notifications at optimal times (e.g., 1 hour before) | Medium |
+| NT-105 | Confirmation tracking | Track notification delivery and read receipts | Low |
+
+### 5.6 Calendar and scheduling
+
+| Requirement ID | Requirement | Description | Priority |
+|----------------|-------------|-------------|----------|
+| CL-101 | Appointment creation | Create calendar entries with all booking details | High |
+| CL-102 | Conflict detection | Detect scheduling conflicts and suggest alternatives | Medium |
+| CL-103 | Availability checking | Check therapist and driver availability | Medium |
+| CL-104 | Rescheduling support | Handle appointment changes and cancellations | Medium |
+
+## 6. User stories and acceptance criteria
+
+### 6.1 WhatsApp booking processing
+
+**ST-101: Client booking via WhatsApp**
+- As a client, I want to book a massage by sending a WhatsApp message so I can easily schedule my appointment
+- **Acceptance Criteria:**
+  - System recognizes booking messages in WhatsApp
+  - Extracts client name, service type, preferred date/time, and location
+  - Validates all required information is present
+  - Sends confirmation message to client
+  - Creates appointment in YClients automatically
+
+**ST-102: Template-based booking**
+- As a client, I want to use a simple template to provide booking information so the process is consistent
+- **Acceptance Criteria:**
+  - System provides booking template to clients
+  - Template includes fields for name, service, date/time, location
+  - AI correctly parses template-based messages
+  - Handles variations in template format gracefully
+
+**ST-103: Location processing**
+- As a client, I want to share my location via WhatsApp so the therapist can find me easily
+- **Acceptance Criteria:**
+  - System extracts location links from WhatsApp messages
+  - Converts location to readable address format
+  - Stores coordinates for mapping purposes
+  - Includes location in notifications to therapist and driver
+
+### 6.2 Administrative automation
+
+**AD-101: Automated appointment creation**
+- As an administrator, I want appointments to be created automatically so I don't have to manually enter data
+- **Acceptance Criteria:**
+  - System creates YClients appointments without manual intervention
+  - All extracted data is accurately transferred
+  - Appointment includes client details, service, timing, and location
+  - System handles YClients API errors gracefully
+
+**AD-102: Payment tracking**
+- As an administrator, I want to track payment status automatically so I can manage cash flow
+- **Acceptance Criteria:**
+  - System marks appointments as paid/unpaid
+  - Supports cash and card payment methods
+  - Automatically calculates and adds 5% VAT
+  - Provides payment status dashboard
+
+**AD-103: Subscription management**
+- As an administrator, I want to track subscription packages automatically so I can manage client relationships
+- **Acceptance Criteria:**
+  - System tracks active subscription packages
+  - Automatically deducts sessions from packages
+  - Alerts when packages are running low
+  - Provides subscription status reports
+
+### 6.3 Staff coordination
+
+**SC-101: Therapist notifications**
+- As a massage therapist, I want to receive appointment notifications so I know where and when to provide services
+- **Acceptance Criteria:**
+  - System sends WhatsApp notifications to therapists
+  - Notifications include client name, service, time, and location
+  - Notifications are sent at appropriate times (e.g., 1 hour before)
+  - Includes map link for easy navigation
+
+**SC-102: Driver coordination**
+- As a driver, I want to receive location information so I can transport the therapist efficiently
+- **Acceptance Criteria:**
+  - System forwards location details to drivers
+  - Includes timing information for coordination
+  - Provides map links for navigation
+  - Coordinates with therapist schedule
+
+**SC-103: Status updates**
+- As staff, I want to update appointment status so everyone stays informed
+- **Acceptance Criteria:**
+  - Staff can mark appointments as started, completed, or cancelled
+  - Status updates are synchronized across all systems
+  - Administrators receive status change notifications
+  - Status history is maintained for audit purposes
+
+### 6.4 Error handling and edge cases
+
+**EC-101: Invalid booking data**
+- As a client, I want to receive helpful feedback when my booking information is incomplete
+- **Acceptance Criteria:**
+  - System identifies missing or invalid information
+  - Sends helpful error messages requesting clarification
+  - Provides examples of correct format
+  - Maintains partial booking data for completion
+
+**EC-102: System failures**
+- As an administrator, I want the system to handle failures gracefully so business operations continue
+- **Acceptance Criteria:**
+  - System logs all errors for debugging
+  - Provides fallback mechanisms for critical functions
+  - Sends alerts to administrators for system issues
+  - Maintains data integrity during failures
+
+**EC-103: Manual override**
+- As an administrator, I want to manually correct system errors so I can resolve issues quickly
+- **Acceptance Criteria:**
+  - Administrators can manually edit appointment details
+  - System maintains audit trail of manual changes
+  - Manual changes are synchronized across all systems
+  - Provides clear interface for corrections
+
+## 7. Technical requirements
+
+### 7.1 Technology stack
+
+| Requirement ID | Requirement | Description |
+|----------------|-------------|-------------|
+| TS-101 | Backend framework | Use Node.js with Express or Python with FastAPI for robust API development |
+| TS-102 | Database | PostgreSQL for relational data with proper indexing for performance |
+| TS-103 | Message queue | Redis or RabbitMQ for handling WhatsApp message processing |
+| TS-104 | API integration | RESTful APIs for YClients and WhatsApp Business API |
+| TS-105 | Authentication | JWT-based authentication for secure API access |
+| TS-106 | Logging | Structured logging with Winston or similar for debugging |
+| TS-107 | Monitoring | Health checks and performance monitoring |
+
+### 7.2 WhatsApp Business API integration
+
+| Requirement ID | Requirement | Description |
+|----------------|-------------|-------------|
+| WA-201 | Webhook setup | Configure webhooks to receive incoming messages |
+| WA-202 | Message parsing | Implement NLP/pattern matching for data extraction |
+| WA-203 | Template messages | Use WhatsApp Business API templates for structured responses |
+| WA-204 | Media handling | Process location sharing and other media types |
+| WA-205 | Rate limiting | Respect WhatsApp API rate limits and quotas |
+
+### 7.3 YClients API integration
+
+| Requirement ID | Requirement | Description |
+|----------------|-------------|-------------|
+| YC-201 | Authentication | Implement OAuth2 or API key authentication |
+| YC-202 | Appointment CRUD | Full CRUD operations for appointments |
+| YC-203 | Client management | Create and update client records |
+| YC-204 | Service catalog | Sync available services and pricing |
+| YC-205 | Error handling | Handle API errors and retry logic |
+
+### 7.4 Data architecture
+
+| Requirement ID | Requirement | Description |
+|----------------|-------------|-------------|
+| DA-101 | Database schema | Design normalized schema for clients, appointments, payments, subscriptions |
+| DA-102 | Data validation | Implement comprehensive data validation at all layers |
+| DA-103 | Backup strategy | Regular automated backups with point-in-time recovery |
+| DA-104 | Data migration | Support schema migrations for future updates |
+| DA-105 | Audit logging | Track all data changes for compliance and debugging |
+
+### 7.5 Security requirements
+
+| Requirement ID | Requirement | Description |
+|----------------|-------------|-------------|
+| SR-101 | Data encryption | Encrypt sensitive data at rest and in transit |
+| SR-102 | API security | Implement rate limiting and input validation |
+| SR-103 | Access control | Role-based access control for different user types |
+| SR-104 | Audit trail | Comprehensive logging of all system activities |
+| SR-105 | Compliance | Ensure GDPR compliance for client data handling |
+
+## 8. Design and user interface
+
+### 8.1 System architecture
+
+The system will follow a microservices architecture with the following components:
+
+1. **WhatsApp Integration Service**: Handles message reception and parsing
+2. **Booking Processing Service**: Manages appointment creation and validation
+3. **Notification Service**: Coordinates messaging to staff
+4. **Payment Service**: Handles VAT calculations and payment tracking
+5. **Subscription Service**: Manages package tracking and alerts
+6. **YClients Integration Service**: Handles external API communication
+
+### 8.2 Data flow
+
+1. Client sends WhatsApp message → WhatsApp Integration Service
+2. Message parsed → Booking Processing Service
+3. Data validated and appointment created → YClients Integration Service
+4. Notifications sent → Notification Service
+5. Payment and subscription updates → Respective services
+6. Status updates synchronized across all systems
+
+### 8.3 Error handling strategy
+
+- **Graceful degradation**: System continues operating even if external APIs fail
+- **Retry logic**: Automatic retries for transient failures
+- **Fallback mechanisms**: Manual override options for critical functions
+- **Monitoring and alerting**: Proactive notification of system issues
+
+### 8.4 Performance requirements
+
+- **Response time**: WhatsApp message processing within 30 seconds
+- **Availability**: 99.9% uptime for critical booking functions
+- **Scalability**: Support for 100+ daily bookings
+- **Data consistency**: ACID compliance for financial transactions
+
+### 8.5 Integration points
+
+- **WhatsApp Business API**: For message reception and sending
+- **YClients API**: For appointment and client management
+- **Payment gateways**: For payment processing (future enhancement)
+- **Mapping services**: For location processing and directions
+- **Calendar APIs**: For scheduling integration (future enhancement)
+
+## 9. Implementation phases
+
+### Phase 1: Core booking automation (Weeks 1-4)
+- WhatsApp message monitoring and parsing
+- Basic YClients integration
+- Simple notification system
+- Manual payment tracking
+
+### Phase 2: Advanced features (Weeks 5-8)
+- VAT calculation automation
+- Subscription package management
+- Enhanced error handling
+- Staff coordination improvements
+
+### Phase 3: Optimization and scaling (Weeks 9-12)
+- Performance optimization
+- Advanced analytics and reporting
+- Mobile app for staff (optional)
+- Additional integrations
+
+## 10. Success criteria
+
+- **Efficiency improvement**: 80% reduction in manual administrative work
+- **Accuracy**: 99% data extraction accuracy from WhatsApp messages
+- **User satisfaction**: 90% satisfaction rate among administrators
+- **System reliability**: 99.9% uptime for critical functions
+- **Cost savings**: 50% reduction in administrative overhead 
