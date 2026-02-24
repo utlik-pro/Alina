@@ -1,0 +1,2571 @@
+{
+  "metadata": {
+    "generated_from": "33 real Crystal Lab client chats",
+    "total_real_scenarios": 33,
+    "total_synthetic_scenarios": 16
+  },
+  "key_insights": {
+    "conversion_rate": "97% (32/33 dialogs ended in booking)",
+    "top_services": {
+      "body_massage": 33,
+      "face_massage": 32,
+      "body_face_combo": 23,
+      "pedicure": 18,
+      "manicure": 18,
+      "deep_cleansing": 17,
+      "eyebrow": 16,
+      "eyelash": 15,
+      "permanent_makeup": 13,
+      "hair_makeup": 11,
+      "combo_mani_pedi": 4,
+      "waxing": 2,
+      "cupping": 1
+    },
+    "dominant_payment": "Cash (25/29 = 86%)",
+    "avg_messages_per_dialog": 493.6,
+    "multi_message_patterns": "50 sequences found",
+    "common_client_intents": {
+      "greeting": 14,
+      "price_inquiry": 2,
+      "booking_request": 4,
+      "time_selection": 30,
+      "location_share": 2,
+      "confirmation": 12,
+      "objection": 0,
+      "gratitude": 3,
+      "cancellation": 2
+    }
+  },
+  "synthetic_test_scenarios": [
+    {
+      "id": "new_client_body_massage",
+      "name": "New client from ad: body massage",
+      "description": "Client comes from Instagram ad asking about body massage",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hello"
+        },
+        {
+          "role": "client",
+          "text": "I saw your ad on Instagram"
+        },
+        {
+          "role": "client",
+          "text": "How much for body massage?"
+        },
+        {
+          "role": "client",
+          "text": "60 min please"
+        },
+        {
+          "role": "client",
+          "text": "Tomorrow at 3 pm"
+        },
+        {
+          "role": "client",
+          "text": "[Location shared]"
+        },
+        {
+          "role": "client",
+          "text": "Villa 45"
+        },
+        {
+          "role": "client",
+          "text": "Sara"
+        },
+        {
+          "role": "client",
+          "text": "Cash"
+        }
+      ],
+      "expected_outcome": "booking_confirmed",
+      "expected_service": "Body massage 60 min",
+      "expected_price": 350
+    },
+    {
+      "id": "body_face_combo",
+      "name": "Client asking about body + face combo",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hi, I want body and face massage"
+        },
+        {
+          "role": "client",
+          "text": "Yes that sounds good"
+        },
+        {
+          "role": "client",
+          "text": "Do you have tomorrow evening?"
+        },
+        {
+          "role": "client",
+          "text": "7:30 pm"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Body + Face massage",
+      "expected_price": 650
+    },
+    {
+      "id": "price_objection",
+      "name": "Client says too expensive",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hello"
+        },
+        {
+          "role": "client",
+          "text": "I want body massage"
+        },
+        {
+          "role": "client",
+          "text": "That's too expensive"
+        }
+      ],
+      "expected_outcome": "objection_handling",
+      "expected_response_contains": [
+        "medical education",
+        "certified",
+        "qualified"
+      ]
+    },
+    {
+      "id": "male_client",
+      "name": "Male client inquiry",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hi, I want to book massage"
+        },
+        {
+          "role": "client",
+          "text": "My name is Ahmed"
+        }
+      ],
+      "expected_outcome": "gender_policy_applied",
+      "expected_response_contains": [
+        "women only",
+        "ladies only"
+      ]
+    },
+    {
+      "id": "multi_message_rapid",
+      "name": "Client sends 4 rapid messages (buffering test)",
+      "description": "Tests that buffer collects all messages before processing",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hi",
+          "delay_sec": 0
+        },
+        {
+          "role": "client",
+          "text": "I need body massage",
+          "delay_sec": 2
+        },
+        {
+          "role": "client",
+          "text": "60 min",
+          "delay_sec": 3
+        },
+        {
+          "role": "client",
+          "text": "Tomorrow",
+          "delay_sec": 5
+        }
+      ],
+      "expected_outcome": "single_combined_response",
+      "buffer_test": true
+    },
+    {
+      "id": "lashes_extension",
+      "name": "Client asks about eyelash extensions",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hello, how much for lashes?"
+        },
+        {
+          "role": "client",
+          "text": "What's the difference?"
+        },
+        {
+          "role": "client",
+          "text": "I'll take 2D volume"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Eyelash extension 2D volume",
+      "expected_price": 350
+    },
+    {
+      "id": "combo_mani_pedi",
+      "name": "Client asks about nails",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Do you do nails?"
+        },
+        {
+          "role": "client",
+          "text": "Manicure and pedicure please"
+        },
+        {
+          "role": "client",
+          "text": "Russian gelish"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Combo mani + pedi",
+      "expected_price": 380
+    },
+    {
+      "id": "payment_vat_question",
+      "name": "Client asks about payment and VAT",
+      "messages": [
+        {
+          "role": "client",
+          "text": "How can I pay?"
+        },
+        {
+          "role": "client",
+          "text": "Can I pay by bank transfer?"
+        }
+      ],
+      "expected_outcome": "vat_explained",
+      "expected_response_contains": [
+        "cash",
+        "tax free",
+        "5%",
+        "VAT"
+      ]
+    },
+    {
+      "id": "location_question",
+      "name": "Client asks where they are located",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Where are you located?"
+        }
+      ],
+      "expected_outcome": "location_explained",
+      "expected_response_contains": [
+        "home service",
+        "your location",
+        "Abu Dhabi",
+        "Al Ain"
+      ]
+    },
+    {
+      "id": "permanent_makeup",
+      "name": "Client asks about permanent makeup",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Do you do permanent makeup?"
+        },
+        {
+          "role": "client",
+          "text": "How much for lips?"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Permanent makeup lips",
+      "expected_price": 1200
+    },
+    {
+      "id": "deep_cleansing_ramadan",
+      "name": "Client asks about Ramadan promo",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hi, do you have any offers?"
+        },
+        {
+          "role": "client",
+          "text": "Tell me about the deep cleansing offer"
+        }
+      ],
+      "expected_outcome": "promo_explained",
+      "expected_response_contains": [
+        "Ramadan",
+        "Deep Cleansing",
+        "420"
+      ]
+    },
+    {
+      "id": "referral_program",
+      "name": "Client asks about Book a Friend",
+      "messages": [
+        {
+          "role": "client",
+          "text": "I heard you have a referral program?"
+        }
+      ],
+      "expected_outcome": "referral_explained",
+      "expected_response_contains": [
+        "Book a Friend",
+        "50 AED",
+        "coupon"
+      ]
+    },
+    {
+      "id": "cupping_therapy",
+      "name": "Client asks about cupping/hijama",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Do you do cupping?"
+        },
+        {
+          "role": "client",
+          "text": "How much?"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Cupping therapy",
+      "expected_price": 350
+    },
+    {
+      "id": "returning_client_package",
+      "name": "Returning client asking about packages",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Hi, I want to buy a package"
+        },
+        {
+          "role": "client",
+          "text": "Body massage package"
+        }
+      ],
+      "expected_outcome": "package_offered",
+      "expected_response_contains": [
+        "package",
+        "sessions"
+      ]
+    },
+    {
+      "id": "service_change_mid_booking",
+      "name": "Client changes service during booking",
+      "messages": [
+        {
+          "role": "client",
+          "text": "I want face massage"
+        },
+        {
+          "role": "client",
+          "text": "Actually, can I have body massage instead?"
+        }
+      ],
+      "expected_outcome": "service_updated",
+      "expected_service": "Body massage"
+    },
+    {
+      "id": "waxing_inquiry",
+      "name": "Client asks about face waxing",
+      "messages": [
+        {
+          "role": "client",
+          "text": "Do you do waxing?"
+        },
+        {
+          "role": "client",
+          "text": "Full face please"
+        }
+      ],
+      "expected_outcome": "booking_in_progress",
+      "expected_service": "Full face waxing",
+      "expected_price": 100
+    }
+  ],
+  "real_dialog_summaries": [
+    {
+      "name": "Real dialog: Sara  Sayegh",
+      "source": "00000152-WhatsApp Chat - Sara Клиент Crystal Sayegh.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": null,
+      "total_messages": 22,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Sara Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hi there! I wanted to see if you have any availability today for home service deep tissue massage?"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "How are you doing today?"
+        },
+        {
+          "role": "staff",
+          "text": "I’m well thank you 🙏🏽\n[22/9/2025, 1:21:02 PM] Crystal Lab:\n‎[22/9/2025, 1:21:02 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-09-22-13-21-02.jpg>\n‎[22/9/2025, 1:21:02 PM] Crystal Lab: ‎<прикрепл"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Your body massage is booked for today at 7pm✅"
+        },
+        {
+          "role": "staff",
+          "text": "Thank you!\n‎[22/9/2025, 1:26:56 PM] Crystal Lab: ‎<прикреплено: 00000025-STICKER-2025-09-22-13-26-56.webp>"
+        },
+        {
+          "role": "staff",
+          "text": "Вы закрепили сообщение"
+        },
+        {
+          "role": "staff",
+          "text": "Our technical arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Could you meet her please"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Azza",
+      "source": "00000157-WhatsApp Chat - Azza Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_face_combo",
+        "waxing",
+        "pedicure",
+        "face_massage",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 1009,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Good evening! Booked for you for tomorrow 9 pm for the face and body massage."
+        },
+        {
+          "role": "staff",
+          "text": "Share with your location please and adress details"
+        },
+        {
+          "role": "staff",
+          "text": "Hello"
+        },
+        {
+          "role": "staff",
+          "text": "Bloom garden. Villa 315.\n24°26'03.9\"N 54°27'31.1\"E\nhttps://goo.gl/maps/WnNwVzCLqyfkyyEo7"
+        },
+        {
+          "role": "staff",
+          "text": "Thank you dear , booked for you 9 pm for tomorrow 🌹"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: face massage\n🔹Time : 8.15 pm\n🔹Therapist: Natalia\n❗Notes: we kindly ask you not to make changes after the bookin"
+        },
+        {
+          "role": "staff",
+          "text": "Yes plz"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Our technical arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Could you meet her please"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Mai",
+      "source": "00000158-WhatsApp Chat - Mai Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage"
+      ],
+      "payment": "cash",
+      "total_messages": 366,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Mai Клиент Crystal сменил(-а) номер телефона. В данный момент вы переписываетесь, используя новый номер этого контакта"
+        },
+        {
+          "role": "staff",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 10pm\n🔹Therapist: Marina\n❗Notes: we kindly ask you not to make changes after the booking is"
+        },
+        {
+          "role": "staff",
+          "text": "Yes"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear\nSend me  please your location as a link\nAnd apartment or Villa number"
+        },
+        {
+          "role": "staff",
+          "text": "Hi dear"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "9:30"
+        },
+        {
+          "role": "staff",
+          "text": "Okay dear"
+        },
+        {
+          "role": "staff",
+          "text": "Hi dear if the therapist free am available anytime"
+        },
+        {
+          "role": "staff",
+          "text": "Okay dear"
+        },
+        {
+          "role": "staff",
+          "text": "We try to come earlier"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Faiza",
+      "source": "00000159-WhatsApp Chat - Faiza Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "cupping",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "transfer",
+      "total_messages": 414,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Faiza Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hi dear how are you? My name is Faiza I want to book with you tonight home massage after Shamsa"
+        },
+        {
+          "role": "staff",
+          "text": "I have a stiff neck and back\nBut also I wanted to do a lymph or madero massage because I have alot of cellulite and water retention I feel\nWhat do you recommend I should focus on?"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear\n[18/4/2025, 3:31:15 PM] Crystal Lab:\n‎[18/4/2025, 3:31:15 PM] Crystal Lab: ‎изображение отсутствует\n‎[18/4/2025, 3:31:16 PM] Crystal Lab: ‎изображение отсутствует\n‎[18/4/2025, 3:31"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Okay dear"
+        },
+        {
+          "role": "staff",
+          "text": "She is not here"
+        },
+        {
+          "role": "staff",
+          "text": "Let me check"
+        },
+        {
+          "role": "staff",
+          "text": "How was your session today?"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like to schedule your next appointment?"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Fatima",
+      "source": "00000160-WhatsApp Chat - Fatima Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 402,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Fatima Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hi how are you?"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear"
+        },
+        {
+          "role": "staff",
+          "text": "Do you make lymphatic drainage massage?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "How much for face massage?"
+        },
+        {
+          "role": "staff",
+          "text": "370"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Our technical arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Could you meet her please"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Najoud",
+      "source": "00000161-WhatsApp Chat - Najoud Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage"
+      ],
+      "payment": "transfer",
+      "total_messages": 161,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Najoud Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "It's crystal home services\n[21/7/2025, 8:49:35 PM] Crystal Lab:\n‎[21/7/2025, 8:49:36 PM] Crystal Lab: ‎изображение отсутствует\n‎[21/7/2025, 8:49:36 PM] Crystal Lab: ‎изображение отсутствует\n‎[21/7/202"
+        },
+        {
+          "role": "staff",
+          "text": "Also tomorrow we have some available slots for different service"
+        },
+        {
+          "role": "staff",
+          "text": "Tomorrow available at 2:00 p.m. 3:00 p.m. with send your therapist, 4:00 p.m., 4:30 pm, 6:30 p.m. 8:00 p.m."
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "It was good, yes please same timing"
+        },
+        {
+          "role": "staff",
+          "text": "How many sessions do i still have?"
+        },
+        {
+          "role": "staff",
+          "text": "You have 3 sessions left in your package and 1 taping 🎁 and 1 scrubbing 🎁"
+        },
+        {
+          "role": "staff",
+          "text": "I suggest you to use it before end of the package"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: +971 50 818 0181",
+      "source": "00000162-WhatsApp Chat - +971 50 818 0181.zip",
+      "outcome": "booked",
+      "services": [
+        "eyelash",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": null,
+      "total_messages": 29,
+      "multi_msg_sequences": 2,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear, how are you doing today?\n[18/9/2025, 8:03:55 AM] Crystal Lab:\n‎[18/9/2025, 8:03:56 AM] Crystal Lab: ‎изображение отсутствует\n‎[18/9/2025, 8:03:56 AM] Crystal Lab: ‎изображение отсутствует\n"
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "We provide home service with free transportation"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like face or body massage?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "client",
+          "text": "Today?"
+        },
+        {
+          "role": "staff",
+          "text": "Today we are fully booked"
+        },
+        {
+          "role": "client",
+          "text": "Contact me if anyone cancelled"
+        },
+        {
+          "role": "staff",
+          "text": "Okay dear"
+        },
+        {
+          "role": "client",
+          "text": "Вы закрепили сообщение"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Amna  Alameri",
+      "source": "00000163-WhatsApp Chat - Amna Клиент Alain Alameri.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage"
+      ],
+      "payment": "cash",
+      "total_messages": 38,
+      "multi_msg_sequences": 6,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Amna Клиент Alain добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "We are providing home service"
+        },
+        {
+          "role": "staff",
+          "text": "Body massage 60 minutes 350\nBody massage 90min 460\nFace massage 50 minutes 370\nTRANSFER +5% Vat ✅/ CASH tax free✔️"
+        },
+        {
+          "role": "staff",
+          "text": "You want massage for face or body?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "We still waiting for payment\n‎[22/9/2025, 5:05:27 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует"
+        },
+        {
+          "role": "staff",
+          "text": "Body massage 60 min 350\nBody massage 90min 460\nFace massage 50 min 370\n+5% Vat / cash tax free"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like face or body massage?"
+        },
+        {
+          "role": "staff",
+          "text": "Tomorrow 10:00 a.m. 12:00 p.m. 2:00 p.m. are available"
+        },
+        {
+          "role": "staff",
+          "text": "Any suitable for you"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: +971 55 319 1931",
+      "source": "00000164-WhatsApp Chat - +971 55 319 1931.zip",
+      "outcome": "consultation_only",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": null,
+      "total_messages": 21,
+      "multi_msg_sequences": 1,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "client",
+          "text": "I would also like to ask where are you based"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear, how are you doing today?\n[22/9/2025, 1:08:21 PM] Crystal Lab:\n‎[22/9/2025, 1:08:22 PM] Crystal Lab: ‎изображение отсутствует\n‎[22/9/2025, 1:08:22 PM] Crystal Lab: ‎изображение отсутствует\n"
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "We take a personalized approach to every client. No two massages are the same. During the first few minutes of the massage, the therapist assesses your body and identifies needs you may not even be aw"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "With our senior therapist"
+        },
+        {
+          "role": "staff",
+          "text": "Today 4:00 p.m. with our senior therapist👌🏻"
+        },
+        {
+          "role": "staff",
+          "text": "Is it okay for you?\n‎[22/9/2025, 1:54:49 PM] Crystal Lab: ‎изображение отсутствует"
+        },
+        {
+          "role": "staff",
+          "text": "Dear , any updates?"
+        },
+        {
+          "role": "staff",
+          "text": "We have tomorrow morning 11.30 am is available"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Fatima",
+      "source": "00000165-WhatsApp Chat - Fatima Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "body_face_combo",
+        "face_massage",
+        "eyebrow",
+        "body_massage"
+      ],
+      "payment": "cash",
+      "total_messages": 840,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Good afternoon"
+        },
+        {
+          "role": "staff",
+          "text": "Share with your location please"
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon"
+        },
+        {
+          "role": "staff",
+          "text": "Местоположение: https://maps.google.com/?q=24.381817,54.674683"
+        },
+        {
+          "role": "staff",
+          "text": "Villa 20\n‎[20/10/2024, 1:29:19 PM] Fatima Клиент Crystal: ‎<прикреплено: 00000007-PHOTO-2024-10-20-13-29-19.jpg>"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Could you meet her please"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        },
+        {
+          "role": "staff",
+          "text": "How was your session today?"
+        },
+        {
+          "role": "staff",
+          "text": "Dear I would like to inform that today was your last session with package\n‎[22/9/2025, 4:14:09 PM] Crystal Lab: ‎<прикреплено: 00000898-PHOTO-2025-09-22-16-14-09.jpg>"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like to renew?"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Amal",
+      "source": "00000166-WhatsApp Chat - Amal Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo",
+        "deep_cleansing"
+      ],
+      "payment": "transfer",
+      "total_messages": 504,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Amal Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Face yoga please"
+        },
+        {
+          "role": "staff",
+          "text": "50 min 350"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "No dear i don’t want to renew , i will take break"
+        },
+        {
+          "role": "staff",
+          "text": "Should I cancel?"
+        },
+        {
+          "role": "staff",
+          "text": "Yes please"
+        },
+        {
+          "role": "staff",
+          "text": "Do you have a gratitude app ?"
+        },
+        {
+          "role": "staff",
+          "text": "No dear"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Aysha  Hazza",
+      "source": "00000167-WhatsApp Chat - Aysha Клиент Crystal Hazza.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 1339,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Aysha Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello! Need to book"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "I want to book today or tomorrow at 4:30 pm"
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Tomorrow 10am 2:00 p.m. 3:00 p.m. 4:00 p.m. 5:30 p.m. are available"
+        },
+        {
+          "role": "staff",
+          "text": "Okkk"
+        },
+        {
+          "role": "staff",
+          "text": "Then make it 5:30 pm"
+        },
+        {
+          "role": "staff",
+          "text": "Confirm tomorrow at 5:30 p.m.✅"
+        },
+        {
+          "role": "staff",
+          "text": "Confirm"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Fakhera",
+      "source": "00000168-WhatsApp Chat - Fakhera Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 169,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Fakhera Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di"
+        },
+        {
+          "role": "staff",
+          "text": "I want to ask about the massage with wood"
+        },
+        {
+          "role": "staff",
+          "text": "Home service in Abu Dhabi"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Yes"
+        },
+        {
+          "role": "staff",
+          "text": "1:00 pm"
+        },
+        {
+          "role": "staff",
+          "text": "Your body massage is booked on Wednesday at 1:00 p.m. with Marina✅"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        },
+        {
+          "role": "staff",
+          "text": "Вы закрепили сообщение"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Varvara Iaffa",
+      "source": "00000169-WhatsApp Chat - Varvara Iaffa Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage"
+      ],
+      "payment": "cash",
+      "total_messages": 232,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Varvara Iaffa Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear, we have slots for massage on Friday at 10 am 11 am 12 pm 1 pm 2.45 pm, 3 pm 4 pm 5 pm 6 pm 7 pm"
+        },
+        {
+          "role": "staff",
+          "text": "Any suitable for you?"
+        },
+        {
+          "role": "staff",
+          "text": "Kindly update you dear"
+        },
+        {
+          "role": "staff",
+          "text": "Good day, let’s next Friday"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Спасибо"
+        },
+        {
+          "role": "staff",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 10:00 a.m.\n🔹Therapist: Oksana\n❗Notes: we kindly ask you not to make changes after the book"
+        },
+        {
+          "role": "staff",
+          "text": "Should I confirm?"
+        },
+        {
+          "role": "staff",
+          "text": "Good day, thank you"
+        },
+        {
+          "role": "staff",
+          "text": "For tomorrow confirmed✅"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Hamama",
+      "source": "00000170-WhatsApp Chat - Hamama Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 363,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Hamama Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di"
+        },
+        {
+          "role": "staff",
+          "text": "I want body massage"
+        },
+        {
+          "role": "staff",
+          "text": "Abu Dhabi"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "10:30"
+        },
+        {
+          "role": "staff",
+          "text": "Or 11"
+        },
+        {
+          "role": "staff",
+          "text": "Your body massage is booked on Monday 29th of September at 11:00 a.m.✅"
+        },
+        {
+          "role": "staff",
+          "text": "Ok good"
+        },
+        {
+          "role": "staff",
+          "text": "Thank u\n‎[22/9/2025, 11:57:11 AM] Crystal Lab: ‎<прикреплено: 00000386-STICKER-2025-09-22-11-57-11.webp>"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Jennifer",
+      "source": "00000171-WhatsApp Chat - Jennifer Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "combo_mani_pedi",
+        "body_face_combo",
+        "waxing",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 1973,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "🌟 Special Offer: Beauty Combo in the Comfort of Your Home! 🌟\nWant to shine at every event with stunning lashes and perfect brows? Then this offer is for you!\n✨ Eyelash Extensions\n✨ Brow Lamination (sh"
+        },
+        {
+          "role": "staff",
+          "text": "🌟 Luxary hair styling in the comfort of your own home! 🌟\n✨ Choose your perfect style with «Wavy Blow Dry» and «stylish hairstyle» starting from just 250 AED!\n✨ Don't miss the chance to look stunning i"
+        },
+        {
+          "role": "staff",
+          "text": "Good evening dear\n‎[4/2/2025, 6:34:01 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-02-04-18-34-01.jpg>\n‎[4/2/2025, 6:34:02 PM] Crystal Lab: ‎<прикреплено: 00000006-PHOTO-2025-02-04-18-34-02.jpg"
+        },
+        {
+          "role": "staff",
+          "text": "All our therapists are professionals with medical education 😌"
+        },
+        {
+          "role": "staff",
+          "text": "Do you want to lift the contour of your face, improve skin elasticity, and reduce wrinkles, or do you want to get rid of puffiness and make your skin glowing and fresh?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Thx dear"
+        },
+        {
+          "role": "staff",
+          "text": "200 Russian gellish manicure\n40 nail repair (1nail)\n150 Russian pedicure with smart disc\n+5% tax\nTotal 410✅"
+        },
+        {
+          "role": "staff",
+          "text": "Thx dear🩷"
+        },
+        {
+          "role": "staff",
+          "text": "Shes the best, Elena🩷"
+        },
+        {
+          "role": "staff",
+          "text": "Thank you for your feedback🥰"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Aliaa",
+      "source": "00000172-WhatsApp Chat - Aliaa Клиент Alain.zip",
+      "outcome": "booked",
+      "services": [
+        "eyelash",
+        "combo_mani_pedi",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": null,
+      "total_messages": 88,
+      "multi_msg_sequences": 11,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Aliaa Клиент Alain добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear"
+        },
+        {
+          "role": "client",
+          "text": "Hi"
+        },
+        {
+          "role": "client",
+          "text": "What days are you available in Alain city"
+        },
+        {
+          "role": "staff",
+          "text": "WE have an offer for facial massage !!!\nthe old price -550 aed - NOW 350 aed in\nFace + body massage (110min)-590 aed\nFace massage package\n5 sessions-1500 aed\nWe can do different facial massage techniq"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Make sure that not tomorrow\n23/09. At 7:30 pm"
+        },
+        {
+          "role": "client",
+          "text": "Ok"
+        },
+        {
+          "role": "staff",
+          "text": "23/09\nAt 7;30 pm\nBooked ✅"
+        },
+        {
+          "role": "staff",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 7:30 p.m.\n🔹Therapist: Makhabat\n❗Notes: we kindly ask you not to make changes after the boo"
+        },
+        {
+          "role": "client",
+          "text": "Ok confirm"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Derya Aktan  Aktan",
+      "source": "00000173-WhatsApp Chat - Derya Aktan Клиент Crystal Aktan.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 1708,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Derya Aktan Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "staff",
+          "text": "6 pm massage for today"
+        },
+        {
+          "role": "staff",
+          "text": "Share with your location please"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Вы закрепили сообщение"
+        },
+        {
+          "role": "staff",
+          "text": "60"
+        },
+        {
+          "role": "staff",
+          "text": "23/09\nAt 10 am\nBooked ✅ 2x body massage"
+        },
+        {
+          "role": "staff",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage for two people\n🔹Time : 10:00 a.m.\n🔹Therapist: Tatiana/ Natalie\n❗Notes: we kindly ask you not to ma"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Mariam",
+      "source": "00000174-WhatsApp Chat - Mariam Клиент Alain.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 60,
+      "multi_msg_sequences": 10,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Mariam Клиент Alain добавлен(-а) в список контактов."
+        },
+        {
+          "role": "client",
+          "text": "Hello!"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "We are providing home services"
+        },
+        {
+          "role": "staff",
+          "text": "What exactly service are you interested in?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "ALINA SADOUSKAYA\nBank ADIB\nIBAN:\nAE600500000000029223830\nAccount number\n29223830"
+        },
+        {
+          "role": "staff",
+          "text": "1123 for today\n‎[21/9/2025, 8:05:49 PM] Mariam Клиент Alain: ‎<прикреплено: 00000073-PHOTO-2025-09-21-20-05-49.jpg>"
+        },
+        {
+          "role": "client",
+          "text": "Thank you🙏🏼"
+        },
+        {
+          "role": "staff",
+          "text": "Thank you dear"
+        },
+        {
+          "role": "client",
+          "text": "My pleasure"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Mariam",
+      "source": "00000175-WhatsApp Chat - Mariam Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "manicure",
+        "face_massage",
+        "pedicure"
+      ],
+      "payment": "cash",
+      "total_messages": 576,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Mariam Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "It's crystal home services 🤗"
+        },
+        {
+          "role": "staff",
+          "text": "I took your number from your friend"
+        },
+        {
+          "role": "staff",
+          "text": "To give more details about our service"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Booked ✅"
+        },
+        {
+          "role": "staff",
+          "text": "Dear"
+        },
+        {
+          "role": "staff",
+          "text": "Therapist arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Could you please send someone"
+        },
+        {
+          "role": "staff",
+          "text": "She’s in"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Huda",
+      "source": "00000176-WhatsApp Chat - Huda Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 309,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Huda Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon\nI want to ask about the massage packages?"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Yes please"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Plz keep my appointment tonight 8 pm\nThanks"
+        },
+        {
+          "role": "staff",
+          "text": "Okay dear"
+        },
+        {
+          "role": "staff",
+          "text": "Dear"
+        },
+        {
+          "role": "staff",
+          "text": "Therapist arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Open please door"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Ghada  Al Fardan",
+      "source": "00000177-WhatsApp Chat - Ghada Клиент Crystal Al Fardan.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 264,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Ghada Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear, how are you doing today?\n[7/7/2025, 7:19:09 PM] Crystal Lab:\n‎[7/7/2025, 7:19:10 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-07-19-19-10.jpg>\n‎[7/7/2025, 7:19:10 PM] Crystal Lab"
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "I am good thank you"
+        },
+        {
+          "role": "staff",
+          "text": "We provide home service with free transportation"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Dear\n‎[20/9/2025, 9:24:31 PM] Crystal Lab: ‎<прикреплено: 00000292-PHOTO-2025-09-20-21-24-31.jpg>"
+        },
+        {
+          "role": "staff",
+          "text": "Dear"
+        },
+        {
+          "role": "staff",
+          "text": "Therapist arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Coming in"
+        },
+        {
+          "role": "staff",
+          "text": "Yes she is here"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Ohood",
+      "source": "00000178-WhatsApp Chat - Ohood Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "transfer",
+      "total_messages": 566,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Ohood Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello! Need to book."
+        },
+        {
+          "role": "staff",
+          "text": "I want to book for a lymphatic massage"
+        },
+        {
+          "role": "staff",
+          "text": "8 sessions please"
+        },
+        {
+          "role": "staff",
+          "text": "I want someone expert please"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Would you like to start earlier?"
+        },
+        {
+          "role": "staff",
+          "text": "Dear"
+        },
+        {
+          "role": "staff",
+          "text": "Therapist arrived"
+        },
+        {
+          "role": "staff",
+          "text": "Could you please open the door"
+        },
+        {
+          "role": "staff",
+          "text": "sure"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Shaikha",
+      "source": "00000179-WhatsApp Chat - Shaikha Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "combo_mani_pedi",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 1042,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Shaikha Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hi"
+        },
+        {
+          "role": "staff",
+          "text": "Good morning dear"
+        },
+        {
+          "role": "staff",
+          "text": "You can visit our  massage studio in Khalifa City A , Abudhabi. With a private parking.\nAnd we provide home service all over Abudhabi and Alain. Transportation is free. Top Russian therapists."
+        },
+        {
+          "role": "staff",
+          "text": "We have a limited offer\n‎[9/12/2024, 10:04:56 AM] Crystal Lab: ‎<прикреплено: 00000007-PHOTO-2024-12-09-10-04-56.jpg>"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "When you finish the payment could you send us receipt please 🙏\n‎[18/9/2025, 2:36:09 PM] Shaikha Клиент Crystal: ‎<прикреплено: 00001106-PHOTO-2025-09-18-14-36-09.jpg>"
+        },
+        {
+          "role": "staff",
+          "text": "Sorry was really busy"
+        },
+        {
+          "role": "staff",
+          "text": "Thank you"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like to schedule your next appointment?"
+        },
+        {
+          "role": "staff",
+          "text": "24/09\nAt 8 pm\nBody and face massage\nBooked ✅\nTherapist Marina"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Hanin  Al Faraneh",
+      "source": "00000180-WhatsApp Chat - Hanin Клиент Crystal Al Faraneh.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 828,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Hanin Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon dear, your booking time is 1.30 for body massage today"
+        },
+        {
+          "role": "staff",
+          "text": "Share your location please"
+        },
+        {
+          "role": "staff",
+          "text": "Местоположение: https://maps.google.com/?q=24.439856,54.590809"
+        },
+        {
+          "role": "staff",
+          "text": "Raha gardens"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Therapist is arrived, please welcome her"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        },
+        {
+          "role": "staff",
+          "text": "Next session 26/09 at 10:30 am ✅"
+        },
+        {
+          "role": "staff",
+          "text": "Yes dear confirm"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Johanna",
+      "source": "00000181-WhatsApp Chat - Johanna Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 201,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Johanna Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear, how are you doing today?\n[27/7/2025, 3:54:18 PM] Crystal Lab:\n‎[27/7/2025, 3:54:20 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-27-15-54-20.jpg>\n‎[27/7/2025, 3:54:20 PM] Crystal "
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "We provide home service with free transportation ✅"
+        },
+        {
+          "role": "staff",
+          "text": "Hello"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Your next appointment 27 th of September"
+        },
+        {
+          "role": "staff",
+          "text": "Ok - same time 10am with Alessia?"
+        },
+        {
+          "role": "staff",
+          "text": "Yes dear"
+        },
+        {
+          "role": "staff",
+          "text": "Ok"
+        },
+        {
+          "role": "staff",
+          "text": "Good morning, dear 🌸\nWould you like to book any service today?"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Boutayna",
+      "source": "00000182-WhatsApp Chat - Boutayna Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 99,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Boutayna Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear, how are you doing today?\n[12/6/2025, 5:03:56 PM] Crystal Lab:\n‎[12/6/2025, 5:03:57 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-06-12-17-03-57.jpg>\n‎[12/6/2025, 5:03:57 PM] Crystal "
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "We provide home service with free transportation"
+        },
+        {
+          "role": "staff",
+          "text": "When and what time is preferable for you?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Dear available at 1:00 p.m. or at 2:30 p.m."
+        },
+        {
+          "role": "staff",
+          "text": "Which one is preferable for you?"
+        },
+        {
+          "role": "staff",
+          "text": "2h30"
+        },
+        {
+          "role": "staff",
+          "text": "26/09\nAt 2:30 pm booked ✅"
+        },
+        {
+          "role": "staff",
+          "text": "Anticellulite massage"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Mariam",
+      "source": "00000183-WhatsApp Chat - Mariam Клиент Alain.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "face_massage",
+        "hair_makeup"
+      ],
+      "payment": "cash",
+      "total_messages": 290,
+      "multi_msg_sequences": 27,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Mariam Клиент Alain добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "How are you doing today?\n[8/6/2025, 3:09:20 PM] Crystal Lab:\n‎[8/6/2025, 3:09:20 PM] Crystal Lab: ‎<прикреплено: 00000006-PHOTO-2025-06-08-15-09-20.jpg>\n‎[8/6/2025, 3:09:21 PM] Crystal Lab: ‎<прикрепл"
+        },
+        {
+          "role": "staff",
+          "text": "There are our offers for face and body massage"
+        },
+        {
+          "role": "staff",
+          "text": "We provide home service with free transportation"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "client",
+          "text": "I don’t want Mahabbat"
+        },
+        {
+          "role": "client",
+          "text": "Anna available?!\n‎[20/9/2025, 4:46:32 PM] Crystal Lab: ‎<прикреплено: 00000319-AUDIO-2025-09-20-16-46-32.opus>"
+        },
+        {
+          "role": "client",
+          "text": "I don’t want her 🙁"
+        },
+        {
+          "role": "client",
+          "text": "I will wait"
+        },
+        {
+          "role": "staff",
+          "text": "Cancelled ✅"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Fakhra",
+      "source": "00000184-WhatsApp Chat - Fakhra Клиент Alain.zip",
+      "outcome": "booked",
+      "services": [
+        "combo_mani_pedi",
+        "pedicure",
+        "face_massage",
+        "manicure",
+        "body_massage"
+      ],
+      "payment": "cash",
+      "total_messages": 199,
+      "multi_msg_sequences": 42,
+      "start_sample": [
+        {
+          "role": "client",
+          "text": "Fakhra Клиент Alain добавлен(-а) в список контактов."
+        },
+        {
+          "role": "client",
+          "text": "How much smart pedicure?"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "150"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like to book?"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "If you able to start"
+        },
+        {
+          "role": "staff",
+          "text": "I will inform her"
+        },
+        {
+          "role": "client",
+          "text": "Sure"
+        },
+        {
+          "role": "staff",
+          "text": "She is on your location let me know"
+        },
+        {
+          "role": "client",
+          "text": "She is here"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Neelanjona  Gupta",
+      "source": "00000185-WhatsApp Chat - Neelanjona Клиент Crystal Gupta.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 896,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Neelanjona Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hi Crystal . I have your number from my colleague Fitria who highly recommends you . I would also like to try the facial massage . Would you have time this weekend ? Saturday preferably"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "Good afternoon, dear 🌹\nHow are you ?"
+        },
+        {
+          "role": "staff",
+          "text": "Yes we have availability on Saturday"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Will let you know about next appointment"
+        },
+        {
+          "role": "staff",
+          "text": "Waiting for your booking"
+        },
+        {
+          "role": "staff",
+          "text": "You have increased your charges"
+        },
+        {
+          "role": "staff",
+          "text": "Body massage 60 min 350\nBody massage 90min 460\nFace massage 50 min 370\n+5% Vat / cash tax free"
+        },
+        {
+          "role": "staff",
+          "text": "Yes"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Meera  Almutawa",
+      "source": "00000186-WhatsApp Chat - Meera Клиент Crystal Almutawa.zip",
+      "outcome": "booked",
+      "services": [
+        "body_massage",
+        "body_face_combo"
+      ],
+      "payment": "cash",
+      "total_messages": 265,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Meera Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "How are you doing today?\n‎[28/7/2025, 5:10:32 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-28-17-10-32.jpg>"
+        },
+        {
+          "role": "staff",
+          "text": "July offer still available\n[28/7/2025, 5:10:46 PM] Crystal Lab:\n‎[28/7/2025, 5:10:46 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-07-28-17-10-46.jpg>\n‎[28/7/2025, 5:10:47 PM] Crystal Lab: ‎<при"
+        },
+        {
+          "role": "staff",
+          "text": "Also this offers"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "Ahh no unfortunately"
+        },
+        {
+          "role": "staff",
+          "text": "Should I cancel for tomorrow"
+        },
+        {
+          "role": "staff",
+          "text": "Then I’ll need to cancel please"
+        },
+        {
+          "role": "staff",
+          "text": "For tomorrow cancel"
+        },
+        {
+          "role": "staff",
+          "text": "Yes please"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Alya",
+      "source": "00000187-WhatsApp Chat - Alya Клиент Crystal.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 453,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Alya Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        },
+        {
+          "role": "staff",
+          "text": "How are you doing today?\n[7/7/2025, 9:32:30 PM] Crystal Lab:\n‎[7/7/2025, 9:32:31 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-07-07-21-32-31.jpg>\n‎[7/7/2025, 9:32:31 PM] Crystal Lab: ‎<прикрепл"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "0506660747:\n1- 02.08 (face + body)\n2- 09.08 ( face + body)\n3- 14.08 ( body)\n4- 27.08 ( face + body)\n5- 03.09 ( face + body)\n6- 13.09 ( face)"
+        },
+        {
+          "role": "staff",
+          "text": "Total 5 sessions"
+        },
+        {
+          "role": "staff",
+          "text": "Your body package\n1- 15.07\n2- 23.07\n3- 02.08\n4- 09.08\n5- 08.09\n6 and 7- 13.09"
+        },
+        {
+          "role": "staff",
+          "text": "On 14 Aug she did only body\nToday she did body + face\n‎[13/9/2025, 5:18:12 PM] Crystal Lab: ‎<прикреплено: 00000474-AUDIO-2025-09-13-17-18-12.opus>\n‎[13/9/2025, 5:18:22 PM] Crystal Lab: ‎<прикреплено:"
+        },
+        {
+          "role": "staff",
+          "text": "I will call you later dear"
+        }
+      ]
+    },
+    {
+      "name": "Real dialog: Shahili  Gomes-McCoy",
+      "source": "00000188-WhatsApp Chat - Shahili Клиент Crystal Gomes-McCoy.zip",
+      "outcome": "booked",
+      "services": [
+        "permanent_makeup",
+        "eyelash",
+        "body_face_combo",
+        "pedicure",
+        "face_massage",
+        "eyebrow",
+        "manicure",
+        "hair_makeup",
+        "body_massage",
+        "deep_cleansing"
+      ],
+      "payment": "cash",
+      "total_messages": 562,
+      "multi_msg_sequences": 0,
+      "start_sample": [
+        {
+          "role": "staff",
+          "text": "Shahili Клиент Crystal добавлен(-а) в список контактов."
+        },
+        {
+          "role": "staff",
+          "text": "Hello"
+        },
+        {
+          "role": "staff",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean"
+        },
+        {
+          "role": "staff",
+          "text": "It’s Shahili"
+        },
+        {
+          "role": "staff",
+          "text": "Hello dear"
+        }
+      ],
+      "end_sample": [
+        {
+          "role": "staff",
+          "text": "How was your session today?"
+        },
+        {
+          "role": "staff",
+          "text": "Would you like to schedule your next appointment?"
+        },
+        {
+          "role": "staff",
+          "text": "Was good thank you"
+        },
+        {
+          "role": "staff",
+          "text": "I will txt for the next one"
+        },
+        {
+          "role": "staff",
+          "text": "Waiting for your booking ✅"
+        }
+      ]
+    }
+  ],
+  "client_phrases_for_training": {
+    "greeting": [
+      "Hello! Need to book.",
+      "Hello",
+      "Is this for home service?",
+      "Nothing\n‎[14/9/2025, 4:27:29 PM] Crystal Lab: ‎<прикреплено: 00000048-STICKER-2025-09-14-16-27-29.webp>",
+      "Hello!",
+      "Hi I’m in alain",
+      "Can they call me",
+      "Hi dear",
+      "Hi\nIt’s okay to put makeup after massage",
+      "Good morning\nCan I change my appointment",
+      "This\n‎[30/7/2025, 4:33:04 PM] Mariam Клиент Alain: ‎<прикреплено: 00000250-AUDIO-2025-07-30-16-33-04.opus>",
+      "Good morning",
+      "Hi\nNo need thanks",
+      "This time i cant"
+    ],
+    "price_inquiry": [
+      "How much is it can I please know",
+      "How much smart pedicure?"
+    ],
+    "booking_request": [
+      "Great, then I’ll be texting you next week Inshallah to tell you when exactly I want to work for the session",
+      "I would like to book for today for 2 people body and face lymphatic massage",
+      "I have another appointment 😢",
+      "I want to take appointment"
+    ],
+    "time_selection": [
+      "My location mbz city\n‎[18/9/2025, 8:35:25 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:35:32 AM] Crystal Lab: ‎аудиофайл отсутствует",
+      "Great\n‎[18/9/2025, 8:36:02 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:09 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:25 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:26 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:37 AM] Crystal Lab: ‎изображение отсутствует",
+      "Today?",
+      "Amna Клиент Alain добавлен(-а) в список контактов.",
+      "Amna Salem\n[20/9/2025, 11:20:51 AM] Crystal Lab:\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:21:05 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 11:21:21 AM] Crystal Lab: ‎аудиофайл отсутствует",
+      "Yes\n‎[20/9/2025, 12:56:01 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 12:56:58 PM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 1:28:06 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:28:45 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:36:31 PM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:36:41 PM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 2:06:18 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 3:19:46 PM] Crystal Lab: ‎изображение отсутствует",
+      "I prefer morning dear",
+      "I will try one session today if I like I will purchase the package",
+      "After 4:00 🕓 pm",
+      "I need ten minutes till I arrive\n‎[16/10/2024, 3:39:58 PM] Crystal Lab: ‎<прикреплено: 00000030-AUDIO-2024-10-16-15-39-58.opus>",
+      "7:30 pm",
+      "Mariam Клиент Alain добавлен(-а) в список контактов.",
+      "Body and face lymphatic massage? 90 mins?\n‎[20/9/2025, 3:09:35 PM] Crystal Lab: ‎<прикреплено: 00000017-AUDIO-2025-09-20-15-09-35.opus>",
+      "Okay do you have for today",
+      "Tomorrow?",
+      "I would rather afternoon if you can\n‎[20/9/2025, 5:19:53 PM] Crystal Lab: ‎<прикреплено: 00000028-AUDIO-2025-09-20-17-19-53.opus>",
+      "Mariam",
+      "At 8pm ?",
+      "7.8.9 pm",
+      "Very good\n‎[10/6/2025, 9:40:51 PM] Crystal Lab: ‎<прикреплено: 00000071-PHOTO-2025-06-10-21-40-51.jpg>",
+      "Ok\n‎[13/6/2025, 2:33:09 PM] Mariam Клиент Alain: إيصال الحوالة.pdf • ‎1 страница ‎<прикреплено: 00000100-إيصال الحوالة.pdf>",
+      "Mariam Ali",
+      "8 pm is good for me",
+      "No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент Alain: ‎<прикреплено: 00000137-AUDIO-2025-07-01-11-14-42.opus>",
+      "Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000152-AUDIO-2025-07-01-13-14-16.opus>",
+      "She’s very good and nice\n‎[13/7/2025, 6:11:01 PM] Mariam Клиент Alain: ‎<прикреплено: 00000192-AUDIO-2025-07-13-18-11-01.opus>\n‎[13/7/2025, 6:12:28 PM] Mariam Клиент Alain: ‎<прикреплено: 00000193-AUDIO-2025-07-13-18-12-28.opus>",
+      "Ok 7 pm",
+      "Very good\n‎[23/7/2025, 8:16:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000232-PHOTO-2025-07-23-20-16-16.jpg>",
+      "Mariam Ali\n‎[30/7/2025, 6:02:01 PM] Crystal Lab: ‎<прикреплено: 00000267-PHOTO-2025-07-30-18-02-01.jpg>",
+      "Today if it’s available"
+    ],
+    "location_share": [
+      "Villa 27  https://maps.google.com/?q=24.298132,54.570717",
+      "The location"
+    ],
+    "confirmation": [
+      "Yes",
+      "Ok confirm",
+      "Yes please",
+      "My pleasure",
+      "Yes I won’t 1500\n1 for body\nAnd 4 for face",
+      "Ok thanks",
+      "Any time after 4 in week day is ok",
+      "Its ok",
+      "Sure",
+      "Its ok Friday",
+      "Ok ‎<Сообщение изменено>",
+      "Confirm"
+    ],
+    "objection": [],
+    "gratitude": [
+      "Thank you🙏🏼",
+      "Thanks",
+      "Thank you"
+    ],
+    "cancellation": [
+      "Contact me if anyone cancelled",
+      "Can u postpone Fraiday ?"
+    ]
+  },
+  "faq_for_agent": [
+    {
+      "question": "how can i pay?",
+      "count": 2
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.058556,55.852669",
+      "count": 2
+    },
+    {
+      "question": "can you ask her to wear a mask when she do the massage for me?",
+      "count": 2
+    },
+    {
+      "question": "any availability?",
+      "count": 1
+    },
+    {
+      "question": "villa 27 https://maps.google.com/?q=24.298132,54.570717",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.214666,55.478981",
+      "count": 1
+    },
+    {
+      "question": "is this for home service?",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.202965,55.780666",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.193584,55.806976",
+      "count": 1
+    },
+    {
+      "question": "body and face lymphatic massage? 90 mins? ‎[20/9/2025, 3:09:35 pm] crystal lab: ‎<прикреплено: 00000017-audio-2025-09-20-15-09-35.opus>",
+      "count": 1
+    },
+    {
+      "question": "https://maps.app.goo.gl/csxswb2tfkvsrcbx8?g_st=iw",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.039101,55.850952",
+      "count": 1
+    },
+    {
+      "question": "what time she will be here?",
+      "count": 1
+    },
+    {
+      "question": "who is the first lady? she make body massage for me? ‎<сообщение изменено>",
+      "count": 1
+    },
+    {
+      "question": "anna available?! ‎[20/9/2025, 4:46:32 pm] crystal lab: ‎<прикреплено: 00000319-audio-2025-09-20-16-46-32.opus>",
+      "count": 1
+    },
+    {
+      "question": "how much smart pedicure?",
+      "count": 1
+    },
+    {
+      "question": "can u come tomorrow 5 pm ?",
+      "count": 1
+    },
+    {
+      "question": "no other time ?",
+      "count": 1
+    },
+    {
+      "question": "can u postpone fraiday ?",
+      "count": 1
+    },
+    {
+      "question": "can 10 am ?",
+      "count": 1
+    },
+    {
+      "question": "what the different ?",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.243860,55.749546",
+      "count": 1
+    },
+    {
+      "question": "visa or cash ?",
+      "count": 1
+    },
+    {
+      "question": "when she come ?",
+      "count": 1
+    },
+    {
+      "question": "its available tomorrow ?",
+      "count": 1
+    },
+    {
+      "question": "she come back ?",
+      "count": 1
+    },
+    {
+      "question": "its possible morning ?",
+      "count": 1
+    }
+  ]
+}

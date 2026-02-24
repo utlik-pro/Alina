@@ -1,0 +1,3378 @@
+{
+  "summary": {
+    "total_dialogs": 33,
+    "total_messages": 16288,
+    "total_client_messages": 284,
+    "total_staff_messages": 16004,
+    "avg_messages_per_dialog": 493.6
+  },
+  "outcomes": {
+    "booked": 32,
+    "consultation_only": 1
+  },
+  "services_mentioned": {
+    "body_massage": 33,
+    "face_massage": 32,
+    "body_face_combo": 23,
+    "pedicure": 18,
+    "manicure": 18,
+    "deep_cleansing": 17,
+    "eyebrow": 16,
+    "eyelash": 15,
+    "permanent_makeup": 13,
+    "hair_makeup": 11,
+    "combo_mani_pedi": 4,
+    "waxing": 2,
+    "cupping": 1
+  },
+  "objections": {
+    "availability_question": 4
+  },
+  "payment_methods": {
+    "cash": 25,
+    "transfer": 4
+  },
+  "faq": [
+    {
+      "question": "how can i pay?",
+      "count": 2
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.058556,55.852669",
+      "count": 2
+    },
+    {
+      "question": "can you ask her to wear a mask when she do the massage for me?",
+      "count": 2
+    },
+    {
+      "question": "any availability?",
+      "count": 1
+    },
+    {
+      "question": "villa 27 https://maps.google.com/?q=24.298132,54.570717",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.214666,55.478981",
+      "count": 1
+    },
+    {
+      "question": "is this for home service?",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.202965,55.780666",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.193584,55.806976",
+      "count": 1
+    },
+    {
+      "question": "body and face lymphatic massage? 90 mins? ‎[20/9/2025, 3:09:35 pm] crystal lab: ‎<прикреплено: 00000017-audio-2025-09-20-15-09-35.opus>",
+      "count": 1
+    },
+    {
+      "question": "https://maps.app.goo.gl/csxswb2tfkvsrcbx8?g_st=iw",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.039101,55.850952",
+      "count": 1
+    },
+    {
+      "question": "what time she will be here?",
+      "count": 1
+    },
+    {
+      "question": "who is the first lady? she make body massage for me? ‎<сообщение изменено>",
+      "count": 1
+    },
+    {
+      "question": "anna available?! ‎[20/9/2025, 4:46:32 pm] crystal lab: ‎<прикреплено: 00000319-audio-2025-09-20-16-46-32.opus>",
+      "count": 1
+    },
+    {
+      "question": "how much smart pedicure?",
+      "count": 1
+    },
+    {
+      "question": "can u come tomorrow 5 pm ?",
+      "count": 1
+    },
+    {
+      "question": "no other time ?",
+      "count": 1
+    },
+    {
+      "question": "can u postpone fraiday ?",
+      "count": 1
+    },
+    {
+      "question": "can 10 am ?",
+      "count": 1
+    },
+    {
+      "question": "what the different ?",
+      "count": 1
+    },
+    {
+      "question": "местоположение: https://maps.google.com/?q=24.243860,55.749546",
+      "count": 1
+    },
+    {
+      "question": "visa or cash ?",
+      "count": 1
+    },
+    {
+      "question": "when she come ?",
+      "count": 1
+    },
+    {
+      "question": "its available tomorrow ?",
+      "count": 1
+    },
+    {
+      "question": "she come back ?",
+      "count": 1
+    },
+    {
+      "question": "its possible morning ?",
+      "count": 1
+    }
+  ],
+  "client_phrases_by_intent": {
+    "greeting": [
+      "Hello! Need to book.",
+      "Hello",
+      "Is this for home service?",
+      "Nothing\n‎[14/9/2025, 4:27:29 PM] Crystal Lab: ‎<прикреплено: 00000048-STICKER-2025-09-14-16-27-29.webp>",
+      "Hello!",
+      "Hi I’m in alain",
+      "Can they call me",
+      "Hi dear",
+      "Hi\nIt’s okay to put makeup after massage",
+      "Good morning\nCan I change my appointment",
+      "This\n‎[30/7/2025, 4:33:04 PM] Mariam Клиент Alain: ‎<прикреплено: 00000250-AUDIO-2025-07-30-16-33-04.opus>",
+      "Good morning",
+      "Hi\nNo need thanks",
+      "This time i cant"
+    ],
+    "price_inquiry": [
+      "How much is it can I please know",
+      "How much smart pedicure?"
+    ],
+    "booking_request": [
+      "Great, then I’ll be texting you next week Inshallah to tell you when exactly I want to work for the session",
+      "I would like to book for today for 2 people body and face lymphatic massage",
+      "I have another appointment 😢",
+      "I want to take appointment"
+    ],
+    "time_selection": [
+      "My location mbz city\n‎[18/9/2025, 8:35:25 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:35:32 AM] Crystal Lab: ‎аудиофайл отсутствует",
+      "Great\n‎[18/9/2025, 8:36:02 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:09 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:25 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:26 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:37 AM] Crystal Lab: ‎изображение отсутствует",
+      "Today?",
+      "Amna Клиент Alain добавлен(-а) в список контактов.",
+      "Amna Salem\n[20/9/2025, 11:20:51 AM] Crystal Lab:\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:21:05 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 11:21:21 AM] Crystal Lab: ‎аудиофайл отсутствует",
+      "Yes\n‎[20/9/2025, 12:56:01 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 12:56:58 PM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 1:28:06 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:28:45 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:36:31 PM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 1:36:41 PM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 2:06:18 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует\n‎[20/9/2025, 3:19:46 PM] Crystal Lab: ‎изображение отсутствует",
+      "I prefer morning dear",
+      "I will try one session today if I like I will purchase the package",
+      "After 4:00 🕓 pm",
+      "I need ten minutes till I arrive\n‎[16/10/2024, 3:39:58 PM] Crystal Lab: ‎<прикреплено: 00000030-AUDIO-2024-10-16-15-39-58.opus>",
+      "7:30 pm",
+      "Mariam Клиент Alain добавлен(-а) в список контактов.",
+      "Body and face lymphatic massage? 90 mins?\n‎[20/9/2025, 3:09:35 PM] Crystal Lab: ‎<прикреплено: 00000017-AUDIO-2025-09-20-15-09-35.opus>",
+      "Okay do you have for today",
+      "Tomorrow?",
+      "I would rather afternoon if you can\n‎[20/9/2025, 5:19:53 PM] Crystal Lab: ‎<прикреплено: 00000028-AUDIO-2025-09-20-17-19-53.opus>",
+      "Mariam",
+      "At 8pm ?",
+      "7.8.9 pm",
+      "Very good\n‎[10/6/2025, 9:40:51 PM] Crystal Lab: ‎<прикреплено: 00000071-PHOTO-2025-06-10-21-40-51.jpg>",
+      "Ok\n‎[13/6/2025, 2:33:09 PM] Mariam Клиент Alain: إيصال الحوالة.pdf • ‎1 страница ‎<прикреплено: 00000100-إيصال الحوالة.pdf>",
+      "Mariam Ali",
+      "8 pm is good for me",
+      "No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент Alain: ‎<прикреплено: 00000137-AUDIO-2025-07-01-11-14-42.opus>",
+      "Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000152-AUDIO-2025-07-01-13-14-16.opus>",
+      "She’s very good and nice\n‎[13/7/2025, 6:11:01 PM] Mariam Клиент Alain: ‎<прикреплено: 00000192-AUDIO-2025-07-13-18-11-01.opus>\n‎[13/7/2025, 6:12:28 PM] Mariam Клиент Alain: ‎<прикреплено: 00000193-AUDIO-2025-07-13-18-12-28.opus>",
+      "Ok 7 pm",
+      "Very good\n‎[23/7/2025, 8:16:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000232-PHOTO-2025-07-23-20-16-16.jpg>",
+      "Mariam Ali\n‎[30/7/2025, 6:02:01 PM] Crystal Lab: ‎<прикреплено: 00000267-PHOTO-2025-07-30-18-02-01.jpg>",
+      "Today if it’s available"
+    ],
+    "location_share": [
+      "Villa 27  https://maps.google.com/?q=24.298132,54.570717",
+      "The location"
+    ],
+    "confirmation": [
+      "Yes",
+      "Ok confirm",
+      "Yes please",
+      "My pleasure",
+      "Yes I won’t 1500\n1 for body\nAnd 4 for face",
+      "Ok thanks",
+      "Any time after 4 in week day is ok",
+      "Its ok",
+      "Sure",
+      "Its ok Friday",
+      "Ok ‎<Сообщение изменено>",
+      "Confirm"
+    ],
+    "objection": [],
+    "gratitude": [
+      "Thank you🙏🏼",
+      "Thanks",
+      "Thank you"
+    ],
+    "cancellation": [
+      "Contact me if anyone cancelled",
+      "Can u postpone Fraiday ?"
+    ]
+  },
+  "multi_message_patterns": [
+    {
+      "client": "Aliaa",
+      "count": 5,
+      "messages": [
+        "Местоположение: https://maps.google.com/?q=24.193584,55.806976",
+        "30",
+        "Body massage",
+        "Вы закрепили сообщение",
+        "Вы закрепили сообщение"
+      ],
+      "example": "Местоположение: https://maps.google.com/?q=24.1935 | 30 | Body massage | Вы закрепили сообщение | Вы закрепили сообщение"
+    },
+    {
+      "client": "Fakhra",
+      "count": 5,
+      "messages": [
+        "Give me time",
+        "I will check your inst\n[23/6/2025, 5:40:22 PM] Crystal Lab:\n‎[23/6/2025, 5:40:23 PM] Crystal Lab: ‎<прикреплено: 00000016-PHOTO-2025-06-23-17-40-23.jpg>\n‎[23/6/2025, 5:40:24 PM] Crystal Lab: ‎<прикреплено: 00000017-PHOTO-2025-06-23-17-40-24.jpg>\n‎[23/6/2025, 5:40:24 PM] Crystal Lab: ‎<прикреплено: 00000018-PHOTO-2025-06-23-17-40-24.jpg>\n‎[23/6/2025, 5:40:25 PM] Crystal Lab: ‎<прикреплено: 00000019-PHOTO-2025-06-23-17-40-25.jpg>\n‎[23/6/2025, 5:40:31 PM] Crystal Lab: ‎<прикреплено: 00000020-AUDIO-2025-06-23-17-40-31.opus>",
+        "Hi",
+        "Can u come tomorrow\n5 pm ?",
+        "2 ladies\nSmart pedicure"
+      ],
+      "example": "Give me time | I will check your inst\n[23/6/2025, 5:40:22 PM] Cry | Hi | Can u come tomorrow\n5 pm ? | 2 ladies\nSmart pedicure"
+    },
+    {
+      "client": "Fakhra",
+      "count": 5,
+      "messages": [
+        "Yes",
+        "Вы закрепили сообщение",
+        "Вы закрепили сообщение",
+        "Hi",
+        "When she come ?"
+      ],
+      "example": "Yes | Вы закрепили сообщение | Вы закрепили сообщение | Hi | When she come ?"
+    },
+    {
+      "client": "Fakhra",
+      "count": 5,
+      "messages": [
+        "No",
+        "My sister also she want",
+        "But her work finish 6pm",
+        "And she come tired",
+        "So difficult"
+      ],
+      "example": "No | My sister also she want | But her work finish 6pm | And she come tired | So difficult"
+    },
+    {
+      "client": "Amna  Alameri",
+      "count": 4,
+      "messages": [
+        "Ok",
+        "Вы закрепили сообщение",
+        "Вы закрепили сообщение",
+        "Вы закрепили сообщение"
+      ],
+      "example": "Ok | Вы закрепили сообщение | Вы закрепили сообщение | Вы закрепили сообщение"
+    },
+    {
+      "client": "Mariam",
+      "count": 4,
+      "messages": [
+        "Let the driver call me",
+        "Yes",
+        "Let her tell security alia house",
+        "Let them come inside"
+      ],
+      "example": "Let the driver call me | Yes | Let her tell security alia house | Let them come inside"
+    },
+    {
+      "client": "Mariam",
+      "count": 4,
+      "messages": [
+        "Yes",
+        "80",
+        "Местоположение: https://maps.google.com/?q=24.058556,55.852669",
+        "The location"
+      ],
+      "example": "Yes | 80 | Местоположение: https://maps.google.com/?q=24.0585 | The location"
+    },
+    {
+      "client": "Mariam",
+      "count": 4,
+      "messages": [
+        "I don’t want Mahabbat",
+        "Anna available?!\n‎[20/9/2025, 4:46:32 PM] Crystal Lab: ‎<прикреплено: 00000319-AUDIO-2025-09-20-16-46-32.opus>",
+        "I don’t want her 🙁",
+        "I will wait"
+      ],
+      "example": "I don’t want Mahabbat | Anna available?!\n‎[20/9/2025, 4:46:32 PM] Crystal  | I don’t want her 🙁 | I will wait"
+    },
+    {
+      "client": "Fakhra",
+      "count": 4,
+      "messages": [
+        "Good morning",
+        "Ok",
+        "Waiting",
+        "😇"
+      ],
+      "example": "Good morning | Ok | Waiting | 😇"
+    },
+    {
+      "client": "Fakhra",
+      "count": 4,
+      "messages": [
+        "Its ok Friday",
+        "4 pm",
+        "💞",
+        "Yes"
+      ],
+      "example": "Its ok Friday | 4 pm | 💞 | Yes"
+    },
+    {
+      "client": "Amna  Alameri",
+      "count": 3,
+      "messages": [
+        "Alain",
+        "Местоположение: https://maps.google.com/?q=24.214666,55.478981",
+        "🏡26"
+      ],
+      "example": "Alain | Местоположение: https://maps.google.com/?q=24.2146 | 🏡26"
+    },
+    {
+      "client": "Aliaa",
+      "count": 3,
+      "messages": [
+        "Wait",
+        "I need ten minutes till I arrive\n‎[16/10/2024, 3:39:58 PM] Crystal Lab: ‎<прикреплено: 00000030-AUDIO-2024-10-16-15-39-58.opus>",
+        "Let her to ring the bell"
+      ],
+      "example": "Wait | I need ten minutes till I arrive\n‎[16/10/2024, 3:3 | Let her to ring the bell"
+    },
+    {
+      "client": "Aliaa",
+      "count": 3,
+      "messages": [
+        "Nothing\n‎[14/9/2025, 4:27:29 PM] Crystal Lab: ‎<прикреплено: 00000048-STICKER-2025-09-14-16-27-29.webp>",
+        "Hello",
+        "You didn’t inform me that it’s a gift"
+      ],
+      "example": "Nothing\n‎[14/9/2025, 4:27:29 PM] Crystal Lab: ‎<пр | Hello | You didn’t inform me that it’s a gift"
+    },
+    {
+      "client": "Mariam",
+      "count": 3,
+      "messages": [
+        "Ok thanks",
+        "Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000152-AUDIO-2025-07-01-13-14-16.opus>",
+        "Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM] Mariam Клиент Alain: ‎<прикреплено: 00000152-AUDIO-2025-07-01-13-14-16.opus>"
+      ],
+      "example": "Ok thanks | Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM]  | Данное сообщение удалено.\n‎[1/7/2025, 1:14:16 PM] "
+    },
+    {
+      "client": "Mariam",
+      "count": 3,
+      "messages": [
+        "This\n‎[30/7/2025, 4:33:04 PM] Mariam Клиент Alain: ‎<прикреплено: 00000250-AUDIO-2025-07-30-16-33-04.opus>",
+        "Вы закрепили сообщение",
+        "Вы закрепили сообщение"
+      ],
+      "example": "This\n‎[30/7/2025, 4:33:04 PM] Mariam Клиент Alain: | Вы закрепили сообщение | Вы закрепили сообщение"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "10 am",
+        "Smart pedicure",
+        "We are 3 ladies"
+      ],
+      "example": "10 am | Smart pedicure | We are 3 ladies"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "Can I add 1 more",
+        "We are 4",
+        "😇"
+      ],
+      "example": "Can I add 1 more | We are 4 | 😇"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "Hi",
+        "I want on Monday 3 pm",
+        "👆🏻"
+      ],
+      "example": "Hi | I want on Monday 3 pm | 👆🏻"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "No",
+        "Japanes",
+        "Pedicure"
+      ],
+      "example": "No | Japanes | Pedicure"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "My sister outside",
+        "No one",
+        "Hello"
+      ],
+      "example": "My sister outside | No one | Hello"
+    },
+    {
+      "client": "Fakhra",
+      "count": 3,
+      "messages": [
+        "👆🏻",
+        "Вы закрепили сообщение",
+        "Manicure and pedicure"
+      ],
+      "example": "👆🏻 | Вы закрепили сообщение | Manicure and pedicure"
+    },
+    {
+      "client": "+971 50 818 0181",
+      "count": 2,
+      "messages": [
+        "Hello",
+        "I want for the body"
+      ],
+      "example": "Hello | I want for the body"
+    },
+    {
+      "client": "+971 50 818 0181",
+      "count": 2,
+      "messages": [
+        "My location mbz city\n‎[18/9/2025, 8:35:25 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:35:32 AM] Crystal Lab: ‎аудиофайл отсутствует",
+        "Great\n‎[18/9/2025, 8:36:02 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:09 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:25 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:26 AM] ~Alyazia: ‎аудиофайл отсутствует\n‎[18/9/2025, 8:36:37 AM] Crystal Lab: ‎изображение отсутствует"
+      ],
+      "example": "My location mbz city\n‎[18/9/2025, 8:35:25 AM] ~Aly | Great\n‎[18/9/2025, 8:36:02 AM] ~Alyazia: ‎аудиофай"
+    },
+    {
+      "client": "Amna  Alameri",
+      "count": 2,
+      "messages": [
+        "You have fachl",
+        "Amna Salem\n[20/9/2025, 11:20:51 AM] Crystal Lab:\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:20:52 AM] Crystal Lab: ‎изображение отсутствует\n‎[20/9/2025, 11:21:05 AM] Crystal Lab: ‎аудиофайл отсутствует\n‎[20/9/2025, 11:21:21 AM] Crystal Lab: ‎аудиофайл отсутствует"
+      ],
+      "example": "You have fachl | Amna Salem\n[20/9/2025, 11:20:51 AM] Crystal Lab:\n‎"
+    },
+    {
+      "client": "+971 55 319 1931",
+      "count": 2,
+      "messages": [
+        "Hello! Need to book.",
+        "I would also like to ask where are you based"
+      ],
+      "example": "Hello! Need to book. | I would also like to ask where are you based"
+    },
+    {
+      "client": "Aliaa",
+      "count": 2,
+      "messages": [
+        "Hi",
+        "What days are you available in Alain city"
+      ],
+      "example": "Hi | What days are you available in Alain city"
+    },
+    {
+      "client": "Aliaa",
+      "count": 2,
+      "messages": [
+        "Wednesday",
+        "7:30 pm"
+      ],
+      "example": "Wednesday | 7:30 pm"
+    },
+    {
+      "client": "Aliaa",
+      "count": 2,
+      "messages": [
+        "Next week Monday",
+        "7:30"
+      ],
+      "example": "Next week Monday | 7:30"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Mariam Клиент Alain добавлен(-а) в список контактов.",
+        "Hello!"
+      ],
+      "example": "Mariam Клиент Alain добавлен(-а) в список контакто | Hello!"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "I would like to book for today for 2 people body and face lymphatic massage",
+        "How much is it can I please know"
+      ],
+      "example": "I would like to book for today for 2 people body a | How much is it can I please know"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Okay do you have for today",
+        "For 2 people"
+      ],
+      "example": "Okay do you have for today | For 2 people"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "I would rather afternoon if you can\n‎[20/9/2025, 5:19:53 PM] Crystal Lab: ‎<прикреплено: 00000028-AUDIO-2025-09-20-17-19-53.opus>",
+        "https://maps.app.goo.gl/CSxswB2tFKvsrcbx8?g_st=iw"
+      ],
+      "example": "I would rather afternoon if you can\n‎[20/9/2025, 5 | https://maps.app.goo.gl/CSxswB2tFKvsrcbx8?g_st=iw"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Yes",
+        "Вы закрепили сообщение"
+      ],
+      "example": "Yes | Вы закрепили сообщение"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Yes",
+        "16"
+      ],
+      "example": "Yes | 16"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Hi dear",
+        "How can I pay?"
+      ],
+      "example": "Hi dear | How can I pay?"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Good",
+        "At 8pm ?"
+      ],
+      "example": "Good | At 8pm ?"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Местоположение: https://maps.google.com/?q=24.058556,55.852669",
+        "Mariam"
+      ],
+      "example": "Местоположение: https://maps.google.com/?q=24.0585 | Mariam"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "I have work",
+        "Finish 3:30"
+      ],
+      "example": "I have work | Finish 3:30"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "80",
+        "Вы закрепили сообщение"
+      ],
+      "example": "80 | Вы закрепили сообщение"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Ok",
+        "???"
+      ],
+      "example": "Ok | ???"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Yes",
+        "In Friday"
+      ],
+      "example": "Yes | In Friday"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Hi dear",
+        "8 pm is good for me"
+      ],
+      "example": "Hi dear | 8 pm is good for me"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "I have another appointment 😢",
+        "We have to finish at 1"
+      ],
+      "example": "I have another appointment 😢 | We have to finish at 1"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент Alain: ‎<прикреплено: 00000137-AUDIO-2025-07-01-11-14-42.opus>",
+        "No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент Alain: ‎<прикреплено: 00000137-AUDIO-2025-07-01-11-14-42.opus>"
+      ],
+      "example": "No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент  | No I can’t\n‎[1/7/2025, 11:14:42 AM] Mariam Клиент "
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Ok",
+        "Can you ask her to wear a mask when she do the massage for me?"
+      ],
+      "example": "Ok | Can you ask her to wear a mask when she do the mas"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Hi",
+        "I want to take appointment"
+      ],
+      "example": "Hi | I want to take appointment"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Ok",
+        "Can you ask her to wear a mask when she do the massage for me?"
+      ],
+      "example": "Ok | Can you ask her to wear a mask when she do the mas"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Good morning\nCan I change my appointment",
+        "Any time after 4 in week day is ok"
+      ],
+      "example": "Good morning\nCan I change my appointment | Any time after 4 in week day is ok"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "I want to take appointment",
+        "Today if it’s available"
+      ],
+      "example": "I want to take appointment | Today if it’s available"
+    },
+    {
+      "client": "Mariam",
+      "count": 2,
+      "messages": [
+        "Ok",
+        "10"
+      ],
+      "example": "Ok | 10"
+    }
+  ],
+  "dialogs": [
+    {
+      "client_name": "Sara  Sayegh",
+      "source_file": "00000152-WhatsApp Chat - Sara Клиент Crystal Sayegh.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 6"
+        ],
+        "payment_method": null,
+        "total_messages": 22,
+        "client_messages": 0,
+        "staff_messages": 22,
+        "multi_message_sequences": 0
+      },
+      "message_count": 22,
+      "sample_start": [
+        {
+          "sender": "Sara Клиент Crystal Sayegh",
+          "text": "Sara Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Sara Клиент Crystal Sayegh",
+          "text": "Hi there! I wanted to see if you have any availability today for home service deep tissue massage?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How are you doing today?",
+          "is_staff": true
+        },
+        {
+          "sender": "Sara Клиент Crystal Sayegh",
+          "text": "I’m well thank you 🙏🏽\n[22/9/2025, 1:21:02 PM] Crystal Lab:\n‎[22/9/2025, 1:21:02 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-09-22-13-21-02.jpg>\n‎[22/9/2025, 1:21:02 PM] Crystal Lab: ‎<прикрепл",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Your body massage is booked for today at 7pm✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Sara Клиент Crystal Sayegh",
+          "text": "Thank you!\n‎[22/9/2025, 1:26:56 PM] Crystal Lab: ‎<прикреплено: 00000025-STICKER-2025-09-22-13-26-56.webp>",
+          "is_staff": true
+        },
+        {
+          "sender": "Sara Клиент Crystal Sayegh",
+          "text": "Вы закрепили сообщение",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Our technical arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you meet her please",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Azza",
+      "source_file": "00000157-WhatsApp Chat - Azza Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_face_combo",
+          "waxing",
+          "pedicure",
+          "face_massage",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "villa 315"
+        ],
+        "payment_method": "cash",
+        "total_messages": 1009,
+        "client_messages": 0,
+        "staff_messages": 1009,
+        "multi_message_sequences": 0
+      },
+      "message_count": 1009,
+      "sample_start": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Good evening! Booked for you for tomorrow 9 pm for the face and body massage.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Share with your location please and adress details",
+          "is_staff": true
+        },
+        {
+          "sender": "Azza Клиент Crystal",
+          "text": "Hello",
+          "is_staff": true
+        },
+        {
+          "sender": "Azza Клиент Crystal",
+          "text": "Bloom garden. Villa 315.\n24°26'03.9\"N 54°27'31.1\"E\nhttps://goo.gl/maps/WnNwVzCLqyfkyyEo7",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Thank you dear , booked for you 9 pm for tomorrow 🌹",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: face massage\n🔹Time : 8.15 pm\n🔹Therapist: Natalia\n❗Notes: we kindly ask you not to make changes after the bookin",
+          "is_staff": true
+        },
+        {
+          "sender": "Azza Клиент Crystal",
+          "text": "Yes plz",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Our technical arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you meet her please",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Mai",
+      "source_file": "00000158-WhatsApp Chat - Mai Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "al ain",
+          "villa 14",
+          "villa 81"
+        ],
+        "payment_method": "cash",
+        "total_messages": 366,
+        "client_messages": 0,
+        "staff_messages": 366,
+        "multi_message_sequences": 0
+      },
+      "message_count": 366,
+      "sample_start": [
+        {
+          "sender": "Mai Клиент Crystal",
+          "text": "Mai Клиент Crystal сменил(-а) номер телефона. В данный момент вы переписываетесь, используя новый номер этого контакта",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 10pm\n🔹Therapist: Marina\n❗Notes: we kindly ask you not to make changes after the booking is",
+          "is_staff": true
+        },
+        {
+          "sender": "Mai Клиент Crystal",
+          "text": "Yes",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear\nSend me  please your location as a link\nAnd apartment or Villa number",
+          "is_staff": true
+        },
+        {
+          "sender": "Mai Клиент Crystal",
+          "text": "Hi dear",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Mai Клиент Crystal",
+          "text": "9:30",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Okay dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Mai Клиент Crystal",
+          "text": "Hi dear if the therapist free am available anytime",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Okay dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We try to come earlier",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Faiza",
+      "source_file": "00000159-WhatsApp Chat - Faiza Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "cupping",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "apartment 212",
+          "al ain"
+        ],
+        "payment_method": "transfer",
+        "total_messages": 414,
+        "client_messages": 0,
+        "staff_messages": 414,
+        "multi_message_sequences": 0
+      },
+      "message_count": 414,
+      "sample_start": [
+        {
+          "sender": "Faiza Клиент Crystal",
+          "text": "Faiza Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Faiza Клиент Crystal",
+          "text": "Hi dear how are you? My name is Faiza I want to book with you tonight home massage after Shamsa",
+          "is_staff": true
+        },
+        {
+          "sender": "Faiza Клиент Crystal",
+          "text": "I have a stiff neck and back\nBut also I wanted to do a lymph or madero massage because I have alot of cellulite and water retention I feel\nWhat do you recommend I should focus on?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear\n[18/4/2025, 3:31:15 PM] Crystal Lab:\n‎[18/4/2025, 3:31:15 PM] Crystal Lab: ‎изображение отсутствует\n‎[18/4/2025, 3:31:16 PM] Crystal Lab: ‎изображение отсутствует\n‎[18/4/2025, 3:31",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Okay dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Faiza Клиент Crystal",
+          "text": "She is not here",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Let me check",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How was your session today?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to schedule your next appointment?",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Fatima",
+      "source_file": "00000160-WhatsApp Chat - Fatima Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "villa 25",
+          "khalifa city"
+        ],
+        "payment_method": "cash",
+        "total_messages": 402,
+        "client_messages": 0,
+        "staff_messages": 402,
+        "multi_message_sequences": 0
+      },
+      "message_count": 402,
+      "sample_start": [
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Fatima Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Hi how are you?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Do you make lymphatic drainage massage?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "How much for face massage?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "370",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Our technical arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you meet her please",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Najoud",
+      "source_file": "00000161-WhatsApp Chat - Najoud Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 118"
+        ],
+        "payment_method": "transfer",
+        "total_messages": 161,
+        "client_messages": 0,
+        "staff_messages": 161,
+        "multi_message_sequences": 0
+      },
+      "message_count": 161,
+      "sample_start": [
+        {
+          "sender": "Najoud Клиент Crystal",
+          "text": "Najoud Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "It's crystal home services\n[21/7/2025, 8:49:35 PM] Crystal Lab:\n‎[21/7/2025, 8:49:36 PM] Crystal Lab: ‎изображение отсутствует\n‎[21/7/2025, 8:49:36 PM] Crystal Lab: ‎изображение отсутствует\n‎[21/7/202",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Also tomorrow we have some available slots for different service",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Tomorrow available at 2:00 p.m. 3:00 p.m. with send your therapist, 4:00 p.m., 4:30 pm, 6:30 p.m. 8:00 p.m.",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Najoud Клиент Crystal",
+          "text": "It was good, yes please same timing",
+          "is_staff": true
+        },
+        {
+          "sender": "Najoud Клиент Crystal",
+          "text": "How many sessions do i still have?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "You have 3 sessions left in your package and 1 taping 🎁 and 1 scrubbing 🎁",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "I suggest you to use it before end of the package",
+          "is_staff": true
+        },
+        {
+          "sender": "Najoud Клиент Crystal",
+          "text": "Ok",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "+971 50 818 0181",
+      "source_file": "00000162-WhatsApp Chat - +971 50 818 0181.zip",
+      "classification": {
+        "services": [
+          "eyelash",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [
+          "availability_question"
+        ],
+        "locations": [
+          "villa 27"
+        ],
+        "payment_method": null,
+        "total_messages": 29,
+        "client_messages": 11,
+        "staff_messages": 18,
+        "multi_message_sequences": 2
+      },
+      "message_count": 29,
+      "sample_start": [
+        {
+          "sender": "~Alyazia",
+          "text": "Hello! Need to book.",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear, how are you doing today?\n[18/9/2025, 8:03:55 AM] Crystal Lab:\n‎[18/9/2025, 8:03:56 AM] Crystal Lab: ‎изображение отсутствует\n‎[18/9/2025, 8:03:56 AM] Crystal Lab: ‎изображение отсутствует\n",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We provide home service with free transportation",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like face or body massage?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "~Alyazia",
+          "text": "Today?",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Today we are fully booked",
+          "is_staff": true
+        },
+        {
+          "sender": "~Alyazia",
+          "text": "Contact me if anyone cancelled",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Okay dear",
+          "is_staff": true
+        },
+        {
+          "sender": "~Alyazia",
+          "text": "Вы закрепили сообщение",
+          "is_staff": false
+        }
+      ]
+    },
+    {
+      "client_name": "Amna  Alameri",
+      "source_file": "00000163-WhatsApp Chat - Amna Клиент Alain Alameri.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain"
+        ],
+        "payment_method": "cash",
+        "total_messages": 38,
+        "client_messages": 12,
+        "staff_messages": 26,
+        "multi_message_sequences": 6
+      },
+      "message_count": 38,
+      "sample_start": [
+        {
+          "sender": "Amna Клиент Alain Alameri",
+          "text": "Amna Клиент Alain добавлен(-а) в список контактов.",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We are providing home service",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Body massage 60 minutes 350\nBody massage 90min 460\nFace massage 50 minutes 370\nTRANSFER +5% Vat ✅/ CASH tax free✔️",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "You want massage for face or body?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "We still waiting for payment\n‎[22/9/2025, 5:05:27 PM] Amna Клиент Alain Alameri: ‎аудиофайл отсутствует",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Body massage 60 min 350\nBody massage 90min 460\nFace massage 50 min 370\n+5% Vat / cash tax free",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like face or body massage?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Tomorrow 10:00 a.m. 12:00 p.m. 2:00 p.m. are available",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Any suitable for you",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "+971 55 319 1931",
+      "source_file": "00000164-WhatsApp Chat - +971 55 319 1931.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "consultation_only",
+        "objections": [],
+        "locations": [
+          "khalifa city"
+        ],
+        "payment_method": null,
+        "total_messages": 21,
+        "client_messages": 5,
+        "staff_messages": 16,
+        "multi_message_sequences": 1
+      },
+      "message_count": 21,
+      "sample_start": [
+        {
+          "sender": "~.",
+          "text": "Hello! Need to book.",
+          "is_staff": false
+        },
+        {
+          "sender": "~.",
+          "text": "I would also like to ask where are you based",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear, how are you doing today?\n[22/9/2025, 1:08:21 PM] Crystal Lab:\n‎[22/9/2025, 1:08:22 PM] Crystal Lab: ‎изображение отсутствует\n‎[22/9/2025, 1:08:22 PM] Crystal Lab: ‎изображение отсутствует\n",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We take a personalized approach to every client. No two massages are the same. During the first few minutes of the massage, the therapist assesses your body and identifies needs you may not even be aw",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "With our senior therapist",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Today 4:00 p.m. with our senior therapist👌🏻",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Is it okay for you?\n‎[22/9/2025, 1:54:49 PM] Crystal Lab: ‎изображение отсутствует",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear , any updates?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We have tomorrow morning 11.30 am is available",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Fatima",
+      "source_file": "00000165-WhatsApp Chat - Fatima Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "body_face_combo",
+          "face_massage",
+          "eyebrow",
+          "body_massage"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 20"
+        ],
+        "payment_method": "cash",
+        "total_messages": 840,
+        "client_messages": 0,
+        "staff_messages": 840,
+        "multi_message_sequences": 0
+      },
+      "message_count": 840,
+      "sample_start": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Share with your location please",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Good afternoon",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Местоположение: https://maps.google.com/?q=24.381817,54.674683",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Villa 20\n‎[20/10/2024, 1:29:19 PM] Fatima Клиент Crystal: ‎<прикреплено: 00000007-PHOTO-2024-10-20-13-29-19.jpg>",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you meet her please",
+          "is_staff": true
+        },
+        {
+          "sender": "Fatima Клиент Crystal",
+          "text": "Ok",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How was your session today?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear I would like to inform that today was your last session with package\n‎[22/9/2025, 4:14:09 PM] Crystal Lab: ‎<прикреплено: 00000898-PHOTO-2025-09-22-16-14-09.jpg>",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to renew?",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Amal",
+      "source_file": "00000166-WhatsApp Chat - Amal Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 52"
+        ],
+        "payment_method": "transfer",
+        "total_messages": 504,
+        "client_messages": 0,
+        "staff_messages": 504,
+        "multi_message_sequences": 0
+      },
+      "message_count": 504,
+      "sample_start": [
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "Amal Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "Hello! Need to book.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "Face yoga please",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "50 min 350",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "No dear i don’t want to renew , i will take break",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Should I cancel?",
+          "is_staff": true
+        },
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "Yes please",
+          "is_staff": true
+        },
+        {
+          "sender": "Amal Клиент Crystal",
+          "text": "Do you have a gratitude app ?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "No dear",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Aysha  Hazza",
+      "source_file": "00000167-WhatsApp Chat - Aysha Клиент Crystal Hazza.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 15",
+          "al ain",
+          "abu dhabi",
+          "villa 80"
+        ],
+        "payment_method": "cash",
+        "total_messages": 1339,
+        "client_messages": 0,
+        "staff_messages": 1339,
+        "multi_message_sequences": 0
+      },
+      "message_count": 1339,
+      "sample_start": [
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "Aysha Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "Hello! Need to book",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "I want to book today or tomorrow at 4:30 pm",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Tomorrow 10am 2:00 p.m. 3:00 p.m. 4:00 p.m. 5:30 p.m. are available",
+          "is_staff": true
+        },
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "Okkk",
+          "is_staff": true
+        },
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "Then make it 5:30 pm",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Confirm tomorrow at 5:30 p.m.✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Aysha Клиент Crystal Hazza",
+          "text": "Confirm",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Fakhera",
+      "source_file": "00000168-WhatsApp Chat - Fakhera Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "villa 17"
+        ],
+        "payment_method": "cash",
+        "total_messages": 169,
+        "client_messages": 0,
+        "staff_messages": 169,
+        "multi_message_sequences": 0
+      },
+      "message_count": 169,
+      "sample_start": [
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Fakhera Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Hello",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "I want to ask about the massage with wood",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Home service in Abu Dhabi",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Yes",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "1:00 pm",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Your body massage is booked on Wednesday at 1:00 p.m. with Marina✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Ok",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhera Клиент Crystal",
+          "text": "Вы закрепили сообщение",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Varvara Iaffa",
+      "source_file": "00000169-WhatsApp Chat - Varvara Iaffa Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "flat 1908"
+        ],
+        "payment_method": "cash",
+        "total_messages": 232,
+        "client_messages": 0,
+        "staff_messages": 232,
+        "multi_message_sequences": 0
+      },
+      "message_count": 232,
+      "sample_start": [
+        {
+          "sender": "Varvara Iaffa Клиент Crystal",
+          "text": "Varvara Iaffa Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear, we have slots for massage on Friday at 10 am 11 am 12 pm 1 pm 2.45 pm, 3 pm 4 pm 5 pm 6 pm 7 pm",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Any suitable for you?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Kindly update you dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Varvara Iaffa Клиент Crystal",
+          "text": "Good day, let’s next Friday",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Varvara Iaffa Клиент Crystal",
+          "text": "Спасибо",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 10:00 a.m.\n🔹Therapist: Oksana\n❗Notes: we kindly ask you not to make changes after the book",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Should I confirm?",
+          "is_staff": true
+        },
+        {
+          "sender": "Varvara Iaffa Клиент Crystal",
+          "text": "Good day, thank you",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "For tomorrow confirmed✅",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Hamama",
+      "source_file": "00000170-WhatsApp Chat - Hamama Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi"
+        ],
+        "payment_method": "cash",
+        "total_messages": 363,
+        "client_messages": 0,
+        "staff_messages": 363,
+        "multi_message_sequences": 0
+      },
+      "message_count": 363,
+      "sample_start": [
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Hamama Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Hello! Need to book.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "I want body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Abu Dhabi",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "10:30",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Or 11",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Your body massage is booked on Monday 29th of September at 11:00 a.m.✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Ok good",
+          "is_staff": true
+        },
+        {
+          "sender": "Hamama Клиент Crystal",
+          "text": "Thank u\n‎[22/9/2025, 11:57:11 AM] Crystal Lab: ‎<прикреплено: 00000386-STICKER-2025-09-22-11-57-11.webp>",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Jennifer",
+      "source_file": "00000171-WhatsApp Chat - Jennifer Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "combo_mani_pedi",
+          "body_face_combo",
+          "waxing",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "villa 4",
+          "flat 401"
+        ],
+        "payment_method": "cash",
+        "total_messages": 1973,
+        "client_messages": 0,
+        "staff_messages": 1973,
+        "multi_message_sequences": 0
+      },
+      "message_count": 1973,
+      "sample_start": [
+        {
+          "sender": "Crystal Lab",
+          "text": "🌟 Special Offer: Beauty Combo in the Comfort of Your Home! 🌟\nWant to shine at every event with stunning lashes and perfect brows? Then this offer is for you!\n✨ Eyelash Extensions\n✨ Brow Lamination (sh",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "🌟 Luxary hair styling in the comfort of your own home! 🌟\n✨ Choose your perfect style with «Wavy Blow Dry» and «stylish hairstyle» starting from just 250 AED!\n✨ Don't miss the chance to look stunning i",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good evening dear\n‎[4/2/2025, 6:34:01 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-02-04-18-34-01.jpg>\n‎[4/2/2025, 6:34:02 PM] Crystal Lab: ‎<прикреплено: 00000006-PHOTO-2025-02-04-18-34-02.jpg",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "All our therapists are professionals with medical education 😌",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Do you want to lift the contour of your face, improve skin elasticity, and reduce wrinkles, or do you want to get rid of puffiness and make your skin glowing and fresh?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Jennifer Клиент Crystal",
+          "text": "Thx dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "200 Russian gellish manicure\n40 nail repair (1nail)\n150 Russian pedicure with smart disc\n+5% tax\nTotal 410✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Jennifer Клиент Crystal",
+          "text": "Thx dear🩷",
+          "is_staff": true
+        },
+        {
+          "sender": "Jennifer Клиент Crystal",
+          "text": "Shes the best, Elena🩷",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Thank you for your feedback🥰",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Aliaa",
+      "source_file": "00000172-WhatsApp Chat - Aliaa Клиент Alain.zip",
+      "classification": {
+        "services": [
+          "eyelash",
+          "combo_mani_pedi",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [
+          "availability_question"
+        ],
+        "locations": [
+          "al ain"
+        ],
+        "payment_method": null,
+        "total_messages": 88,
+        "client_messages": 37,
+        "staff_messages": 51,
+        "multi_message_sequences": 11
+      },
+      "message_count": 88,
+      "sample_start": [
+        {
+          "sender": "Aliaa Клиент Alain",
+          "text": "Aliaa Клиент Alain добавлен(-а) в список контактов.",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Aliaa Клиент Alain",
+          "text": "Hi",
+          "is_staff": false
+        },
+        {
+          "sender": "Aliaa Клиент Alain",
+          "text": "What days are you available in Alain city",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "WE have an offer for facial massage !!!\nthe old price -550 aed - NOW 350 aed in\nFace + body massage (110min)-590 aed\nFace massage package\n5 sessions-1500 aed\nWe can do different facial massage techniq",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Make sure that not tomorrow\n23/09. At 7:30 pm",
+          "is_staff": true
+        },
+        {
+          "sender": "Aliaa Клиент Alain",
+          "text": "Ok",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "23/09\nAt 7;30 pm\nBooked ✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage\n🔹Time : 7:30 p.m.\n🔹Therapist: Makhabat\n❗Notes: we kindly ask you not to make changes after the boo",
+          "is_staff": true
+        },
+        {
+          "sender": "Aliaa Клиент Alain",
+          "text": "Ok confirm",
+          "is_staff": false
+        }
+      ]
+    },
+    {
+      "client_name": "Derya Aktan  Aktan",
+      "source_file": "00000173-WhatsApp Chat - Derya Aktan Клиент Crystal Aktan.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "villa 11",
+          "villa 4"
+        ],
+        "payment_method": "cash",
+        "total_messages": 1708,
+        "client_messages": 0,
+        "staff_messages": 1708,
+        "multi_message_sequences": 0
+      },
+      "message_count": 1708,
+      "sample_start": [
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "Derya Aktan Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "Hello! Need to book.",
+          "is_staff": true
+        },
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "6 pm massage for today",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Share with your location please",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "Вы закрепили сообщение",
+          "is_staff": true
+        },
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "60",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "23/09\nAt 10 am\nBooked ✅ 2x body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello!\nCrystal lab 💎 home service🏘️ wants to confirm you booking for tomorrow✅\n🔹Service: body massage for two people\n🔹Time : 10:00 a.m.\n🔹Therapist: Tatiana/ Natalie\n❗Notes: we kindly ask you not to ma",
+          "is_staff": true
+        },
+        {
+          "sender": "Derya Aktan Клиент Crystal Aktan",
+          "text": "Ok",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Mariam",
+      "source_file": "00000174-WhatsApp Chat - Mariam Клиент Alain.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "al ain"
+        ],
+        "payment_method": "cash",
+        "total_messages": 60,
+        "client_messages": 26,
+        "staff_messages": 34,
+        "multi_message_sequences": 10
+      },
+      "message_count": 60,
+      "sample_start": [
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "Mariam Клиент Alain добавлен(-а) в список контактов.",
+          "is_staff": false
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "Hello!",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We are providing home services",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "What exactly service are you interested in?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "ALINA SADOUSKAYA\nBank ADIB\nIBAN:\nAE600500000000029223830\nAccount number\n29223830",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "1123 for today\n‎[21/9/2025, 8:05:49 PM] Mariam Клиент Alain: ‎<прикреплено: 00000073-PHOTO-2025-09-21-20-05-49.jpg>",
+          "is_staff": true
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "Thank you🙏🏼",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Thank you dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "My pleasure",
+          "is_staff": false
+        }
+      ]
+    },
+    {
+      "client_name": "Mariam",
+      "source_file": "00000175-WhatsApp Chat - Mariam Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "manicure",
+          "face_massage",
+          "pedicure"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 31",
+          "al ain",
+          "villa 73"
+        ],
+        "payment_method": "cash",
+        "total_messages": 576,
+        "client_messages": 0,
+        "staff_messages": 576,
+        "multi_message_sequences": 0
+      },
+      "message_count": 576,
+      "sample_start": [
+        {
+          "sender": "Mariam Клиент Crystal",
+          "text": "Mariam Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "It's crystal home services 🤗",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "I took your number from your friend",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "To give more details about our service",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Booked ✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Therapist arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you please send someone",
+          "is_staff": true
+        },
+        {
+          "sender": "Mariam Клиент Crystal",
+          "text": "She’s in",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Huda",
+      "source_file": "00000176-WhatsApp Chat - Huda Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 72",
+          "al ain",
+          "khalifa city",
+          "abu dhabi"
+        ],
+        "payment_method": "cash",
+        "total_messages": 309,
+        "client_messages": 0,
+        "staff_messages": 309,
+        "multi_message_sequences": 0
+      },
+      "message_count": 309,
+      "sample_start": [
+        {
+          "sender": "Huda Клиент Crystal",
+          "text": "Huda Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Huda Клиент Crystal",
+          "text": "Good afternoon\nI want to ask about the massage packages?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab home service🙌\nCertified Russian technicians and free transportation to your home 🏠\nAbudhabi and Alain\nWe can offer you a lot of beauty services on offer price 🌹\n-Body massage di",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Yes please",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Huda Клиент Crystal",
+          "text": "Plz keep my appointment tonight 8 pm\nThanks",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Okay dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Therapist arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Open please door",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Ghada  Al Fardan",
+      "source_file": "00000177-WhatsApp Chat - Ghada Клиент Crystal Al Fardan.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 6"
+        ],
+        "payment_method": "cash",
+        "total_messages": 264,
+        "client_messages": 0,
+        "staff_messages": 264,
+        "multi_message_sequences": 0
+      },
+      "message_count": 264,
+      "sample_start": [
+        {
+          "sender": "Ghada Клиент Crystal Al Fardan",
+          "text": "Ghada Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear, how are you doing today?\n[7/7/2025, 7:19:09 PM] Crystal Lab:\n‎[7/7/2025, 7:19:10 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-07-19-19-10.jpg>\n‎[7/7/2025, 7:19:10 PM] Crystal Lab",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Ghada Клиент Crystal Al Fardan",
+          "text": "I am good thank you",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We provide home service with free transportation",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear\n‎[20/9/2025, 9:24:31 PM] Crystal Lab: ‎<прикреплено: 00000292-PHOTO-2025-09-20-21-24-31.jpg>",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Therapist arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Coming in",
+          "is_staff": true
+        },
+        {
+          "sender": "Ghada Клиент Crystal Al Fardan",
+          "text": "Yes she is here",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Ohood",
+      "source_file": "00000178-WhatsApp Chat - Ohood Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "khalifa city"
+        ],
+        "payment_method": "transfer",
+        "total_messages": 566,
+        "client_messages": 0,
+        "staff_messages": 566,
+        "multi_message_sequences": 0
+      },
+      "message_count": 566,
+      "sample_start": [
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "Ohood Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "Hello! Need to book.",
+          "is_staff": true
+        },
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "I want to book for a lymphatic massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "8 sessions please",
+          "is_staff": true
+        },
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "I want someone expert please",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to start earlier?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Therapist arrived",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Could you please open the door",
+          "is_staff": true
+        },
+        {
+          "sender": "Ohood Клиент Crystal",
+          "text": "sure",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Shaikha",
+      "source_file": "00000179-WhatsApp Chat - Shaikha Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "combo_mani_pedi",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "khalifa city",
+          "villa 153"
+        ],
+        "payment_method": "cash",
+        "total_messages": 1042,
+        "client_messages": 0,
+        "staff_messages": 1042,
+        "multi_message_sequences": 0
+      },
+      "message_count": 1042,
+      "sample_start": [
+        {
+          "sender": "Shaikha Клиент Crystal",
+          "text": "Shaikha Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Shaikha Клиент Crystal",
+          "text": "Hi",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good morning dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "You can visit our  massage studio in Khalifa City A , Abudhabi. With a private parking.\nAnd we provide home service all over Abudhabi and Alain. Transportation is free. Top Russian therapists.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We have a limited offer\n‎[9/12/2024, 10:04:56 AM] Crystal Lab: ‎<прикреплено: 00000007-PHOTO-2024-12-09-10-04-56.jpg>",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "When you finish the payment could you send us receipt please 🙏\n‎[18/9/2025, 2:36:09 PM] Shaikha Клиент Crystal: ‎<прикреплено: 00001106-PHOTO-2025-09-18-14-36-09.jpg>",
+          "is_staff": true
+        },
+        {
+          "sender": "Shaikha Клиент Crystal",
+          "text": "Sorry was really busy",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Thank you",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to schedule your next appointment?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "24/09\nAt 8 pm\nBody and face massage\nBooked ✅\nTherapist Marina",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Hanin  Al Faraneh",
+      "source_file": "00000180-WhatsApp Chat - Hanin Клиент Crystal Al Faraneh.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "khalifa city",
+          "villa 1205"
+        ],
+        "payment_method": "cash",
+        "total_messages": 828,
+        "client_messages": 0,
+        "staff_messages": 828,
+        "multi_message_sequences": 0
+      },
+      "message_count": 828,
+      "sample_start": [
+        {
+          "sender": "Hanin Клиент Crystal Al Faraneh",
+          "text": "Hanin Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon dear, your booking time is 1.30 for body massage today",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Share your location please",
+          "is_staff": true
+        },
+        {
+          "sender": "Hanin Клиент Crystal Al Faraneh",
+          "text": "Местоположение: https://maps.google.com/?q=24.439856,54.590809",
+          "is_staff": true
+        },
+        {
+          "sender": "Hanin Клиент Crystal Al Faraneh",
+          "text": "Raha gardens",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Therapist is arrived, please welcome her",
+          "is_staff": true
+        },
+        {
+          "sender": "Hanin Клиент Crystal Al Faraneh",
+          "text": "Ok",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Next session 26/09 at 10:30 am ✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Hanin Клиент Crystal Al Faraneh",
+          "text": "Yes dear confirm",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Johanna",
+      "source_file": "00000181-WhatsApp Chat - Johanna Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "al ain",
+          "flat 2104"
+        ],
+        "payment_method": "cash",
+        "total_messages": 201,
+        "client_messages": 0,
+        "staff_messages": 201,
+        "multi_message_sequences": 0
+      },
+      "message_count": 201,
+      "sample_start": [
+        {
+          "sender": "Johanna Клиент Crystal",
+          "text": "Johanna Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear, how are you doing today?\n[27/7/2025, 3:54:18 PM] Crystal Lab:\n‎[27/7/2025, 3:54:20 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-27-15-54-20.jpg>\n‎[27/7/2025, 3:54:20 PM] Crystal ",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We provide home service with free transportation ✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Johanna Клиент Crystal",
+          "text": "Hello",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Your next appointment 27 th of September",
+          "is_staff": true
+        },
+        {
+          "sender": "Johanna Клиент Crystal",
+          "text": "Ok - same time 10am with Alessia?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Yes dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Johanna Клиент Crystal",
+          "text": "Ok",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good morning, dear 🌸\nWould you like to book any service today?",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Boutayna",
+      "source_file": "00000182-WhatsApp Chat - Boutayna Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "villa 1047"
+        ],
+        "payment_method": "cash",
+        "total_messages": 99,
+        "client_messages": 0,
+        "staff_messages": 99,
+        "multi_message_sequences": 0
+      },
+      "message_count": 99,
+      "sample_start": [
+        {
+          "sender": "Boutayna Клиент Crystal",
+          "text": "Boutayna Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear, how are you doing today?\n[12/6/2025, 5:03:56 PM] Crystal Lab:\n‎[12/6/2025, 5:03:57 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-06-12-17-03-57.jpg>\n‎[12/6/2025, 5:03:57 PM] Crystal ",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We provide home service with free transportation",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "When and what time is preferable for you?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "Dear available at 1:00 p.m. or at 2:30 p.m.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Which one is preferable for you?",
+          "is_staff": true
+        },
+        {
+          "sender": "Boutayna Клиент Crystal",
+          "text": "2h30",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "26/09\nAt 2:30 pm booked ✅",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Anticellulite massage",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Mariam",
+      "source_file": "00000183-WhatsApp Chat - Mariam Клиент Alain.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "face_massage",
+          "hair_makeup"
+        ],
+        "outcome": "booked",
+        "objections": [
+          "availability_question"
+        ],
+        "locations": [
+          "abu dhabi",
+          "al ain"
+        ],
+        "payment_method": "cash",
+        "total_messages": 290,
+        "client_messages": 96,
+        "staff_messages": 194,
+        "multi_message_sequences": 27
+      },
+      "message_count": 290,
+      "sample_start": [
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "Mariam Клиент Alain добавлен(-а) в список контактов.",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How are you doing today?\n[8/6/2025, 3:09:20 PM] Crystal Lab:\n‎[8/6/2025, 3:09:20 PM] Crystal Lab: ‎<прикреплено: 00000006-PHOTO-2025-06-08-15-09-20.jpg>\n‎[8/6/2025, 3:09:21 PM] Crystal Lab: ‎<прикрепл",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "There are our offers for face and body massage",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "We provide home service with free transportation",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "I don’t want Mahabbat",
+          "is_staff": false
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "Anna available?!\n‎[20/9/2025, 4:46:32 PM] Crystal Lab: ‎<прикреплено: 00000319-AUDIO-2025-09-20-16-46-32.opus>",
+          "is_staff": false
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "I don’t want her 🙁",
+          "is_staff": false
+        },
+        {
+          "sender": "Mariam Клиент Alain",
+          "text": "I will wait",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Cancelled ✅",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Fakhra",
+      "source_file": "00000184-WhatsApp Chat - Fakhra Клиент Alain.zip",
+      "classification": {
+        "services": [
+          "combo_mani_pedi",
+          "pedicure",
+          "face_massage",
+          "manicure",
+          "body_massage"
+        ],
+        "outcome": "booked",
+        "objections": [
+          "availability_question"
+        ],
+        "locations": [
+          "abu dhabi",
+          "al ain"
+        ],
+        "payment_method": "cash",
+        "total_messages": 199,
+        "client_messages": 97,
+        "staff_messages": 102,
+        "multi_message_sequences": 42
+      },
+      "message_count": 199,
+      "sample_start": [
+        {
+          "sender": "Fakhra Клиент Alain",
+          "text": "Fakhra Клиент Alain добавлен(-а) в список контактов.",
+          "is_staff": false
+        },
+        {
+          "sender": "Fakhra Клиент Alain",
+          "text": "How much smart pedicure?",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "150",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to book?",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "If you able to start",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "I will inform her",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhra Клиент Alain",
+          "text": "Sure",
+          "is_staff": false
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "She is on your location let me know",
+          "is_staff": true
+        },
+        {
+          "sender": "Fakhra Клиент Alain",
+          "text": "She is here",
+          "is_staff": false
+        }
+      ]
+    },
+    {
+      "client_name": "Neelanjona  Gupta",
+      "source_file": "00000185-WhatsApp Chat - Neelanjona Клиент Crystal Gupta.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "reem island"
+        ],
+        "payment_method": "cash",
+        "total_messages": 896,
+        "client_messages": 0,
+        "staff_messages": 896,
+        "multi_message_sequences": 0
+      },
+      "message_count": 896,
+      "sample_start": [
+        {
+          "sender": "Neelanjona Клиент Crystal Gupta",
+          "text": "Neelanjona Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Neelanjona Клиент Crystal Gupta",
+          "text": "Hi Crystal . I have your number from my colleague Fitria who highly recommends you . I would also like to try the facial massage . Would you have time this weekend ? Saturday preferably",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Good afternoon, dear 🌹\nHow are you ?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Yes we have availability on Saturday",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Neelanjona Клиент Crystal Gupta",
+          "text": "Will let you know about next appointment",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Waiting for your booking",
+          "is_staff": true
+        },
+        {
+          "sender": "Neelanjona Клиент Crystal Gupta",
+          "text": "You have increased your charges",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Body massage 60 min 350\nBody massage 90min 460\nFace massage 50 min 370\n+5% Vat / cash tax free",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Yes",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Meera  Almutawa",
+      "source_file": "00000186-WhatsApp Chat - Meera Клиент Crystal Almutawa.zip",
+      "classification": {
+        "services": [
+          "body_massage",
+          "body_face_combo"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "khalifa city",
+          "villa 70"
+        ],
+        "payment_method": "cash",
+        "total_messages": 265,
+        "client_messages": 0,
+        "staff_messages": 265,
+        "multi_message_sequences": 0
+      },
+      "message_count": 265,
+      "sample_start": [
+        {
+          "sender": "Meera Клиент Crystal Almutawa",
+          "text": "Meera Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How are you doing today?\n‎[28/7/2025, 5:10:32 PM] Crystal Lab: ‎<прикреплено: 00000005-PHOTO-2025-07-28-17-10-32.jpg>",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "July offer still available\n[28/7/2025, 5:10:46 PM] Crystal Lab:\n‎[28/7/2025, 5:10:46 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-07-28-17-10-46.jpg>\n‎[28/7/2025, 5:10:47 PM] Crystal Lab: ‎<при",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Also this offers",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Meera Клиент Crystal Almutawa",
+          "text": "Ahh no unfortunately",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Should I cancel for tomorrow",
+          "is_staff": true
+        },
+        {
+          "sender": "Meera Клиент Crystal Almutawa",
+          "text": "Then I’ll need to cancel please",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "For tomorrow cancel",
+          "is_staff": true
+        },
+        {
+          "sender": "Meera Клиент Crystal Almutawa",
+          "text": "Yes please",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Alya",
+      "source_file": "00000187-WhatsApp Chat - Alya Клиент Crystal.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [],
+        "payment_method": "cash",
+        "total_messages": 453,
+        "client_messages": 0,
+        "staff_messages": 453,
+        "multi_message_sequences": 0
+      },
+      "message_count": 453,
+      "sample_start": [
+        {
+          "sender": "Alya Клиент Crystal",
+          "text": "Alya Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Alya Клиент Crystal",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "How are you doing today?\n[7/7/2025, 9:32:30 PM] Crystal Lab:\n‎[7/7/2025, 9:32:31 PM] Crystal Lab: ‎<прикреплено: 00000008-PHOTO-2025-07-07-21-32-31.jpg>\n‎[7/7/2025, 9:32:31 PM] Crystal Lab: ‎<прикрепл",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "0506660747:\n1- 02.08 (face + body)\n2- 09.08 ( face + body)\n3- 14.08 ( body)\n4- 27.08 ( face + body)\n5- 03.09 ( face + body)\n6- 13.09 ( face)",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Total 5 sessions",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Your body package\n1- 15.07\n2- 23.07\n3- 02.08\n4- 09.08\n5- 08.09\n6 and 7- 13.09",
+          "is_staff": true
+        },
+        {
+          "sender": "Alya Клиент Crystal",
+          "text": "On 14 Aug she did only body\nToday she did body + face\n‎[13/9/2025, 5:18:12 PM] Crystal Lab: ‎<прикреплено: 00000474-AUDIO-2025-09-13-17-18-12.opus>\n‎[13/9/2025, 5:18:22 PM] Crystal Lab: ‎<прикреплено:",
+          "is_staff": true
+        },
+        {
+          "sender": "Alya Клиент Crystal",
+          "text": "I will call you later dear",
+          "is_staff": true
+        }
+      ]
+    },
+    {
+      "client_name": "Shahili  Gomes-McCoy",
+      "source_file": "00000188-WhatsApp Chat - Shahili Клиент Crystal Gomes-McCoy.zip",
+      "classification": {
+        "services": [
+          "permanent_makeup",
+          "eyelash",
+          "body_face_combo",
+          "pedicure",
+          "face_massage",
+          "eyebrow",
+          "manicure",
+          "hair_makeup",
+          "body_massage",
+          "deep_cleansing"
+        ],
+        "outcome": "booked",
+        "objections": [],
+        "locations": [
+          "abu dhabi",
+          "al ain",
+          "flat 310",
+          "saadiyat"
+        ],
+        "payment_method": "cash",
+        "total_messages": 562,
+        "client_messages": 0,
+        "staff_messages": 562,
+        "multi_message_sequences": 0
+      },
+      "message_count": 562,
+      "sample_start": [
+        {
+          "sender": "Shahili Клиент Crystal Gomes-McCoy",
+          "text": "Shahili Клиент Crystal добавлен(-а) в список контактов.",
+          "is_staff": true
+        },
+        {
+          "sender": "Shahili Клиент Crystal Gomes-McCoy",
+          "text": "Hello",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Welcome to Crystal lab Abudhabi home service🙌\nWe can offer you a lot of beauty services on offer price!\nCertified Russian technicians:\n-Body massage different techniques\n-Face massage\n-Deep face clean",
+          "is_staff": true
+        },
+        {
+          "sender": "Shahili Клиент Crystal Gomes-McCoy",
+          "text": "It’s Shahili",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Hello dear",
+          "is_staff": true
+        }
+      ],
+      "sample_end": [
+        {
+          "sender": "Crystal Lab",
+          "text": "How was your session today?",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Would you like to schedule your next appointment?",
+          "is_staff": true
+        },
+        {
+          "sender": "Shahili Клиент Crystal Gomes-McCoy",
+          "text": "Was good thank you",
+          "is_staff": true
+        },
+        {
+          "sender": "Shahili Клиент Crystal Gomes-McCoy",
+          "text": "I will txt for the next one",
+          "is_staff": true
+        },
+        {
+          "sender": "Crystal Lab",
+          "text": "Waiting for your booking ✅",
+          "is_staff": true
+        }
+      ]
+    }
+  ]
+}

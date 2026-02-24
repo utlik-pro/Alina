@@ -1,335 +1,569 @@
-# Massage Booking System - Product Requirements Document
-
-## 1. Introduction
-
-This document outlines the comprehensive product requirements for a Massage Booking System, an automated solution designed to streamline operations for a mobile massage business. The system will integrate WhatsApp communication, YClients booking management, and automated notifications to reduce administrative overhead and improve service delivery efficiency.
-
-## 2. Product overview
-
-The Massage Booking System is a comprehensive automation platform that handles the entire booking workflow for a mobile massage service. It processes WhatsApp messages from clients, automatically extracts booking information, creates appointments in YClients, manages payments with VAT calculations, tracks subscription packages, and coordinates notifications between massage therapists and drivers.
-
-## 3. Goals and objectives
-
-### 3.1 Primary goals
-- Automate the manual booking process currently handled by administrators
-- Reduce administrative workload by 80% through intelligent data extraction and processing
-- Ensure accurate VAT calculations and payment tracking
-- Streamline communication between clients, therapists, and drivers
-- Provide comprehensive subscription package management
-- Maintain data integrity across all integrated platforms
-
-### 3.2 Success metrics
-- Reduction in manual data entry time from 15 minutes to 2 minutes per booking
-- 99% accuracy in data extraction from WhatsApp messages
-- Real-time notification delivery to all stakeholders
-- Automated VAT calculation compliance
-- Complete audit trail for all transactions
-
-## 4. Target audience
-
-### 4.1 Primary users
-- **Administrators**: Business owners and office staff who manage bookings
-- **Massage Therapists**: Service providers who need location and timing information
-- **Drivers**: Transportation providers who need client location details
-- **Clients**: End users who book services via WhatsApp
-
-### 4.2 User needs
-- **Administrators**: Automated data processing, payment tracking, subscription management
-- **Therapists**: Timely location and schedule notifications
-- **Drivers**: Accurate location information and timing
-- **Clients**: Seamless booking experience via WhatsApp
-
-## 5. Features and requirements
-
-### 5.1 WhatsApp integration and data extraction
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| WA-101 | Message monitoring | Monitor incoming WhatsApp messages for booking requests | High |
-| WA-102 | Data extraction | Extract client name, service type, date/time, and location from messages | High |
-| WA-103 | Template recognition | Recognize structured message templates for consistent data parsing | High |
-| WA-104 | Location processing | Convert location links to coordinates and formatted addresses | High |
-| WA-105 | Validation | Validate extracted data before processing | Medium |
-| WA-106 | Error handling | Handle malformed messages and request clarification | Medium |
-
-### 5.2 YClients integration
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| YC-101 | API integration | Connect to YClients API for appointment creation | High |
-| YC-102 | Appointment creation | Automatically create appointments with extracted data | High |
-| YC-103 | Service mapping | Map extracted service names to YClients service IDs | High |
-| YC-104 | Client management | Create or update client records in YClients | Medium |
-| YC-105 | Status synchronization | Sync appointment status between systems | Medium |
-
-### 5.3 Payment and VAT management
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| PM-101 | VAT calculation | Automatically add 5% VAT to all service prices | High |
-| PM-102 | Payment tracking | Track payment status (paid/unpaid) for each appointment | High |
-| PM-103 | Payment methods | Support cash and card payment tracking | Medium |
-| PM-104 | Manual override | Allow manual payment status updates | Medium |
-| PM-105 | Receipt generation | Generate receipts with VAT breakdown | Low |
-
-### 5.4 Subscription package management
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| SP-101 | Package activation | Activate subscription packages (e.g., 10 sessions) | High |
-| SP-102 | Session tracking | Automatically deduct sessions from active packages | High |
-| SP-103 | Balance monitoring | Track remaining sessions in each package | High |
-| SP-104 | Expiration alerts | Notify administrators when packages are running low | Medium |
-| SP-105 | Package renewal | Facilitate package renewal process | Medium |
-
-### 5.5 Notification system
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| NT-101 | Therapist notifications | Send appointment details to massage therapists | High |
-| NT-102 | Driver notifications | Forward location information to drivers | High |
-| NT-103 | WhatsApp delivery | Deliver notifications via WhatsApp Business API | High |
-| NT-104 | Timing optimization | Send notifications at optimal times (e.g., 1 hour before) | Medium |
-| NT-105 | Confirmation tracking | Track notification delivery and read receipts | Low |
-
-### 5.6 Calendar and scheduling
-
-| Requirement ID | Requirement | Description | Priority |
-|----------------|-------------|-------------|----------|
-| CL-101 | Appointment creation | Create calendar entries with all booking details | High |
-| CL-102 | Conflict detection | Detect scheduling conflicts and suggest alternatives | Medium |
-| CL-103 | Availability checking | Check therapist and driver availability | Medium |
-| CL-104 | Rescheduling support | Handle appointment changes and cancellations | Medium |
-
-## 6. User stories and acceptance criteria
-
-### 6.1 WhatsApp booking processing
-
-**ST-101: Client booking via WhatsApp**
-- As a client, I want to book a massage by sending a WhatsApp message so I can easily schedule my appointment
-- **Acceptance Criteria:**
-  - System recognizes booking messages in WhatsApp
-  - Extracts client name, service type, preferred date/time, and location
-  - Validates all required information is present
-  - Sends confirmation message to client
-  - Creates appointment in YClients automatically
-
-**ST-102: Template-based booking**
-- As a client, I want to use a simple template to provide booking information so the process is consistent
-- **Acceptance Criteria:**
-  - System provides booking template to clients
-  - Template includes fields for name, service, date/time, location
-  - AI correctly parses template-based messages
-  - Handles variations in template format gracefully
-
-**ST-103: Location processing**
-- As a client, I want to share my location via WhatsApp so the therapist can find me easily
-- **Acceptance Criteria:**
-  - System extracts location links from WhatsApp messages
-  - Converts location to readable address format
-  - Stores coordinates for mapping purposes
-  - Includes location in notifications to therapist and driver
-
-### 6.2 Administrative automation
-
-**AD-101: Automated appointment creation**
-- As an administrator, I want appointments to be created automatically so I don't have to manually enter data
-- **Acceptance Criteria:**
-  - System creates YClients appointments without manual intervention
-  - All extracted data is accurately transferred
-  - Appointment includes client details, service, timing, and location
-  - System handles YClients API errors gracefully
-
-**AD-102: Payment tracking**
-- As an administrator, I want to track payment status automatically so I can manage cash flow
-- **Acceptance Criteria:**
-  - System marks appointments as paid/unpaid
-  - Supports cash and card payment methods
-  - Automatically calculates and adds 5% VAT
-  - Provides payment status dashboard
-
-**AD-103: Subscription management**
-- As an administrator, I want to track subscription packages automatically so I can manage client relationships
-- **Acceptance Criteria:**
-  - System tracks active subscription packages
-  - Automatically deducts sessions from packages
-  - Alerts when packages are running low
-  - Provides subscription status reports
-
-### 6.3 Staff coordination
-
-**SC-101: Therapist notifications**
-- As a massage therapist, I want to receive appointment notifications so I know where and when to provide services
-- **Acceptance Criteria:**
-  - System sends WhatsApp notifications to therapists
-  - Notifications include client name, service, time, and location
-  - Notifications are sent at appropriate times (e.g., 1 hour before)
-  - Includes map link for easy navigation
-
-**SC-102: Driver coordination**
-- As a driver, I want to receive location information so I can transport the therapist efficiently
-- **Acceptance Criteria:**
-  - System forwards location details to drivers
-  - Includes timing information for coordination
-  - Provides map links for navigation
-  - Coordinates with therapist schedule
-
-**SC-103: Status updates**
-- As staff, I want to update appointment status so everyone stays informed
-- **Acceptance Criteria:**
-  - Staff can mark appointments as started, completed, or cancelled
-  - Status updates are synchronized across all systems
-  - Administrators receive status change notifications
-  - Status history is maintained for audit purposes
-
-### 6.4 Error handling and edge cases
-
-**EC-101: Invalid booking data**
-- As a client, I want to receive helpful feedback when my booking information is incomplete
-- **Acceptance Criteria:**
-  - System identifies missing or invalid information
-  - Sends helpful error messages requesting clarification
-  - Provides examples of correct format
-  - Maintains partial booking data for completion
-
-**EC-102: System failures**
-- As an administrator, I want the system to handle failures gracefully so business operations continue
-- **Acceptance Criteria:**
-  - System logs all errors for debugging
-  - Provides fallback mechanisms for critical functions
-  - Sends alerts to administrators for system issues
-  - Maintains data integrity during failures
-
-**EC-103: Manual override**
-- As an administrator, I want to manually correct system errors so I can resolve issues quickly
-- **Acceptance Criteria:**
-  - Administrators can manually edit appointment details
-  - System maintains audit trail of manual changes
-  - Manual changes are synchronized across all systems
-  - Provides clear interface for corrections
-
-## 7. Technical requirements
-
-### 7.1 Technology stack
-
-| Requirement ID | Requirement | Description |
-|----------------|-------------|-------------|
-| TS-101 | Backend framework | Use Node.js with Express or Python with FastAPI for robust API development |
-| TS-102 | Database | PostgreSQL for relational data with proper indexing for performance |
-| TS-103 | Message queue | Redis or RabbitMQ for handling WhatsApp message processing |
-| TS-104 | API integration | RESTful APIs for YClients and WhatsApp Business API |
-| TS-105 | Authentication | JWT-based authentication for secure API access |
-| TS-106 | Logging | Structured logging with Winston or similar for debugging |
-| TS-107 | Monitoring | Health checks and performance monitoring |
-
-### 7.2 WhatsApp Business API integration
-
-| Requirement ID | Requirement | Description |
-|----------------|-------------|-------------|
-| WA-201 | Webhook setup | Configure webhooks to receive incoming messages |
-| WA-202 | Message parsing | Implement NLP/pattern matching for data extraction |
-| WA-203 | Template messages | Use WhatsApp Business API templates for structured responses |
-| WA-204 | Media handling | Process location sharing and other media types |
-| WA-205 | Rate limiting | Respect WhatsApp API rate limits and quotas |
-
-### 7.3 YClients API integration
-
-| Requirement ID | Requirement | Description |
-|----------------|-------------|-------------|
-| YC-201 | Authentication | Implement OAuth2 or API key authentication |
-| YC-202 | Appointment CRUD | Full CRUD operations for appointments |
-| YC-203 | Client management | Create and update client records |
-| YC-204 | Service catalog | Sync available services and pricing |
-| YC-205 | Error handling | Handle API errors and retry logic |
-
-### 7.4 Data architecture
-
-| Requirement ID | Requirement | Description |
-|----------------|-------------|-------------|
-| DA-101 | Database schema | Design normalized schema for clients, appointments, payments, subscriptions |
-| DA-102 | Data validation | Implement comprehensive data validation at all layers |
-| DA-103 | Backup strategy | Regular automated backups with point-in-time recovery |
-| DA-104 | Data migration | Support schema migrations for future updates |
-| DA-105 | Audit logging | Track all data changes for compliance and debugging |
-
-### 7.5 Security requirements
-
-| Requirement ID | Requirement | Description |
-|----------------|-------------|-------------|
-| SR-101 | Data encryption | Encrypt sensitive data at rest and in transit |
-| SR-102 | API security | Implement rate limiting and input validation |
-| SR-103 | Access control | Role-based access control for different user types |
-| SR-104 | Audit trail | Comprehensive logging of all system activities |
-| SR-105 | Compliance | Ensure GDPR compliance for client data handling |
-
-## 8. Design and user interface
-
-### 8.1 System architecture
-
-The system will follow a microservices architecture with the following components:
-
-1. **WhatsApp Integration Service**: Handles message reception and parsing
-2. **Booking Processing Service**: Manages appointment creation and validation
-3. **Notification Service**: Coordinates messaging to staff
-4. **Payment Service**: Handles VAT calculations and payment tracking
-5. **Subscription Service**: Manages package tracking and alerts
-6. **YClients Integration Service**: Handles external API communication
-
-### 8.2 Data flow
-
-1. Client sends WhatsApp message → WhatsApp Integration Service
-2. Message parsed → Booking Processing Service
-3. Data validated and appointment created → YClients Integration Service
-4. Notifications sent → Notification Service
-5. Payment and subscription updates → Respective services
-6. Status updates synchronized across all systems
-
-### 8.3 Error handling strategy
-
-- **Graceful degradation**: System continues operating even if external APIs fail
-- **Retry logic**: Automatic retries for transient failures
-- **Fallback mechanisms**: Manual override options for critical functions
-- **Monitoring and alerting**: Proactive notification of system issues
-
-### 8.4 Performance requirements
-
-- **Response time**: WhatsApp message processing within 30 seconds
-- **Availability**: 99.9% uptime for critical booking functions
-- **Scalability**: Support for 100+ daily bookings
-- **Data consistency**: ACID compliance for financial transactions
-
-### 8.5 Integration points
-
-- **WhatsApp Business API**: For message reception and sending
-- **YClients API**: For appointment and client management
-- **Payment gateways**: For payment processing (future enhancement)
-- **Mapping services**: For location processing and directions
-- **Calendar APIs**: For scheduling integration (future enhancement)
-
-## 9. Implementation phases
-
-### Phase 1: Core booking automation (Weeks 1-4)
-- WhatsApp message monitoring and parsing
-- Basic YClients integration
-- Simple notification system
-- Manual payment tracking
-
-### Phase 2: Advanced features (Weeks 5-8)
-- VAT calculation automation
-- Subscription package management
-- Enhanced error handling
-- Staff coordination improvements
-
-### Phase 3: Optimization and scaling (Weeks 9-12)
+# Crystal Lab AI Agent - Product Requirements Document (v2.0)
+# Updated: 2026-02-25
+
+## 1. Business Overview
+
+### 1.1 Company
+**Crystal Lab** — home service beauty salon operating in Abu Dhabi and Al Ain (UAE).
+- Instagram: @crystal_lab_ae
+- WhatsApp: +971 55 193 36 62
+- Studio location: Al Raha, Abu Dhabi (currently closed for maintenance)
+- Free transportation included with all services
+- All therapists are certified Russian specialists with medical education
+
+### 1.2 Current Workflow (Manual)
+1. Targeted ads on Instagram (body massage, face massage, cleansing) for Abu Dhabi and Al Ain
+2. Lead comes in via Instagram DM with a video showing the service/emirate
+3. Admin sends quick response template based on the ad type
+4. If client responds → collect name, WhatsApp number → transfer to salon admin
+5. Admin contacts client via WhatsApp → proposes time slots, consults on services
+6. Admin checks YClients for client history (previous services, active packages)
+7. Admin confirms service, location, address
+8. Booking created in YClients (without location)
+9. Day before: confirmation message sent to client
+10. Day of service: therapist views location, shares with driver
+11. Therapist arrives → notifies admin → admin notifies client
+12. After service: therapist confirms completion, reports payment method to admin
+13. Admin records payment, marks booking complete in YClients
+
+### 1.3 Problem
+All of the above is done manually by 1-2 admins. The AI agent should automate steps 2-8 and partially step 9.
+
+### 1.4 Goal
+Build an AI WhatsApp agent that handles client communication, consultation, and booking for Crystal Lab. The agent should communicate naturally in English (primary) and Arabic, mimicking the current admin's communication style.
+
+## 2. Product: AI WhatsApp Agent
+
+### 2.1 Core Concept
+An AI-powered conversational agent connected to WhatsApp that:
+- Responds to incoming client messages 24/7
+- Consults on services and prices
+- Handles objections (e.g., "too expensive")
+- Collects booking information (service, date/time, location)
+- Creates bookings in YClients
+- Sends confirmations
+- Forwards leads/bookings to admin channel for oversight
+
+### 2.2 What Already Exists (Prototype)
+- Telegram bot prototype: @crystal_lab_bot (November 2025)
+- Telegram leads channel: @crystal_lab_leads
+- Message buffering system (7-second wait for multi-message clients)
+- Express.js server skeleton with API routes
+- Basic service structure (bookingService, whatsappService)
+
+## 3. Service Catalog (Current Prices - February 2026)
+
+**IMPORTANT: All prices are in AED, VAT NOT included.**
+**Payment rules: Cash = tax free (no VAT), Bank transfer = +5% VAT, Terminal = +5% VAT (must request in advance, only 1 terminal available)**
+
+### 3.1 Body Massage
+
+| Service | 60 min | 90 min |
+|---------|--------|--------|
+| Lymphatic drainage | 350 | 460 |
+| Maderatherapie | 350 | 460 |
+| Anti cellulite | 350 | 460 |
+| Postpartum | 350 | 460 |
+| Deep tissue | 350 | 460 |
+| Prenatal (after 4 months) | 350 | - |
+| Body massage with guasha | 350 | 460 |
+| Body massage with cup | 350 | 460 |
+| Body massage with brooms | 350 | 460 |
+| Aftersurgery | 350 | 460 |
+| Mixed signature techniques | 350 | 460 |
+| **Face + body** | **110 min** | **650** |
+
+### 3.2 Body Massage Additional Services
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Back massage | 30 min | 175 |
+| Full body scrubbing | 30 min | 200 |
+| Head spa massage | 15 min | 85 |
+| Hand spa massage | 15 min | 85 |
+| Foot reflexology | 30 min | 175 |
+| Lifting body bandage | 30 min | 250 |
+| Drainage body bandage | 30 min | 250 |
+| Taping | - | from 100 |
+| Neck and shoulders massage | 15 min | 85 |
+| Cupping | 15 min | 100 |
+
+### 3.3 Facial Massage (50 min each)
+
+| Service | Price |
+|---------|-------|
+| Lifting drainage facial massage | 370 |
+| Buccal facial | 370 |
+| Myofascial massage (non-surgical face lift) | 370 |
+| Lifting massage with goasha | 370 |
+| Signature mix techniques | 370 |
+| **Face + body combo** | **110 min / 650** |
+
+### 3.4 Facials
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Deep facial cleansing (8 steps treatment) | 90 min | 420 |
+| Carboxy-therapy | 40 min | 300 |
+
+Deep facial cleansing includes: 1) Cleansing, make up removal 2) Peeling, exfoliating 3) Application of hydrating gel 4) Cleaning with ultrasonic machine 5) Deep manual cleansing 6) Antibacterial toning 7) Soothing mask applying 8) Applying cream by the skin type with SPF
+
+### 3.5 Facial Treatments
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Vitamin C power Brightening Program | 60 min | 350 |
+| CO2 Needle free Carboxy-therapy | 40 min | 300 |
+| Express facial Unstressed | 40 min | 300 |
+
+### 3.6 Facial Additional Services
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Alginate mask | - | 100 |
+| Lifting serum with vitamin C | - | 100 |
+| Face massage | 25 min | 175 |
+| Head spa massage | 15 min | 75 |
+| Hand spa massage | 15 min | 85 |
+
+### 3.7 Body Treatments
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Lymphatic detox wrap | 60 min | 350 |
+| Slim detox wrap with cold mask | 60 min | 350 |
+
+### 3.8 Body Taping / Kineziotaping
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| 1 zone (joint, neck, back, knee, elbow, shoulder) | 20 min | 100 |
+| 2 zones | 30 min | 170 |
+
+### 3.9 Aesthetic Body Correcting
+
+| Service | Duration | Price |
+|---------|----------|-------|
+| Stomach | 20 min | 100 |
+| Hands | 20 min | 100 |
+| Hips | 20 min | 150 |
+| Stomach + hips | 30 min | 220 |
+| Stomach + hips + hands | 40 min | 330 |
+
+### 3.10 Nails
+
+| Service | Price |
+|---------|-------|
+| Russian gelish manicure with machine | 200 |
+| Russian gelish pedicure with machine (smart disc) | 220 |
+| **Combo Russian gellish mani + pedi** | **380** |
+| Japanese mani | 180 |
+| Japanese pedicure | 200 |
+| **Combo Japanese mani + pedi** | **330** |
+| Russian manicure with machine (cleaning) - nail polish included | 130 |
+| Russian pedicure with machine and smart disc (cleaning) - nail polish included | 150 |
+| Nail extensions soft gel | 380 |
+| Nail extensions hard gel | 450 |
+
+### 3.11 Nails Additional
+
+| Service | Price |
+|---------|-------|
+| Old gel removal | 40 |
+| Nail repair (1 nail) | 40 |
+| French design | 60 |
+| Nail design (1 nail) | 10-20 |
+| Chrome design (all nails) | 50 |
+| Ombré design (all nails) | 60 |
+| Cat eye | 50 |
+| Cut and file | 30 |
+| Polish change | 50 |
+| Medical nail polish | 20 |
+| Gel strengthening | 70 |
+
+### 3.12 Lashes and Brows
+
+| Service | Price |
+|---------|-------|
+| Classical volume | 300 |
+| 2d volume | 350 |
+| Russian volume | 400 |
+| Eyelashes removal | 50 |
+| Eyelash lifting | 200 |
+| Eyebrow lamination (shaping included) | 200 |
+| Brow tinting | 80 |
+| Eyelash tinting | 50 |
+| Brow shaping | 40 |
+| Upper lip threading | 35 |
+| Chin threading | 35 |
+| **Eyelash lifting + eyebrow lamination combo** | **350** |
+
+### 3.13 Permanent Make Up
+
+| Service | Price |
+|---------|-------|
+| Lips | 900 |
+| Eyebrows | 900 |
+| Eyeliner | 800 |
+
+### 3.14 Hair and Make Up
+
+| Service | Price |
+|---------|-------|
+| Wavy blow dry | 250 |
+| Hairstyles | from 250 |
+| Evening make up | 600 |
+| Kids make up | 250 |
+
+### 3.15 Face Waxing
+
+| Service | Price |
+|---------|-------|
+| Eyebrow waxing | 40 |
+| Upper lip waxing | 35 |
+| Thin waxing | 35 |
+| Sideburn waxing | 35 |
+| Forehead waxing | 35 |
+| **Full face waxing** | **110** |
+
+### 3.16 Massage Packages (Special Offer)
+
+| Package | Sessions | Duration | Offer Price | Old Price |
+|---------|----------|----------|-------------|-----------|
+| Face massage | 5 sessions | 50 min | 1,650 | 1,850 |
+| Body massage | 5 sessions | 60 min | 1,550 | 1,750 |
+| Body massage | 10 sessions | 60 min | 3,000 | 3,500 |
+| Body massage | 6 sessions | 90 min | 2,590 | 2,760 |
+| Body (60min) + Facial (25min) | 5 sessions | 85 min | 2,200 | 2,675 |
+
+### 3.17 Current Promotional Offers (Winter/Ramadan 2026)
+
+| Offer | Includes | Price | Old Price |
+|-------|----------|-------|-----------|
+| Winter Body Combo | Lymphatic drainage body massage + Facial lifting massage + Head spa treatment + Alginate mask (100 min) | 499 | 720 |
+| Ramadan Deep Cleansing | Deep facial cleansing 8 steps (2 hours) + FREE facial massage + FREE hand massage | 420 | 770 |
+| Winter Nails - Japanese | Japanese manicure + Japanese pedicure | 330 | 380 |
+| Winter Nails - Russian | Russian gellish manicure + pedicure | 380 | 420 |
+| Winter Lamination | Eyelash lifting + Eyebrow lamination | 350 | 400 |
+| Trial Session (NEW CLIENTS ONLY) | Body massage 60min + Face massage 20min = 80min | 350 | 700 |
+| Book a Friend | Refer a friend → get 50 AED coupon | 50 AED off | - |
+
+**Referral program rules:**
+- Client provides contact details and full name of a friend who has never used Crystal Lab services (close relatives allowed)
+- Once the referred friend uses a service and makes payment, the client's coupon is activated
+- Coupon can be used for any service or combined with other coupons from this offer
+
+## 4. Business Rules for AI Agent
+
+### 4.1 Client Communication Rules
+
+1. **Language**: Primary communication in English. Agent should understand Arabic basic phrases and respond in English.
+
+2. **Gender policy**: Crystal Lab is a women-only salon.
+   - If the client is male with inappropriate requests → politely decline and block
+   - Exception: wife booking for husband, couples massage, or existing male client already in YClients database
+   - Always verify against YClients database before rejecting
+
+3. **Returning clients**: Before responding, check YClients for client history:
+   - Previous services and when
+   - Active packages/subscriptions
+   - Recommend based on previous visits
+   - Watch for clients with unfinished packages (even if chat was cleared)
+
+4. **Price communication**: Always state prices WITHOUT VAT, then add:
+   - "Cash - tax free"
+   - "Bank transfer + 5% VAT"
+
+5. **Location info**: "We have a massage studio in Abu Dhabi, Al Raha. But it is currently closed for maintenance. We provide free transportation in Abu Dhabi and Al Ain."
+
+6. **Message buffering**: Wait 7 seconds after receiving a message to collect all messages from client before responding (clients often send 3-4 messages in a row).
+
+7. **Non-responsive clients follow-up**: If client doesn't respond, send a follow-up message after some time with a soft push:
+   "All our therapists with medical education. Before the procedure will consult you, what kind of massage you need to achieve a quick and better result. The effect is already visible after 1 session. Would you like to try?"
+
+### 4.2 Booking Process (Agent Flow)
+
+1. Client initiates contact (from Instagram ad or direct WhatsApp)
+2. Agent identifies the service interest (from ad context or client message)
+3. Agent sends appropriate quick response template (body/face/cleansing)
+4. Consultation: answer questions about services, techniques, prices
+5. Handle objections if any (too expensive, what's included, etc.)
+6. Collect booking info: service, preferred date/time, location/address
+7. Check therapist availability in YClients
+8. Confirm booking details with client
+9. Create booking in YClients
+10. Send confirmation to client using template
+11. Forward lead/booking details to admin channel
+
+### 4.3 Quick Response Templates (from Instagram Ads)
+
+**Body Massage Ad Response:**
+```
+Hello 👋
+WE have an offer for 60min body massage now the old price - 500 aed
+
+✅Now -350 aed
+90 min - 460 aed
+
+Body package 5 sessions-1550 aed
+
+🔸Lymphatic drainage body massage
+🔸Maderatherapie
+🔸Anti cellulite body massage
+🔸Postpartum
+🔸Mixed techniques
+🔸Guasha massage
+🔸Deep tissue massage
+🔸Prenatal after 4 months
+🔸Aftersurgery
+
+🇷🇺Russian female certified therapist
+
+🏘️Abu Dhabi and Alain home service
+
+Portable massage table ✅
+Free transportation ✅
+
+Would you like to book?
+```
+
+**Face Massage Ad Response:**
+```
+Hello 👋
+
+✅WE have an offer for facial massage !!!
+
+the old price -550 aed🔸 - NOW 370 aed 🌟
+
+✅Face massage package
+🔹5 sessions-1650 aed🌟
+
+✅We can do different facial massage techniques:
+🔹lifting drainage facial massage- 50 min 🕛
+🔹buccal facial massage- 50 min🕛
+🔹Myofascial massage ( non-surgical face lift) -50 min 🕛
+🔹Signature mix techniques-50 min 🕛
+
+Top Russian Therapist🇷🇺
+
+Abu Dhabi and Alain home service 🏘️
+
+✅Free transportation
+
+Would you like to book?
+```
+
+**Deep Cleansing Ad Response:**
+```
+👋 Hello
+✅WE have an offer for
+Deep facial cleansing (8 steps treatment)
+✅The duration of the service-90min
+It includes:
+
+1.Cleansing, make up removal
+2.Peeling, exfoliating
+3.Application of hydrating gel
+4.Cleaning with ultrasonic machine
+5.Deep manual cleansing
+6.Antibacterial toning
+7.Soothing mask applying
+8.Applying cream by the skin type with SPF
+
+the old price - 500 aed
+‼️NOW 420 aed 🌟
+
+Top Russian Therapist🇷🇺
+
+Abu Dhabi and Alain home service 🏘️
+
+Would you like to book?
+```
+
+**Welcome Message (new followers):**
+```
+Welcome to Crystal Lab 💎
+
+📍Abu Dhabi and Alain home service🏘️
+
+Thank you for following our page🌹
+
+✅We can offer you a lot of services on offer price!
+✅Certified Russian technicians:
+
+🔹Body massage different techniques
+🔹Face massage
+🔹Deep face cleansing
+🔹Manicure and pedicure
+🔹Eyelashes extension
+🔹Eyebrow lamination and eyelash lifting
+🔹Permanent make up (lips, eyebrows, eyeliner)
+🔹Hairstyle and make up
+
+What services are you interested in?
+```
+
+### 4.4 Objection Handling Scripts
+
+**"Too expensive" response option 1:**
+```
+We have an individual approach to each client. We don't do the same massages. During the first few minutes of the massage, the master performs a body diagnosis and identifies needs that you may not even be aware of.
+
+These include fluid and lymph stagnation, muscle tension that can lead to pain, and blocks that may be causing discomfort. We also focus on addressing cellulite and fat deposits using specialized cosmetics and tools that can help resolve these issues.
+
+Our therapists are medically trained, and each massage is designed to improve your body's health. They will choose the appropriate massage technique or techniques based on your specific needs.
+After the massage, you will receive further recommendations and advice from the therapist.
+
+❗️This is why our massage is a professional and certified service provided by a medically trained therapist.
+```
+
+**"Too expensive" response option 2:**
+```
+We understand the price may seem high, but it includes home service with free transportation 🚗💨, high-quality care, salon services at your home and experienced certified Russian therapists with medical education 🇷🇺✨
+Luxury cosmetic brands.
+You'll feel and see the difference from the very first session 💆‍♀️🌿
+```
+
+**"Where are you located?" response:**
+```
+We have a massage studio in Abu Dhabi, Al Raha. But it is currently closed for maintenance.
+☝️We provide free transportation in Abu Dhabi and Al Ain.
+```
+
+### 4.5 Booking Confirmation Template
+```
+Hello!
+Crystal Lab 💎 home service🏘️ wants to confirm your booking for tomorrow✅
+🔹Service: [service name]
+🔹Time: [time]
+🔹Therapist: [therapist name]
+
+❗Notes: we kindly ask you not to make changes after the booking is confirmed with you🙏. If you cancel your service, the therapist loses these hours.
+Please respect our working timing.🫶
+```
+
+### 4.6 Payment Rules
+
+Three payment methods:
+1. **Cash** — accepted by therapist, NO VAT
+2. **Bank transfer** — +5% VAT, admin provides payment details
+3. **Terminal** — +5% VAT, must be requested in advance (only 1 terminal available, therapist takes it to appointment)
+
+### 4.7 Operational Rules
+
+- **Notifications**: Booking confirmation sent to client 1 day before, once only
+- **Drivers**: Do NOT send anything to drivers from the AI. Therapists handle their own locations and share with drivers directly. Drivers are Pakistani and communication through AI is too risky.
+- **Schedule changes**: Bookings may be moved between therapists or rescheduled. Each change is handled individually, NOT via automated notifications.
+- **Wait list**: If client needs a specific time and it's unavailable, add to wait list. When a cancellation happens, offer the slot to waiting clients.
+- **Late arrivals**: Sometimes therapists are late (driver logistics). Admin manually notifies client about delays.
+- **Upselling**: After confirming the main service, offer additional services and packages where appropriate.
+
+## 5. Technical Architecture
+
+### 5.1 Core Stack
+- **Runtime**: Node.js 18+
+- **Framework**: Express.js (already set up)
+- **AI/LLM**: Claude API or OpenAI API for conversational intelligence
+- **WhatsApp**: WhatsApp Business API (via official Cloud API or BSP like 360dialog)
+- **Booking system**: YClients API
+- **Database**: PostgreSQL (for local state, conversation history, client mapping)
+- **Cache**: Redis (message buffering, rate limiting)
+- **Hosting**: VPS or cloud (AWS/DigitalOcean)
+
+### 5.2 Architecture
+
+```
+Instagram Ads → Client → WhatsApp
+                            ↓
+                   WhatsApp Cloud API (webhook)
+                            ↓
+                   Express.js Server
+                            ↓
+                   Message Buffer (Redis, 7 sec)
+                            ↓
+                   AI Agent (LLM + Knowledge Base)
+                     ↙        ↓         ↘
+              YClients API   Response    Admin Notification
+              (check/book)   to Client   (Telegram/WhatsApp channel)
+```
+
+### 5.3 Key Components
+
+1. **WhatsApp Webhook Handler** — receives incoming messages via Cloud API
+2. **Message Buffer** — collects multi-part messages (7-sec window) via Redis
+3. **Conversation Manager** — maintains conversation state per client
+4. **AI Agent Core** — LLM-based agent with knowledge base (prices, scripts, rules)
+5. **YClients Integration** — check availability, client history, create bookings
+6. **Admin Notifier** — forwards leads and booking confirmations to admin channel
+7. **Knowledge Base** — structured data: prices, offers, FAQ, objection scripts
+
+### 5.4 Data Model
+
+```
+clients: { wa_phone, name, yclients_id, gender, first_contact_date, notes }
+conversations: { client_id, messages[], state, current_intent, created_at }
+bookings: { client_id, yclients_booking_id, service, datetime, location, status, payment_method, payment_status }
+packages: { client_id, package_type, total_sessions, used_sessions, expires_at }
+```
+
+## 6. Implementation Phases
+
+### Phase 1: AI Agent Core (Weeks 1-3)
+- Set up WhatsApp Cloud API connection (webhook + sending)
+- Implement message buffering (7-sec Redis queue)
+- Build AI agent with LLM (knowledge base with prices, scripts, offers)
+- Client conversation flow: greeting → consultation → booking intent detection
+- Admin notification channel (Telegram or WhatsApp group)
+- Basic conversation logging
+
+### Phase 2: YClients Integration (Weeks 3-5)
+- YClients API authentication and client lookup
+- Check client history and active packages
+- Check therapist availability
+- Create bookings from agent conversations
+- Payment tracking (method + VAT calculation)
+
+### Phase 3: Advanced Agent Features (Weeks 5-7)
+- Objection handling with scripted responses
+- Upselling logic (packages, additional services)
+- Follow-up messages for non-responsive clients
+- Booking confirmation messages (day-before)
+- Wait list management
+- Referral program tracking ("Book a Friend")
+
+### Phase 4: Production & Optimization (Weeks 7-9)
+- End-to-end testing with real client scenarios
+- Agent fine-tuning based on exported chat histories (25+ client chats available)
+- Admin override capabilities
+- Monitoring and error alerting
 - Performance optimization
-- Advanced analytics and reporting
-- Mobile app for staff (optional)
-- Additional integrations
+- Staff training and handover
 
-## 10. Success criteria
+## 7. Client Chat Training Data
 
-- **Efficiency improvement**: 80% reduction in manual administrative work
-- **Accuracy**: 99% data extraction accuracy from WhatsApp messages
-- **User satisfaction**: 90% satisfaction rate among administrators
-- **System reliability**: 99.9% uptime for critical functions
-- **Cost savings**: 50% reduction in administrative overhead 
+25+ exported WhatsApp client chat archives are available for training and testing:
+- Sara, Azza, Mai, Faiza, Fatima, Najoud, Amna, Amal, Aysha, Fakhera, Varvara, Hamama, Jennifer, Aliaa, Derya Aktan, Mariam (multiple), Huda, Ghada, Ohood, Shaikha, Hanin, Johanna, Boutayna, Fakhra, Neelanjona, Meera, Alya, Shahili
+
+These chats should be analyzed to:
+1. Understand real client communication patterns
+2. Identify common questions and edge cases
+3. Train the agent's response style to match admin's tone
+4. Build test scenarios for agent validation
+
+## 8. Success Criteria
+
+- Agent handles 80%+ of initial client conversations without admin intervention
+- Correct price and service information in 100% of responses
+- Booking creation accuracy: 95%+
+- Average response time: under 30 seconds (after buffer window)
+- Client satisfaction: no complaints about AI communication quality
+- Admin workload reduction: 60-80%
+
+## 9. Out of Scope (for now)
+
+- Instagram DM integration (future phase)
+- Mobile app for therapists/drivers
+- Automated driver notifications
+- Payment gateway integration
+- Full admin web panel (basic admin channel is sufficient)
+- Multi-language support beyond English (Arabic in future)

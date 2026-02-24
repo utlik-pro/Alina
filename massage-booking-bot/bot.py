@@ -1,0 +1,764 @@
+"""Crystal Lab Booking Bot - Telegram MVP with Database Integration"""
+
+import asyncio
+import time
+from aiogram import Bot, Dispatcher, Router, F
+from aiogram.types import Message, BotCommand, Location
+from aiogram.filters import CommandStart, Command
+from loguru import logger
+
+from config import config
+from dialog_context import dialog_manager
+from agents.booking_agent import BookingAgent
+from database import init_db, get_db, ClientService, MessageService, BookingService, DialogSessionService
+from services.notifications import NotificationService
+from services.follow_up import FollowUpService
+
+# Инициализация роутера
+router = Router()
+
+# Инициализация агента
+booking_agent = BookingAgent()
+
+# Global services (will be initialized in main())
+client_service: ClientService = None
+message_service: MessageService = None
+booking_service: BookingService = None
+dialog_session_service: DialogSessionService = None
+notification_service: NotificationService = None
+follow_up_service: FollowUpService = None
+
+# Message buffering system for handling multiple rapid messages from clients
+message_buffers = {}  # {user_id: [messages]}
+last_activity = {}    # {user_id: timestamp}
+processing_tasks = {} # {user_id: asyncio.Task}
+
+
+@router.message(CommandStart())
+async def command_start_handler(message: Message) -> None:
+    """Обработчик команды /start"""
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+    logger.info(f"Команда /start от пользователя {user_id}")
+
+    # Create or get client in database
+    client = await client_service.get_or_create_client(telegram_id)
+
+    # Notify group about new client (if first time)
+    if client.total_bookings == 0 and notification_service:
+        await notification_service.send_new_client(client)
+
+    # Update dialog context
+    context = dialog_manager.get_or_create_context(user_id)
+    dialog_manager.update_state(user_id, "consulting")
+
+    # Create dialog session in DB
+    await dialog_session_service.get_or_create_session(telegram_id)
+
+    # Приветственное сообщение
+    greeting = """Welcome to Crystal Lab home service🙌
+
+Certified Russian technicians and free transportation to your home 🏠
+Abu Dhabi and Al Ain
+
+We can offer you a lot of beauty services on offer price 🌹
+
+- Body massage (different techniques)
+- Face massage & Deep facial cleansing
+- Manicure and pedicure (Russian gelish & Japanese)
+- Eyelash extensions & lifting
+- Eyebrow lamination
+- Permanent makeup (lips, eyebrows, eyeliner)
+- Hair and makeup
+- Face waxing
+- Cupping therapy
+
+What services are you interested in? We will give you all the details 🌹"""
+
+    await message.answer(greeting)
+
+    # Save messages to database
+    await message_service.save_message(
+        telegram_id=telegram_id,
+        role="assistant",
+        content=greeting,
+    )
+
+
+@router.message(Command("status"))
+async def command_status_handler(message: Message) -> None:
+    """Показать текущий статус бронирования из БД"""
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+
+    try:
+        # Get client from database
+        client = await client_service.get_or_create_client(telegram_id)
+
+        # Get dialog context
+        context = dialog_manager.get_context(user_id)
+        if not context:
+            await message.answer("У вас пока нет активного диалога. Напишите /start")
+            return
+
+        # Format client info
+        name = client.name if client.name else "не указано"
+        location = f"{client.location_latitude},{client.location_longitude}" if client.location_latitude else "не указана"
+        if client.location_details:
+            location += f" ({client.location_details})"
+
+        # Get booking data from context
+        booking_data = context.get("booking_data", {})
+        service = booking_data.get("service", "не выбрана")
+        date_time = booking_data.get("date", "не выбрано")
+        if booking_data.get("time"):
+            date_time = f"{date_time} {booking_data.get('time')}"
+
+        status_message = f"""📊 Статус вашего бронирования:
+
+Состояние: {context.get("state", "unknown")}
+Имя: {name}
+Локация: {location}
+Услуга: {service}
+Дата/время: {date_time}
+Статус брони: {booking_data.get("status", "draft")}"""
+
+        # Add medical notes if any
+        if client.medical_notes:
+            status_message += f"\n\n⚕️ Медицинские заметки:\n{client.medical_notes}"
+
+        await message.answer(status_message)
+
+    except Exception as e:
+        logger.error(f"Error in status command: {e}")
+        await message.answer("Произошла ошибка при получении статуса")
+
+
+@router.message(Command("clear"))
+async def command_clear_handler(message: Message) -> None:
+    """Сброс контекста диалога"""
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+    logger.info(f"Команда /clear от пользователя {user_id}")
+
+    # Clear in-memory context
+    dialog_manager.clear_context(user_id)
+
+    # End session in database
+    await dialog_session_service.end_session(telegram_id)
+
+    await message.answer(
+        "Контекст диалога сброшен. Начните заново с /start"
+    )
+
+
+@router.message(F.location)
+async def handle_location(message: Message) -> None:
+    """Обработка геолокации"""
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+    location: Location = message.location
+
+    logger.info(f"Получена локация от {user_id}: {location.latitude}, {location.longitude}")
+
+    # Update client in database
+    await client_service.update_client(
+        telegram_id=telegram_id,
+        location_latitude=location.latitude,
+        location_longitude=location.longitude,
+    )
+
+    # Update dialog context
+    dialog_manager.update_state(user_id, "location_received")
+
+    # ВАЖНО: Установить флаг что локация получена
+    context = dialog_manager.get_or_create_context(user_id)
+    context.has_location = True
+    context.client_data["location"] = f"{location.latitude},{location.longitude}"
+
+    # Ask for villa/apartment number
+    response = "Thank you! What is your villa or apartment number?"
+    await message.answer(response)
+
+    # Save to database
+    await message_service.save_message(telegram_id, "user", f"[Location: {location.latitude},{location.longitude}]")
+    await message_service.save_message(telegram_id, "assistant", response)
+
+
+@router.message(F.photo)
+async def handle_photo(message: Message) -> None:
+    """Обработка фото"""
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+
+    logger.info(f"Получено фото от {user_id}")
+
+    response = "Thank you for the photo! I've saved it."
+    await message.answer(response)
+
+    # Save to database
+    await message_service.save_message(telegram_id, "user", "[Photo received]")
+    await message_service.save_message(telegram_id, "assistant", response)
+
+
+async def _process_buffered_messages(user_id: int, telegram_id: str, delay_seconds: int = 20) -> None:
+    """
+    Обработка накопленных сообщений после паузы.
+
+    КРИТИЧНО: Реальные клиенты (особенно арабы) отправляют 3-5 сообщений за 10-30 секунд:
+    - "Maybe 19th feb dear" + "Aroun 11" + "Its 1 hr rite?" (38 сек)
+    - GPS + "Villa 20" + [Photo] (1 сек)
+    - "Body" → "Both" (меняют решение за 4 сек)
+    - Несколько подряд с небольшой задержкой
+
+    ОБНОВЛЕНО 22.11.2025: Увеличена задержка с 7 до 20 секунд на основе встречи с клиентом.
+    Без буферизации бот отвечает слишком быстро и пропускает последующие сообщения.
+    """
+    await asyncio.sleep(delay_seconds)
+
+    # Проверяем что нет новых сообщений последние N секунд
+    if time.time() - last_activity.get(user_id, 0) < delay_seconds:
+        logger.debug(f"User {user_id}: новые сообщения поступили, буфер продлен")
+        return
+
+    # Получаем все накопленные сообщения
+    messages = message_buffers.get(user_id, [])
+    if not messages:
+        logger.debug(f"User {user_id}: буфер пуст")
+        return
+
+    logger.info(f"User {user_id}: обработка {len(messages)} накопленных сообщений")
+
+    try:
+        # Get or create client
+        client = await client_service.get_or_create_client(telegram_id)
+
+        # Get dialog context
+        context = dialog_manager.get_or_create_context(user_id)
+
+        # Update session activity
+        await dialog_session_service.update_session_state(
+            telegram_id=telegram_id,
+            state=context.state,
+            context_data=context.to_dict(),
+        )
+
+        # Комбинируем все тексты сообщений в один контекст
+        combined_text = "\n".join(msg.text for msg in messages if msg.text)
+        logger.info(f"User {user_id}: комбинированный текст: {combined_text}")
+
+        # Save all user messages to database
+        for msg in messages:
+            await message_service.save_message(telegram_id, "user", msg.text)
+
+        # ВАЖНО: Извлекаем данные ДО вызова GPT из ВСЕХ сообщений
+        for msg in messages:
+            await _preprocess_user_input(user_id, telegram_id, msg.text, context, client)
+
+        # Process combined message with AI
+        bot_response = await booking_agent.process_message(combined_text, context)
+
+        # Send response только к ПОСЛЕДНЕМУ сообщению
+        last_message = messages[-1]
+
+        # ВАЖНО: Если ответ содержит маркер разделения, отправляем несколько сообщений
+        if "---MESSAGE_SPLIT---" in bot_response:
+            # Разделяем на несколько сообщений
+            sub_messages = bot_response.split("---MESSAGE_SPLIT---")
+            for i, sub_msg in enumerate(sub_messages):
+                sub_msg = sub_msg.strip()
+                if sub_msg:
+                    await last_message.answer(sub_msg)
+                    # Небольшая задержка между сообщениями для лучшего UX
+                    if i < len(sub_messages) - 1:
+                        await asyncio.sleep(0.5)
+        else:
+            # Обычный одиночный ответ
+            await last_message.answer(bot_response)
+
+        # Save bot response to database
+        await message_service.save_message(telegram_id, "assistant", bot_response)
+
+        # Extract and save data from combined text
+        await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке буферизованных сообщений от {user_id}: {e}")
+        if messages:
+            await messages[-1].answer("Извините, произошла техническая ошибка. Попробуйте еще раз.")
+
+    finally:
+        # Очищаем буфер
+        message_buffers[user_id] = []
+        if user_id in processing_tasks:
+            del processing_tasks[user_id]
+
+
+@router.message(F.text)
+async def handle_message(message: Message) -> None:
+    """
+    Обработка текстовых сообщений с буферизацией.
+
+    КРИТИЧНО: Клиенты отправляют множественные сообщения подряд.
+    Бот ждет 20 секунд после получения сообщения перед обработкой,
+    чтобы собрать все сообщения клиента вместе.
+    (Обновлено 22.11.2025: увеличено с 7 до 20 секунд)
+    """
+
+    user_id = message.from_user.id
+    telegram_id = str(user_id)
+    user_message = message.text
+
+    logger.info(f"Сообщение от {user_id}: {user_message}")
+
+    # Reset follow-up counter (client is active)
+    if follow_up_service:
+        follow_up_service.reset_follow_up(user_id)
+
+    # Добавляем сообщение в буфер
+    if user_id not in message_buffers:
+        message_buffers[user_id] = []
+
+    message_buffers[user_id].append(message)
+    last_activity[user_id] = time.time()
+
+    logger.debug(f"User {user_id}: добавлено в буфер ({len(message_buffers[user_id])} сообщений)")
+
+    # Отменяем предыдущую задачу обработки (если есть)
+    if user_id in processing_tasks:
+        old_task = processing_tasks[user_id]
+        if not old_task.done():
+            old_task.cancel()
+            logger.debug(f"User {user_id}: отменена предыдущая задача обработки")
+
+    # Запускаем новую задачу обработки с задержкой 20 секунд (обновлено 22.11.2025)
+    task = asyncio.create_task(_process_buffered_messages(user_id, telegram_id, delay_seconds=20))
+    processing_tasks[user_id] = task
+
+
+async def _preprocess_user_input(
+    user_id: int,
+    telegram_id: str,
+    user_message: str,
+    context,  # DialogContext object
+    client,
+) -> None:
+    """Предобработка пользовательского ввода ДО вызова GPT"""
+
+    # Извлекаем детали локации (villa/apartment number)
+    # Принимаем любое сообщение в состоянии "location_received" как номер виллы
+    if context.state == "location_received":
+        # Если клиент уже предоставил номер виллы, не обрабатывать повторно
+        if not context.client_data.get("location_details"):
+            await client_service.update_client(telegram_id, location_details=user_message.strip())
+            dialog_manager.update_client_data(user_id, "location_details", user_message.strip())
+            dialog_manager.update_state(user_id, "selecting_slot")
+            logger.info(f"Сохранены детали локации: {user_message.strip()}")
+
+    # Извлекаем выбранное время (slot)
+    time_patterns = ["a.m.", "p.m.", "am", "pm", "10:00", "12:00", "4:00", "7:30"]
+    if context.state == "selecting_slot" and any(pattern in user_message.lower() for pattern in time_patterns):
+        # Клиент выбрал время
+        dialog_manager.update_booking_data(user_id, "time", user_message.strip())
+        dialog_manager.update_state(user_id, "confirming")
+        context.has_slot_proposal = True
+        logger.info(f"Выбрано время: {user_message.strip()}")
+
+    # Извлекаем имя клиента
+    # Если состояние "confirming" и имя ещё не сохранено, и сообщение не содержит время/услугу
+    if context.state == "confirming" and not context.client_data.get("name"):
+        potential_name = user_message.strip()
+        # Проверяем что это короткое сообщение без ключевых слов бронирования
+        if (len(potential_name) < 50 and
+            not any(word in potential_name.lower() for word in ["massage", "want", "need", "a.m", "p.m", "min", "aed", "villa", "cash", "bank", "transfer", "pay"])):
+            await client_service.update_client(telegram_id, name=potential_name)
+            dialog_manager.update_client_data(user_id, "name", potential_name)
+            logger.info(f"Сохранено имя ДО GPT: {potential_name}")
+
+    # Извлекаем способ оплаты
+    # Если имя уже сохранено, и клиент упоминает cash/bank/transfer
+    if context.client_data.get("name") and not context.booking_data.get("payment_method"):
+        msg_lower = user_message.lower()
+        if "cash" in msg_lower:
+            dialog_manager.update_booking_data(user_id, "payment_method", "cash")
+            logger.info(f"Выбран способ оплаты: cash")
+        elif "bank" in msg_lower or "transfer" in msg_lower:
+            dialog_manager.update_booking_data(user_id, "payment_method", "transfer")
+            logger.info(f"Выбран способ оплаты: transfer")
+
+    # Извлекаем длительность если клиент выбирает (60 min, 90 min)
+    if context.state == "consulting" and any(x in user_message.lower() for x in ["60", "90", "min", "minutes"]):
+        if "90" in user_message.lower():
+            dialog_manager.update_booking_data(user_id, "service_duration", 90)
+            dialog_manager.update_booking_data(user_id, "price", 480.0)
+            logger.info(f"Обновлена длительность ДО GPT: 90 мин, 480 AED")
+        elif "60" in user_message.lower():
+            dialog_manager.update_booking_data(user_id, "service_duration", 60)
+            dialog_manager.update_booking_data(user_id, "price", 350.0)
+            logger.info(f"Обновлена длительность ДО GPT: 60 мин, 350 AED")
+
+    # Обрабатываем выбор между volume/classic для eyelash extension
+    if context.state == "consulting":
+        msg_lower = user_message.lower()
+        current_service = context.booking_data.get("service_type") or ""
+
+        # Если услуга eyelash extension уже выбрана, и клиент уточняет volume/classic
+        if current_service and "eyelash" in current_service.lower():
+            if "russian" in msg_lower or "russian volume" in msg_lower:
+                dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension Russian volume")
+                dialog_manager.update_booking_data(user_id, "price", 400.0)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension Russian volume, 400 AED")
+            elif "2d" in msg_lower:
+                dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension 2D volume")
+                dialog_manager.update_booking_data(user_id, "price", 350.0)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, 350 AED")
+            elif "volume" in msg_lower:
+                dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension 2D volume")
+                dialog_manager.update_booking_data(user_id, "price", 350.0)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, 350 AED")
+            elif "classic" in msg_lower or "classical" in msg_lower:
+                dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension classical volume")
+                dialog_manager.update_booking_data(user_id, "price", 300.0)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension classical volume, 300 AED")
+
+
+async def _extract_and_save_data(
+    user_id: int,
+    telegram_id: str,
+    user_message: str,
+    bot_response: str,
+    context,  # DialogContext object
+    client,
+) -> None:
+    """Извлечь и сохранить данные из диалога в БД ПОСЛЕ ответа GPT"""
+
+    # Извлекаем медицинские заметки
+    medical_keywords = ["cesarean", "surgery", "operation", "birth", "pregnant", "pain", "bleeding", "medical", "doctor", "hospital"]
+    if any(keyword in user_message.lower() for keyword in medical_keywords):
+        await client_service.update_client(telegram_id, medical_notes=user_message.strip())
+        logger.warning(f"⚕️ Медицинская заметка: {user_message.strip()}")
+
+        # Send alert to group
+        if notification_service:
+            await notification_service.send_medical_note_alert(client, user_message.strip())
+
+    # Извлекаем информацию о услуге из ответа бота (когда бот показывает цены)
+    # Проверяем что услуга еще не была выбрана
+    if ("aed" in bot_response.lower() or "vat" in bot_response.lower()) and context.state == "consulting" and not context.booking_data.get("service_selected", False):
+        # Определяем услугу из сообщения пользователя
+        service_name = "Body massage"  # default
+        duration = 60  # default
+        base_price = 350.0  # default
+
+        msg_lower = user_message.lower()
+
+        # Определяем тип услуги
+        # ВАЖНО: Проверяем комбо Body + Face ПЕРЕД отдельными услугами
+        if ("body" in msg_lower and "face" in msg_lower) and ("massage" in msg_lower or "+" in msg_lower):
+            service_name = "Body + Face massage"
+            duration = 85
+            base_price = 650.0
+        elif "body massage" in msg_lower or ("body" in msg_lower and "massage" in msg_lower):
+            service_name = "Body massage"
+            if "90" in msg_lower or "ninety" in msg_lower:
+                duration = 90
+                base_price = 480.0
+            else:
+                duration = 60
+                base_price = 350.0
+        elif "neck" in msg_lower and ("shoulder" in msg_lower or "back" in msg_lower):
+            service_name = "Neck/shoulders/back massage"
+            duration = 30
+            base_price = 200.0
+        elif "foot" in msg_lower or "reflexology" in msg_lower:
+            service_name = "Foot reflexology"
+            duration = 30
+            base_price = 175.0
+        elif "face massage" in msg_lower or ("face" in msg_lower and "massage" in msg_lower):
+            service_name = "Face massage"
+            duration = 50
+            base_price = 370.0
+        elif "manicure" in msg_lower and "pedicure" in msg_lower:
+            if "japanese" in msg_lower:
+                service_name = "Japanese mani + pedi"
+                base_price = 380.0
+            else:
+                service_name = "Combo mani + pedi"
+                base_price = 380.0
+            duration = None
+        elif "manicure" in msg_lower or "mani" in msg_lower:
+            if "russian" in msg_lower or "gelish" in msg_lower:
+                service_name = "Russian gelish manicure"
+                base_price = 200.0
+            elif "japanese" in msg_lower:
+                service_name = "Japanese manicure"
+                base_price = 180.0
+            else:
+                service_name = "Russian gelish manicure"
+                base_price = 200.0
+            duration = None
+        elif "pedicure" in msg_lower or "pedi" in msg_lower:
+            if "russian" in msg_lower or "gelish" in msg_lower:
+                service_name = "Russian gelish pedicure"
+                base_price = 220.0
+            elif "japanese" in msg_lower:
+                service_name = "Japanese pedicure"
+                base_price = 200.0
+            else:
+                service_name = "Russian gelish pedicure"
+                base_price = 220.0
+            duration = None
+        # ВАЖНО: Проверяем комбо ПЕРЕД отдельными услугами
+        elif ("eyebrow" in msg_lower or "brow" in msg_lower) and ("eyelash" in msg_lower and ("lifting" in msg_lower or "lift" in msg_lower)):
+            service_name = "Eyebrow lamination + Eyelash lifting"
+            base_price = 200.0
+            duration = None
+        elif "eyelash" in msg_lower or "lash" in msg_lower:
+            if "extension" in msg_lower:
+                if "russian" in msg_lower:
+                    service_name = "Eyelash extension Russian volume"
+                    base_price = 400.0
+                elif "2d" in msg_lower:
+                    service_name = "Eyelash extension 2D volume"
+                    base_price = 350.0
+                elif "volume" in msg_lower:
+                    service_name = "Eyelash extension 2D volume"
+                    base_price = 350.0
+                else:
+                    service_name = "Eyelash extension classical volume"
+                    base_price = 300.0
+                duration = None
+            elif "lifting" in msg_lower or "lift" in msg_lower:
+                service_name = "Eyelash lifting"
+                base_price = 150.0
+                duration = None
+        elif "eyebrow" in msg_lower or "brow" in msg_lower:
+            service_name = "Eyebrow lamination"
+            duration = None
+            base_price = 200.0
+        elif "permanent" in msg_lower or "pmu" in msg_lower:
+            if "lip" in msg_lower:
+                service_name = "Permanent makeup lips"
+                base_price = 1200.0
+            elif "brow" in msg_lower or "eyebrow" in msg_lower:
+                service_name = "Permanent makeup eyebrows"
+                base_price = 1000.0
+            elif "eyeliner" in msg_lower or "eye line" in msg_lower:
+                service_name = "Permanent makeup eyeliner"
+                base_price = 800.0
+            else:
+                service_name = "Permanent makeup"
+                base_price = 1000.0
+            duration = None
+        elif "wax" in msg_lower:
+            if "full" in msg_lower:
+                service_name = "Full face waxing"
+                base_price = 100.0
+            elif "lip" in msg_lower:
+                service_name = "Upper lip waxing"
+                base_price = 25.0
+            elif "chin" in msg_lower:
+                service_name = "Chin waxing"
+                base_price = 25.0
+            else:
+                service_name = "Face waxing"
+                base_price = 100.0
+            duration = None
+        elif "cupping" in msg_lower or "hijama" in msg_lower:
+            service_name = "Cupping therapy"
+            base_price = 350.0
+            duration = 60
+        elif "deep face clean" in msg_lower or "deep facial" in msg_lower or "deep cleansing" in msg_lower:
+            service_name = "Deep facial cleansing"
+            duration = 90
+            base_price = 420.0
+        elif "vitamin c" in msg_lower:
+            service_name = "Vitamin C facial treatment"
+            duration = None
+            base_price = 420.0
+        elif "carboxy" in msg_lower:
+            service_name = "Carboxy-therapy"
+            duration = 40
+            base_price = 300.0
+        elif "hair" in msg_lower and "makeup" in msg_lower:
+            service_name = "Hair and makeup"
+            base_price = 500.0
+            duration = None
+        elif "hair" in msg_lower:
+            service_name = "Hairstyle"
+            base_price = 250.0
+            duration = None
+        elif "makeup" in msg_lower:
+            service_name = "Makeup"
+            base_price = 300.0
+            duration = None
+
+        # Сохраняем в booking_data
+        dialog_manager.update_booking_data(user_id, "service_type", service_name)
+        dialog_manager.update_booking_data(user_id, "service_duration", duration)
+        dialog_manager.update_booking_data(user_id, "price", base_price)
+
+        # ВАЖНО: Помечаем что услуга выбрана, чтобы не обрабатывать повторно
+        context.booking_data["service_selected"] = True
+
+        logger.info(f"Сохранена услуга: {service_name}, {duration} мин, {base_price} AED")
+
+    # Определяем завершение бронирования
+    if "booked" in bot_response.lower() and "✅" in bot_response:
+        # Booking confirmed!
+        booking_data = context.booking_data
+
+        # Получаем данные из context
+        service_name = booking_data.get("service_type", "Body massage")
+        duration = booking_data.get("service_duration", 60)
+        base_price = booking_data.get("price", 350.0)
+        booking_time = booking_data.get("time", "TBD")
+        payment_method = booking_data.get("payment_method", "cash")  # Default to cash
+
+        # Парсим дату и время из времени выбранного клиентом
+        # Для MVP используем tomorrow + время
+        from datetime import datetime, timedelta
+        booking_date = datetime.now() + timedelta(days=1)
+        # Пытаемся извлечь время из строки типа "12:00 p.m"
+        if booking_time and booking_time != "TBD":
+            import re
+            time_match = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?)', booking_time.lower())
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2)) if time_match.group(2) else 0
+                am_pm = time_match.group(3).replace('.', '').replace(' ', '')
+
+                if 'p' in am_pm and hour != 12:
+                    hour += 12
+                elif 'a' in am_pm and hour == 12:
+                    hour = 0
+
+                booking_date = booking_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        # Create booking in database
+        booking = await booking_service.create_booking(
+            telegram_id=telegram_id,
+            service_name=service_name,
+            duration=duration,
+            base_price=base_price,
+            booking_date=booking_date,
+            payment_method=payment_method,
+        )
+
+        # Update status
+        await booking_service.update_booking_status(booking.id, "confirmed")
+
+        dialog_manager.update_state(user_id, "completed")
+        logger.info(f"✅ Бронирование {booking.id} создано для {telegram_id}")
+
+        # Send notification to group
+        if notification_service:
+            # ВАЖНО: Получаем свежие данные клиента из БД (с актуальным именем и локацией)
+            fresh_client = await client_service.get_or_create_client(telegram_id)
+            conversation_link = f"tg://openmessage?user_id={user_id}"
+            await notification_service.send_booking_confirmed(fresh_client, booking)
+
+        # Upselling: suggest complementary service after booking
+        if follow_up_service:
+            upsell = follow_up_service.get_upsell_message(service_name)
+            if upsell:
+                # Delay upsell by 30 seconds for natural flow
+                async def _send_upsell(msg_obj, text):
+                    await asyncio.sleep(30)
+                    await msg_obj.answer(text)
+                asyncio.create_task(_send_upsell(messages[-1], upsell))
+
+
+async def main() -> None:
+    """Главная функция запуска бота"""
+    global client_service, message_service, booking_service, dialog_session_service, notification_service, follow_up_service
+
+    # Проверка конфигурации
+    if not config.validate():
+        logger.error("Ошибка конфигурации! Проверьте .env файл")
+        return
+
+    # Initialize database
+    logger.info("Initializing database...")
+    db = init_db(config.DATABASE_URL)
+    await db.create_tables()  # Create tables if they don't exist
+
+    # Initialize services
+    client_service = ClientService(db)
+    message_service = MessageService(db)
+    booking_service = BookingService(db)
+    dialog_session_service = DialogSessionService(db)
+
+    logger.info("✅ Database services initialized")
+
+    # Инициализация бота и диспетчера
+    bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
+    dp = Dispatcher()
+    dp.include_router(router)
+
+    # Initialize notification service
+    if config.ADMIN_GROUP_CHAT_ID:
+        notification_service = NotificationService(bot, config.ADMIN_GROUP_CHAT_ID)
+        logger.info(f"✅ Notifications enabled for group {config.ADMIN_GROUP_CHAT_ID}")
+    else:
+        logger.warning("⚠️ ADMIN_GROUP_CHAT_ID not set - group notifications disabled")
+
+    # Initialize follow-up service
+    async def _send_telegram_follow_up(user_id: str, text: str):
+        """Send follow-up message via Telegram."""
+        try:
+            await bot.send_message(chat_id=int(user_id), text=text)
+        except Exception as e:
+            logger.error(f"Failed to send follow-up to {user_id}: {e}")
+
+    follow_up_service = FollowUpService(
+        send_message=_send_telegram_follow_up,
+        notification_service=notification_service,
+    )
+    await follow_up_service.start(check_interval=300)  # Check every 5 min
+    logger.info("Follow-up service started")
+
+    # Установка команд меню бота
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Начать диалог / Показать услуги"),
+        BotCommand(command="status", description="Показать статус бронирования"),
+        BotCommand(command="clear", description="Сброс истории и контекста"),
+    ])
+
+    logger.info("🤖 Crystal Lab Booking Bot запущен!")
+    logger.info(f"   Модель: {config.OPENAI_MODEL}")
+    logger.info(f"   Database: {config.DATABASE_URL}")
+    logger.info(f"   Mock режим: YClients={config.MOCK_YCLIENTS}, WhatsApp={config.MOCK_WHATSAPP}")
+
+    # Запуск обработки входящих обновлений
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
+    finally:
+        if follow_up_service:
+            await follow_up_service.stop()
+        await bot.session.close()
+        await db.close()
+
+
+def start_polling():
+    """Запуск бота"""
+
+    logger.info("🚀 Запуск Crystal Lab Booking Bot...")
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"💥 Критическая ошибка: {e}")
+
+
+if __name__ == "__main__":
+    start_polling()
