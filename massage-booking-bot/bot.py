@@ -239,8 +239,25 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
         # Get or create client
         client = await client_service.get_or_create_client(telegram_id)
 
-        # Get dialog context
+        # Get dialog context (и загрузить историю из БД если контекст новый)
         context = dialog_manager.get_or_create_context(user_id)
+
+        if not context.recent_messages:
+            # Контекст пустой — загружаем историю из базы данных
+            db_history = await message_service.get_conversation_history(telegram_id)
+            if db_history:
+                for msg in db_history[-20:]:  # Последние 20 сообщений
+                    context.recent_messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"],
+                    })
+                logger.info(f"User {user_id}: загружено {len(context.recent_messages)} сообщений из БД")
+
+            # Загружаем имя и локацию клиента из БД
+            if client.name and not context.client_data.get("name"):
+                context.client_data["name"] = client.name
+            if client.location_details and not context.client_data.get("location_details"):
+                context.client_data["location_details"] = client.location_details
 
         # Update session activity
         await dialog_session_service.update_session_state(
