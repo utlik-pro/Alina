@@ -17,6 +17,7 @@ from loguru import logger
 
 from dialog_context import dialog_manager
 from services.lost_client_messages import get_lost_client_message_by_attempt
+from prices import get_price
 
 
 # Follow-up timing configuration
@@ -30,28 +31,34 @@ FOLLOW_UP_DELAYS = [
 MAX_FOLLOW_UPS = 5
 
 # Upselling recommendations based on booked service
-UPSELL_RECOMMENDATIONS = {
-    "Body massage": [
-        "Would you also like to add a face massage? Body + Face combo is just 650 AED (saves 70 AED)! 🌹",
-        "Many clients add head spa to their body massage session. Would you like that too?",
-    ],
-    "Face massage": [
-        "Would you like to combine with body massage? Body + Face combo is just 650 AED 🌹",
-        "Our Deep Facial Cleansing (420 AED) is very popular - great results! Would you like to add it?",
-    ],
-    "Deep facial cleansing": [
-        "Many clients add a face massage after cleansing for best results. Interested? 🌹",
-    ],
-    "Combo mani + pedi": [
-        "Would you also like eyebrow lamination or eyelash lifting while you're at it? 🌹",
-    ],
-    "Eyelash extension": [
-        "Would you like to add eyebrow lamination as well? 200 AED 🌹",
-    ],
-    "Eyebrow lamination": [
-        "Eyelash lifting pairs perfectly with brow lamination - combo just 200 AED! 🌹",
-    ],
-}
+# Prices loaded from prices.py (single source of truth)
+def _build_upsell_recommendations():
+    """Build upsell messages with dynamic prices from prices.py."""
+    _p = get_price
+    return {
+        "Body massage": [
+            f"Would you also like to add a face massage? Body + Face combo is just {_p('body_face_combo'):.0f} AED (saves 70 AED)! 🌹",
+            "Many clients add head spa to their body massage session. Would you like that too?",
+        ],
+        "Face massage": [
+            f"Would you like to combine with body massage? Body + Face combo is just {_p('body_face_combo'):.0f} AED 🌹",
+            f"Our Deep Facial Cleansing ({_p('deep_facial_cleansing'):.0f} AED) is very popular - great results! Would you like to add it?",
+        ],
+        "Deep facial cleansing": [
+            "Many clients add a face massage after cleansing for best results. Interested? 🌹",
+        ],
+        "Combo mani + pedi": [
+            "Would you also like eyebrow lamination or eyelash lifting while you're at it? 🌹",
+        ],
+        "Eyelash extension": [
+            f"Would you like to add eyebrow lamination as well? {_p('brow_lamination'):.0f} AED 🌹",
+        ],
+        "Eyebrow lamination": [
+            f"Eyelash lifting pairs perfectly with brow lamination - combo just {_p('lash_brow_combo'):.0f} AED! 🌹",
+        ],
+    }
+
+UPSELL_RECOMMENDATIONS = _build_upsell_recommendations()
 
 # Day-before confirmation template
 DAY_BEFORE_TEMPLATE = """Hi dear! Just a reminder about your appointment tomorrow:

@@ -10,9 +10,11 @@ from loguru import logger
 from config import config
 from dialog_context import dialog_manager
 from agents.booking_agent import BookingAgent
+from prices import get_price, get_service, SERVICE_CATALOG as PRICE_CATALOG
 from database import init_db, get_db, ClientService, MessageService, BookingService, DialogSessionService
 from services.notifications import NotificationService
 from services.follow_up import FollowUpService
+from services.message_buffer import init_buffer, get_buffer, MessageBuffer
 
 # Инициализация роутера
 router = Router()
@@ -27,11 +29,7 @@ booking_service: BookingService = None
 dialog_session_service: DialogSessionService = None
 notification_service: NotificationService = None
 follow_up_service: FollowUpService = None
-
-# Message buffering system for handling multiple rapid messages from clients
-message_buffers = {}  # {user_id: [messages]}
-last_activity = {}    # {user_id: timestamp}
-processing_tasks = {} # {user_id: asyncio.Task}
+msg_buffer: MessageBuffer = None
 
 
 @router.message(CommandStart())
@@ -214,25 +212,28 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
     - "Maybe 19th feb dear" + "Aroun 11" + "Its 1 hr rite?" (38 сек)
     - GPS + "Villa 20" + [Photo] (1 сек)
     - "Body" → "Both" (меняют решение за 4 сек)
-    - Несколько подряд с небольшой задержкой
 
     ОБНОВЛЕНО 22.11.2025: Увеличена задержка с 7 до 20 секунд на основе встречи с клиентом.
-    Без буферизации бот отвечает слишком быстро и пропускает последующие сообщения.
     """
     await asyncio.sleep(delay_seconds)
 
     # Проверяем что нет новых сообщений последние N секунд
-    if time.time() - last_activity.get(user_id, 0) < delay_seconds:
+    last_ts = await msg_buffer.get_last_activity(str(user_id))
+    if time.time() - last_ts < delay_seconds:
         logger.debug(f"User {user_id}: новые сообщения поступили, буфер продлен")
         return
 
-    # Получаем все накопленные сообщения
-    messages = message_buffers.get(user_id, [])
-    if not messages:
+    # Получаем все накопленные сообщения (stored as dicts with "text" and "message" keys)
+    buffered = await msg_buffer.get_messages(str(user_id))
+    if not buffered:
         logger.debug(f"User {user_id}: буфер пуст")
         return
 
-    logger.info(f"User {user_id}: обработка {len(messages)} накопленных сообщений")
+    logger.info(f"User {user_id}: обработка {len(buffered)} накопленных сообщений")
+
+    # We need the original Message objects for .answer() — stored in memory
+    # The Redis buffer stores serializable data; original objects are in _memory_buffers
+    original_messages = msg_buffer._memory_buffers.get(str(user_id), [])
 
     try:
         # Get or create client
@@ -249,37 +250,36 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
         )
 
         # Комбинируем все тексты сообщений в один контекст
-        combined_text = "\n".join(msg.text for msg in messages if msg.text)
+        combined_text = "\n".join(m.get("text", "") for m in buffered if m.get("text"))
         logger.info(f"User {user_id}: комбинированный текст: {combined_text}")
 
         # Save all user messages to database
-        for msg in messages:
-            await message_service.save_message(telegram_id, "user", msg.text)
+        for m in buffered:
+            if m.get("text"):
+                await message_service.save_message(telegram_id, "user", m["text"])
 
         # ВАЖНО: Извлекаем данные ДО вызова GPT из ВСЕХ сообщений
-        for msg in messages:
-            await _preprocess_user_input(user_id, telegram_id, msg.text, context, client)
+        for m in buffered:
+            if m.get("text"):
+                await _preprocess_user_input(user_id, telegram_id, m["text"], context, client)
 
         # Process combined message with AI
         bot_response = await booking_agent.process_message(combined_text, context)
 
-        # Send response только к ПОСЛЕДНЕМУ сообщению
-        last_message = messages[-1]
+        # Send response через последний оригинальный Message object
+        last_msg_obj = original_messages[-1] if original_messages else None
 
-        # ВАЖНО: Если ответ содержит маркер разделения, отправляем несколько сообщений
-        if "---MESSAGE_SPLIT---" in bot_response:
-            # Разделяем на несколько сообщений
-            sub_messages = bot_response.split("---MESSAGE_SPLIT---")
-            for i, sub_msg in enumerate(sub_messages):
-                sub_msg = sub_msg.strip()
-                if sub_msg:
-                    await last_message.answer(sub_msg)
-                    # Небольшая задержка между сообщениями для лучшего UX
-                    if i < len(sub_messages) - 1:
-                        await asyncio.sleep(0.5)
-        else:
-            # Обычный одиночный ответ
-            await last_message.answer(bot_response)
+        if last_msg_obj:
+            if "---MESSAGE_SPLIT---" in bot_response:
+                sub_messages = bot_response.split("---MESSAGE_SPLIT---")
+                for i, sub_msg in enumerate(sub_messages):
+                    sub_msg = sub_msg.strip()
+                    if sub_msg:
+                        await last_msg_obj.answer(sub_msg)
+                        if i < len(sub_messages) - 1:
+                            await asyncio.sleep(0.5)
+            else:
+                await last_msg_obj.answer(bot_response)
 
         # Save bot response to database
         await message_service.save_message(telegram_id, "assistant", bot_response)
@@ -289,14 +289,13 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
 
     except Exception as e:
         logger.error(f"Ошибка при обработке буферизованных сообщений от {user_id}: {e}")
-        if messages:
-            await messages[-1].answer("Извините, произошла техническая ошибка. Попробуйте еще раз.")
+        if original_messages:
+            await original_messages[-1].answer("Извините, произошла техническая ошибка. Попробуйте еще раз.")
 
     finally:
-        # Очищаем буфер
-        message_buffers[user_id] = []
-        if user_id in processing_tasks:
-            del processing_tasks[user_id]
+        await msg_buffer.clear_messages(str(user_id))
+        msg_buffer._memory_buffers.pop(str(user_id), None)
+        msg_buffer.clear_processing_task(str(user_id))
 
 
 @router.message(F.text)
@@ -320,25 +319,23 @@ async def handle_message(message: Message) -> None:
     if follow_up_service:
         follow_up_service.reset_follow_up(user_id)
 
-    # Добавляем сообщение в буфер
-    if user_id not in message_buffers:
-        message_buffers[user_id] = []
+    # Добавляем сообщение в буфер (Redis-backed)
+    user_key = str(user_id)
+    count = await msg_buffer.add_message(user_key, {"text": user_message})
+    # Also store original Message object in memory (for .answer())
+    if user_key not in msg_buffer._memory_buffers:
+        msg_buffer._memory_buffers[user_key] = []
+    msg_buffer._memory_buffers[user_key].append(message)
+    await msg_buffer.update_activity(user_key)
 
-    message_buffers[user_id].append(message)
-    last_activity[user_id] = time.time()
-
-    logger.debug(f"User {user_id}: добавлено в буфер ({len(message_buffers[user_id])} сообщений)")
+    logger.debug(f"User {user_id}: добавлено в буфер ({count} сообщений)")
 
     # Отменяем предыдущую задачу обработки (если есть)
-    if user_id in processing_tasks:
-        old_task = processing_tasks[user_id]
-        if not old_task.done():
-            old_task.cancel()
-            logger.debug(f"User {user_id}: отменена предыдущая задача обработки")
+    msg_buffer.cancel_processing_task(user_key)
 
     # Запускаем новую задачу обработки с задержкой 20 секунд (обновлено 22.11.2025)
     task = asyncio.create_task(_process_buffered_messages(user_id, telegram_id, delay_seconds=20))
-    processing_tasks[user_id] = task
+    msg_buffer.set_processing_task(user_key, task)
 
 
 async def _preprocess_user_input(
@@ -451,9 +448,11 @@ async def _extract_and_save_data(
     # Проверяем что услуга еще не была выбрана
     if ("aed" in bot_response.lower() or "vat" in bot_response.lower()) and context.state == "consulting" and not context.booking_data.get("service_selected", False):
         # Определяем услугу из сообщения пользователя
+        # Цены берутся из prices.py (единый источник правды)
+        _p = get_price  # shorthand
         service_name = "Body massage"  # default
         duration = 60  # default
-        base_price = 350.0  # default
+        base_price = _p("body_massage_60")  # default
 
         msg_lower = user_message.lower()
 
@@ -461,141 +460,141 @@ async def _extract_and_save_data(
         # ВАЖНО: Проверяем комбо Body + Face ПЕРЕД отдельными услугами
         if ("body" in msg_lower and "face" in msg_lower) and ("massage" in msg_lower or "+" in msg_lower):
             service_name = "Body + Face massage"
-            duration = 85
-            base_price = 650.0
+            duration = get_service("body_face_combo")["duration"]
+            base_price = _p("body_face_combo")
         elif "body massage" in msg_lower or ("body" in msg_lower and "massage" in msg_lower):
             service_name = "Body massage"
             if "90" in msg_lower or "ninety" in msg_lower:
                 duration = 90
-                base_price = 480.0
+                base_price = _p("body_massage_90")
             else:
                 duration = 60
-                base_price = 350.0
+                base_price = _p("body_massage_60")
         elif "neck" in msg_lower and ("shoulder" in msg_lower or "back" in msg_lower):
             service_name = "Neck/shoulders/back massage"
             duration = 30
-            base_price = 200.0
+            base_price = _p("neck_shoulders")
         elif "foot" in msg_lower or "reflexology" in msg_lower:
             service_name = "Foot reflexology"
             duration = 30
-            base_price = 175.0
+            base_price = _p("foot_reflexology")
         elif "face massage" in msg_lower or ("face" in msg_lower and "massage" in msg_lower):
             service_name = "Face massage"
             duration = 50
-            base_price = 370.0
+            base_price = _p("face_massage")
         elif "manicure" in msg_lower and "pedicure" in msg_lower:
             if "japanese" in msg_lower:
                 service_name = "Japanese mani + pedi"
-                base_price = 380.0
+                base_price = _p("japanese_combo")
             else:
                 service_name = "Combo mani + pedi"
-                base_price = 380.0
+                base_price = _p("russian_combo")
             duration = None
         elif "manicure" in msg_lower or "mani" in msg_lower:
             if "russian" in msg_lower or "gelish" in msg_lower:
                 service_name = "Russian gelish manicure"
-                base_price = 200.0
+                base_price = _p("russian_mani")
             elif "japanese" in msg_lower:
                 service_name = "Japanese manicure"
-                base_price = 180.0
+                base_price = _p("japanese_mani")
             else:
                 service_name = "Russian gelish manicure"
-                base_price = 200.0
+                base_price = _p("russian_mani")
             duration = None
         elif "pedicure" in msg_lower or "pedi" in msg_lower:
             if "russian" in msg_lower or "gelish" in msg_lower:
                 service_name = "Russian gelish pedicure"
-                base_price = 220.0
+                base_price = _p("russian_pedi")
             elif "japanese" in msg_lower:
                 service_name = "Japanese pedicure"
-                base_price = 200.0
+                base_price = _p("japanese_pedi")
             else:
                 service_name = "Russian gelish pedicure"
-                base_price = 220.0
+                base_price = _p("russian_pedi")
             duration = None
         # ВАЖНО: Проверяем комбо ПЕРЕД отдельными услугами
         elif ("eyebrow" in msg_lower or "brow" in msg_lower) and ("eyelash" in msg_lower and ("lifting" in msg_lower or "lift" in msg_lower)):
             service_name = "Eyebrow lamination + Eyelash lifting"
-            base_price = 200.0
+            base_price = _p("lash_brow_combo")
             duration = None
         elif "eyelash" in msg_lower or "lash" in msg_lower:
             if "extension" in msg_lower:
                 if "russian" in msg_lower:
                     service_name = "Eyelash extension Russian volume"
-                    base_price = 400.0
+                    base_price = _p("lash_ext_russian")
                 elif "2d" in msg_lower:
                     service_name = "Eyelash extension 2D volume"
-                    base_price = 350.0
+                    base_price = _p("lash_ext_2d")
                 elif "volume" in msg_lower:
                     service_name = "Eyelash extension 2D volume"
-                    base_price = 350.0
+                    base_price = _p("lash_ext_2d")
                 else:
                     service_name = "Eyelash extension classical volume"
-                    base_price = 300.0
+                    base_price = _p("lash_ext_classic")
                 duration = None
             elif "lifting" in msg_lower or "lift" in msg_lower:
                 service_name = "Eyelash lifting"
-                base_price = 150.0
+                base_price = _p("lash_lifting")
                 duration = None
         elif "eyebrow" in msg_lower or "brow" in msg_lower:
             service_name = "Eyebrow lamination"
             duration = None
-            base_price = 200.0
+            base_price = _p("brow_lamination")
         elif "permanent" in msg_lower or "pmu" in msg_lower:
             if "lip" in msg_lower:
                 service_name = "Permanent makeup lips"
-                base_price = 1200.0
+                base_price = _p("pmu_lips")
             elif "brow" in msg_lower or "eyebrow" in msg_lower:
                 service_name = "Permanent makeup eyebrows"
-                base_price = 1000.0
+                base_price = _p("pmu_eyebrows")
             elif "eyeliner" in msg_lower or "eye line" in msg_lower:
                 service_name = "Permanent makeup eyeliner"
-                base_price = 800.0
+                base_price = _p("pmu_eyeliner")
             else:
                 service_name = "Permanent makeup"
-                base_price = 1000.0
+                base_price = _p("pmu_eyebrows")
             duration = None
         elif "wax" in msg_lower:
             if "full" in msg_lower:
                 service_name = "Full face waxing"
-                base_price = 100.0
+                base_price = _p("wax_full_face")
             elif "lip" in msg_lower:
                 service_name = "Upper lip waxing"
-                base_price = 25.0
+                base_price = _p("wax_upper_lip")
             elif "chin" in msg_lower:
                 service_name = "Chin waxing"
-                base_price = 25.0
+                base_price = _p("wax_chin")
             else:
                 service_name = "Face waxing"
-                base_price = 100.0
+                base_price = _p("wax_full_face")
             duration = None
         elif "cupping" in msg_lower or "hijama" in msg_lower:
             service_name = "Cupping therapy"
-            base_price = 350.0
+            base_price = _p("cupping")
             duration = 60
         elif "deep face clean" in msg_lower or "deep facial" in msg_lower or "deep cleansing" in msg_lower:
             service_name = "Deep facial cleansing"
             duration = 90
-            base_price = 420.0
+            base_price = _p("deep_facial_cleansing")
         elif "vitamin c" in msg_lower:
             service_name = "Vitamin C facial treatment"
             duration = None
-            base_price = 420.0
+            base_price = _p("vitamin_c_facial")
         elif "carboxy" in msg_lower:
             service_name = "Carboxy-therapy"
             duration = 40
-            base_price = 300.0
+            base_price = _p("carboxy_therapy")
         elif "hair" in msg_lower and "makeup" in msg_lower:
             service_name = "Hair and makeup"
-            base_price = 500.0
+            base_price = _p("hair_makeup")
             duration = None
         elif "hair" in msg_lower:
             service_name = "Hairstyle"
-            base_price = 250.0
+            base_price = _p("hairstyle")
             duration = None
         elif "makeup" in msg_lower:
             service_name = "Makeup"
-            base_price = 300.0
+            base_price = _p("makeup")
             duration = None
 
         # Сохраняем в booking_data
@@ -676,12 +675,15 @@ async def _extract_and_save_data(
 
 async def main() -> None:
     """Главная функция запуска бота"""
-    global client_service, message_service, booking_service, dialog_session_service, notification_service, follow_up_service
+    global client_service, message_service, booking_service, dialog_session_service, notification_service, follow_up_service, msg_buffer
 
     # Проверка конфигурации
     if not config.validate():
         logger.error("Ошибка конфигурации! Проверьте .env файл")
         return
+
+    # Initialize message buffer (Redis or in-memory fallback)
+    msg_buffer = await init_buffer(config.REDIS_URL)
 
     # Initialize database
     logger.info("Initializing database...")
@@ -743,6 +745,8 @@ async def main() -> None:
     finally:
         if follow_up_service:
             await follow_up_service.stop()
+        if msg_buffer:
+            await msg_buffer.close()
         await bot.session.close()
         await db.close()
 
