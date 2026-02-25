@@ -17,6 +17,7 @@ from agents.booking_agent import BookingAgent
 from database import init_db, ClientService, MessageService, BookingService, DialogSessionService
 from services.notifications import NotificationService
 from services.whatsapp_api import WhatsAppClient
+from services.message_buffer import init_buffer, MessageBuffer
 
 # ── Global Services ───────────────────────────────────────────────────
 
@@ -29,11 +30,7 @@ message_service: MessageService = None
 booking_service: BookingService = None
 dialog_session_service: DialogSessionService = None
 notification_service: NotificationService = None
-
-# Message buffering (same approach as Telegram bot)
-message_buffers = {}   # {phone_number: [{"text": ..., "type": ..., ...}]}
-last_activity = {}     # {phone_number: timestamp}
-processing_tasks = {}  # {phone_number: asyncio.Task}
+wa_buffer: MessageBuffer = None
 
 
 # ── App Lifecycle ─────────────────────────────────────────────────────
@@ -43,7 +40,7 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup, clean up on shutdown."""
     global whatsapp_client, notification_bot
     global client_service, message_service, booking_service, dialog_session_service
-    global notification_service
+    global notification_service, wa_buffer
 
     # Validate WhatsApp config
     if not config.WHATSAPP_ACCESS_TOKEN or not config.WHATSAPP_PHONE_NUMBER_ID:
@@ -69,6 +66,9 @@ async def lifespan(app: FastAPI):
     dialog_session_service = DialogSessionService(db)
     logger.info("Database services initialized")
 
+    # Initialize message buffer (Redis or in-memory fallback)
+    wa_buffer = await init_buffer(config.REDIS_URL)
+
     # Initialize Telegram bot for admin notifications (if configured)
     if config.TELEGRAM_BOT_TOKEN and config.ADMIN_GROUP_CHAT_ID:
         from aiogram import Bot
@@ -83,6 +83,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    if wa_buffer:
+        await wa_buffer.close()
     await whatsapp_client.close()
     if notification_bot:
         await notification_bot.session.close()
@@ -165,27 +167,21 @@ async def health_check():
 async def _buffer_text_message(phone: str, text: str, sender_name: str = "") -> None:
     """Add text message to buffer. Same 20-second debounce as Telegram bot."""
 
-    if phone not in message_buffers:
-        message_buffers[phone] = []
-
-    message_buffers[phone].append({
+    count = await wa_buffer.add_message(phone, {
         "text": text,
         "type": "text",
         "sender_name": sender_name,
     })
-    last_activity[phone] = time.time()
+    await wa_buffer.update_activity(phone)
 
-    logger.debug(f"WA {phone}: buffered ({len(message_buffers[phone])} messages)")
+    logger.debug(f"WA {phone}: buffered ({count} messages)")
 
     # Cancel previous processing task
-    if phone in processing_tasks:
-        old_task = processing_tasks[phone]
-        if not old_task.done():
-            old_task.cancel()
+    wa_buffer.cancel_processing_task(phone)
 
     # Start new processing task with 20-second delay
     task = asyncio.create_task(_process_buffered_messages(phone, delay_seconds=20))
-    processing_tasks[phone] = task
+    wa_buffer.set_processing_task(phone, task)
 
 
 async def _process_buffered_messages(phone: str, delay_seconds: int = 20) -> None:
@@ -200,11 +196,12 @@ async def _process_buffered_messages(phone: str, delay_seconds: int = 20) -> Non
     await asyncio.sleep(delay_seconds)
 
     # Check no new messages arrived during sleep
-    if time.time() - last_activity.get(phone, 0) < delay_seconds:
+    last_ts = await wa_buffer.get_last_activity(phone)
+    if time.time() - last_ts < delay_seconds:
         logger.debug(f"WA {phone}: new messages arrived, buffer extended")
         return
 
-    buffered = message_buffers.get(phone, [])
+    buffered = await wa_buffer.get_messages(phone)
     if not buffered:
         return
 
@@ -285,8 +282,8 @@ async def _process_buffered_messages(phone: str, delay_seconds: int = 20) -> Non
             pass
 
     finally:
-        message_buffers[phone] = []
-        processing_tasks.pop(phone, None)
+        await wa_buffer.clear_messages(phone)
+        wa_buffer.clear_processing_task(phone)
 
 
 # ── Message Type Handlers ─────────────────────────────────────────────

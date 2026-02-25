@@ -353,22 +353,36 @@ NEVER apply cancellation penalties automatically."""
                     "content": "🚨 КРИТИЧНО: Если показываешь цены - ТОЛЬКО цифра + AED (например \"350 AED\"). ЗАПРЕЩЕНО добавлять \"+ 5% VAT\" или \"= 367.50 AED\". Клиент НЕ должен видеть расчет VAT!"
                 })
 
-            # Вызываем GPT
+            # Вызываем GPT (без жёсткого лимита токенов — модель сама остановится)
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.3,  # Пониженная температура для строгого следования инструкциям
-                max_tokens=500
             )
 
-            answer = response.choices[0].message.content
+            choice = response.choices[0]
+            answer = choice.message.content or ""
+            tokens_used = response.usage.completion_tokens if response.usage else 0
 
-            logger.info(f"GPT ответ (до очистки): {answer[:100]}...")
+            logger.info(f"GPT: finish_reason={choice.finish_reason}, tokens={tokens_used}, len={len(answer)}")
+
+            # Если ответ обрезан по лимиту — отправляем что есть + предупреждение
+            if choice.finish_reason == "length" and not answer.strip():
+                logger.warning(f"GPT вернул пустой ответ (finish_reason=length). Повторяем запрос.")
+                # Retry без system-напоминаний (меньше токенов)
+                retry_messages = [m for m in messages if not (m["role"] == "system" and "КРИТИЧНО" in m.get("content", ""))]
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=retry_messages,
+                )
+                answer = response.choices[0].message.content or ""
+                logger.info(f"GPT retry: finish_reason={response.choices[0].finish_reason}, len={len(answer)}")
+
+            logger.info(f"GPT ответ (до очистки): {repr(answer[:200])}")
 
             # КРИТИЧНО: Постобработка - удаляем упоминания VAT из ответа
             answer = self._remove_vat_from_response(answer)
 
-            logger.info(f"GPT ответ (после очистки): {answer[:100]}...")
+            logger.info(f"GPT ответ (после очистки, len={len(answer)}): {repr(answer[:200])}")
 
             return answer
 
@@ -387,26 +401,25 @@ NEVER apply cancellation penalties automatically."""
         """
         import re
 
-        # Паттерны для удаления
+        # Паттерны для удаления (только расчёты с ценами, НЕ сноску "Bank transfer + 5% VAT")
         patterns = [
             # "350 AED + 5% VAT = 367.50 AED" -> "350 AED"
             (r'(\d+(?:\.\d+)?)\s*AED\s*\+\s*5%\s*VAT\s*=\s*\d+(?:\.\d+)?\s*AED', r'\1 AED'),
-            # "350 AED + 5% VAT" -> "350 AED"
+            # "350 AED + 5% VAT" -> "350 AED" (цена + VAT)
             (r'(\d+(?:\.\d+)?)\s*AED\s*\+\s*5%\s*VAT', r'\1 AED'),
             # "(including 5% VAT)" -> ""
             (r'\s*\(including\s+5%\s+VAT\)', ''),
             # "(with 5% VAT)" -> ""
             (r'\s*\(with\s+5%\s+VAT\)', ''),
-            # "+ 5% VAT" в конце строки
-            (r'\+\s*5%\s*VAT\s*', ''),
         ]
 
         cleaned = text
         for pattern, replacement in patterns:
             cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
 
-        # Удаляем лишние пробелы
-        cleaned = re.sub(r'\s+', ' ', cleaned)
+        # Удаляем лишние пробелы (но сохраняем переносы строк)
+        cleaned = re.sub(r'[^\S\n]+', ' ', cleaned)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
         cleaned = cleaned.strip()
 
         return cleaned

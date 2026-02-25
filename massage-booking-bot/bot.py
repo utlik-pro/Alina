@@ -231,9 +231,9 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
 
     logger.info(f"User {user_id}: обработка {len(buffered)} накопленных сообщений")
 
-    # We need the original Message objects for .answer() — stored in memory
-    # The Redis buffer stores serializable data; original objects are in _memory_buffers
-    original_messages = msg_buffer._memory_buffers.get(str(user_id), [])
+    # We need the original Message objects for .answer() — stored separately
+    _msg_objects = getattr(msg_buffer, '_message_objects', {})
+    original_messages = _msg_objects.get(str(user_id), [])
 
     try:
         # Get or create client
@@ -253,10 +253,13 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
         combined_text = "\n".join(m.get("text", "") for m in buffered if m.get("text"))
         logger.info(f"User {user_id}: комбинированный текст: {combined_text}")
 
-        # Save all user messages to database
+        # Save all user messages to database AND dialog history
         for m in buffered:
             if m.get("text"):
                 await message_service.save_message(telegram_id, "user", m["text"])
+
+        # Добавляем комбинированное сообщение в историю диалога (для GPT)
+        dialog_manager.add_user_message(user_id, combined_text)
 
         # ВАЖНО: Извлекаем данные ДО вызова GPT из ВСЕХ сообщений
         for m in buffered:
@@ -268,8 +271,9 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
 
         # Send response через последний оригинальный Message object
         last_msg_obj = original_messages[-1] if original_messages else None
+        logger.info(f"User {user_id}: last_msg_obj={'YES' if last_msg_obj else 'NONE'}, response_len={len(bot_response) if bot_response else 0}, response_empty={not (bot_response and bot_response.strip())}")
 
-        if last_msg_obj:
+        if last_msg_obj and bot_response and bot_response.strip():
             if "---MESSAGE_SPLIT---" in bot_response:
                 sub_messages = bot_response.split("---MESSAGE_SPLIT---")
                 for i, sub_msg in enumerate(sub_messages):
@@ -279,10 +283,11 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                         if i < len(sub_messages) - 1:
                             await asyncio.sleep(0.5)
             else:
-                await last_msg_obj.answer(bot_response)
+                await last_msg_obj.answer(bot_response.strip())
 
-        # Save bot response to database
+        # Save bot response to database AND dialog history
         await message_service.save_message(telegram_id, "assistant", bot_response)
+        dialog_manager.add_bot_response(user_id, bot_response)
 
         # Extract and save data from combined text
         await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client)
@@ -294,7 +299,8 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
 
     finally:
         await msg_buffer.clear_messages(str(user_id))
-        msg_buffer._memory_buffers.pop(str(user_id), None)
+        if hasattr(msg_buffer, '_message_objects'):
+            msg_buffer._message_objects.pop(str(user_id), None)
         msg_buffer.clear_processing_task(str(user_id))
 
 
@@ -322,10 +328,12 @@ async def handle_message(message: Message) -> None:
     # Добавляем сообщение в буфер (Redis-backed)
     user_key = str(user_id)
     count = await msg_buffer.add_message(user_key, {"text": user_message})
-    # Also store original Message object in memory (for .answer())
-    if user_key not in msg_buffer._memory_buffers:
-        msg_buffer._memory_buffers[user_key] = []
-    msg_buffer._memory_buffers[user_key].append(message)
+    # Store original Message object separately (for .answer())
+    if not hasattr(msg_buffer, '_message_objects'):
+        msg_buffer._message_objects = {}
+    if user_key not in msg_buffer._message_objects:
+        msg_buffer._message_objects[user_key] = []
+    msg_buffer._message_objects[user_key].append(message)
     await msg_buffer.update_activity(user_key)
 
     logger.debug(f"User {user_id}: добавлено в буфер ({count} сообщений)")
@@ -739,6 +747,7 @@ async def main() -> None:
 
     # Запуск обработки входящих обновлений
     try:
+        await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
