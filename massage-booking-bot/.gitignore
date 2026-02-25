@@ -22,6 +22,19 @@ logs/
 *.swo
 .DS_Store
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage
+.coverage
+htmlcov/
+
 # Test data
 test_*.txt
 *.json.bak
+
+# Bot runtime
+bot.log
+nohup.out
