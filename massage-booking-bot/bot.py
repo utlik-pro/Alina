@@ -290,7 +290,7 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
         dialog_manager.add_bot_response(user_id, bot_response)
 
         # Extract and save data from combined text
-        await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client)
+        await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client, last_msg_obj)
 
     except Exception as e:
         logger.error(f"Ошибка при обработке буферизованных сообщений от {user_id}: {e}")
@@ -355,46 +355,70 @@ async def _preprocess_user_input(
 ) -> None:
     """Предобработка пользовательского ввода ДО вызова GPT"""
 
-    # Извлекаем детали локации (villa/apartment number)
-    # Принимаем любое сообщение в состоянии "location_received" как номер виллы
-    if context.state == "location_received":
-        # Если клиент уже предоставил номер виллы, не обрабатывать повторно
-        if not context.client_data.get("location_details"):
-            await client_service.update_client(telegram_id, location_details=user_message.strip())
-            dialog_manager.update_client_data(user_id, "location_details", user_message.strip())
-            dialog_manager.update_state(user_id, "selecting_slot")
-            logger.info(f"Сохранены детали локации: {user_message.strip()}")
+    import re as _re
+    msg_lower = user_message.lower().strip()
 
-    # Извлекаем выбранное время (slot)
-    time_patterns = ["a.m.", "p.m.", "am", "pm", "10:00", "12:00", "4:00", "7:30"]
-    if context.state == "selecting_slot" and any(pattern in user_message.lower() for pattern in time_patterns):
-        # Клиент выбрал время
+    # ── 1. Извлекаем локацию (текстовую или после GPS) ──
+    location_keywords = ["villa", "apartment", "apt", "tower", "building", "floor", "flat", "house", "studio", "room"]
+    is_location_text = any(kw in msg_lower for kw in location_keywords)
+
+    if context.state == "location_received" and not context.client_data.get("location_details"):
+        # GPS уже был — это номер виллы
+        await client_service.update_client(telegram_id, location_details=user_message.strip())
+        dialog_manager.update_client_data(user_id, "location_details", user_message.strip())
+        dialog_manager.update_state(user_id, "selecting_slot")
+        logger.info(f"Сохранены детали локации (после GPS): {user_message.strip()}")
+    elif is_location_text and not context.client_data.get("location_details"):
+        # Текстовая локация — сохраняем и переводим в selecting_slot
+        await client_service.update_client(telegram_id, location_details=user_message.strip())
+        dialog_manager.update_client_data(user_id, "location_details", user_message.strip())
+        context.has_location = True
+        if context.state in ("consulting", "location_received"):
+            dialog_manager.update_state(user_id, "selecting_slot")
+        logger.info(f"Сохранена текстовая локация: {user_message.strip()}")
+
+    # ── 2. Извлекаем время (без жёсткой привязки к state) ──
+    time_match = _re.search(r'\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?|am|pm)\b', msg_lower)
+    time_match2 = _re.search(r'\b(\d{1,2}):(\d{2})\b', msg_lower)
+    has_day_word = any(w in msg_lower for w in ["today", "tomorrow", "tomor", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])
+
+    if (time_match or time_match2) and not context.booking_data.get("time"):
+        # Сохраняем время если ещё не сохранено
         dialog_manager.update_booking_data(user_id, "time", user_message.strip())
-        dialog_manager.update_state(user_id, "confirming")
+        if context.state in ("consulting", "selecting_slot"):
+            dialog_manager.update_state(user_id, "confirming")
         context.has_slot_proposal = True
         logger.info(f"Выбрано время: {user_message.strip()}")
+    elif has_day_word and not time_match and not context.booking_data.get("date"):
+        # Только день без времени (напр. "tomorrow")
+        dialog_manager.update_booking_data(user_id, "date", user_message.strip())
+        logger.info(f"Выбран день: {user_message.strip()}")
 
-    # Извлекаем имя клиента
-    # Если состояние "confirming" и имя ещё не сохранено, и сообщение не содержит время/услугу
-    if context.state == "confirming" and not context.client_data.get("name"):
-        potential_name = user_message.strip()
-        # Проверяем что это короткое сообщение без ключевых слов бронирования
-        if (len(potential_name) < 50 and
-            not any(word in potential_name.lower() for word in ["massage", "want", "need", "a.m", "p.m", "min", "aed", "villa", "cash", "bank", "transfer", "pay"])):
-            await client_service.update_client(telegram_id, name=potential_name)
-            dialog_manager.update_client_data(user_id, "name", potential_name)
-            logger.info(f"Сохранено имя ДО GPT: {potential_name}")
-
-    # Извлекаем способ оплаты
-    # Если имя уже сохранено, и клиент упоминает cash/bank/transfer
-    if context.client_data.get("name") and not context.booking_data.get("payment_method"):
-        msg_lower = user_message.lower()
+    # ── 3. Извлекаем способ оплаты (в любой момент) ──
+    if not context.booking_data.get("payment_method"):
         if "cash" in msg_lower:
             dialog_manager.update_booking_data(user_id, "payment_method", "cash")
             logger.info(f"Выбран способ оплаты: cash")
         elif "bank" in msg_lower or "transfer" in msg_lower:
             dialog_manager.update_booking_data(user_id, "payment_method", "transfer")
             logger.info(f"Выбран способ оплаты: transfer")
+
+    # ── 4. Извлекаем имя клиента ──
+    # Имя определяем если: ещё не сохранено, время уже есть (бот спрашивает имя после времени),
+    # короткое сообщение без ключевых слов
+    if not context.client_data.get("name") and context.booking_data.get("time"):
+        potential_name = user_message.strip()
+        skip_words = ["massage", "want", "need", "a.m", "p.m", "min", "aed", "villa",
+                       "cash", "bank", "transfer", "pay", "yes", "no", "ok", "hi",
+                       "hello", "apartment", "tower", "today", "tomorrow", "tomor"]
+        if (len(potential_name) < 50 and
+            not any(word in potential_name.lower() for word in skip_words) and
+            not _re.search(r'\d', potential_name)):  # Имя обычно не содержит цифр
+            await client_service.update_client(telegram_id, name=potential_name)
+            dialog_manager.update_client_data(user_id, "name", potential_name)
+            if context.state != "confirming":
+                dialog_manager.update_state(user_id, "confirming")
+            logger.info(f"Сохранено имя: {potential_name}")
 
     # Извлекаем длительность если клиент выбирает (60 min, 90 min)
     if context.state == "consulting" and any(x in user_message.lower() for x in ["60", "90", "min", "minutes"]):
@@ -439,6 +463,7 @@ async def _extract_and_save_data(
     bot_response: str,
     context,  # DialogContext object
     client,
+    last_msg_obj=None,
 ) -> None:
     """Извлечь и сохранить данные из диалога в БД ПОСЛЕ ответа GPT"""
 
@@ -628,13 +653,19 @@ async def _extract_and_save_data(
         payment_method = booking_data.get("payment_method", "cash")  # Default to cash
 
         # Парсим дату и время из времени выбранного клиентом
-        # Для MVP используем tomorrow + время
         from datetime import datetime, timedelta
-        booking_date = datetime.now() + timedelta(days=1)
-        # Пытаемся извлечь время из строки типа "12:00 p.m"
+        import re
+
+        # Определяем дату (today/tomorrow)
+        booking_date_str = booking_data.get("date", "").lower()
+        if "today" in booking_date_str:
+            booking_date = datetime.now()
+        else:
+            booking_date = datetime.now() + timedelta(days=1)  # default: tomorrow
+
+        # Пытаемся извлечь время из строки типа "5pm", "12:00 p.m", "3 pm"
         if booking_time and booking_time != "TBD":
-            import re
-            time_match = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?)', booking_time.lower())
+            time_match = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?|am|pm)', booking_time.lower())
             if time_match:
                 hour = int(time_match.group(1))
                 minute = int(time_match.group(2)) if time_match.group(2) else 0
@@ -646,6 +677,9 @@ async def _extract_and_save_data(
                     hour = 0
 
                 booking_date = booking_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                logger.info(f"Parsed booking time: {booking_time} → {booking_date}")
+            else:
+                logger.warning(f"Could not parse booking time: {booking_time}")
 
         # Create booking in database
         booking = await booking_service.create_booking(
@@ -678,7 +712,8 @@ async def _extract_and_save_data(
                 async def _send_upsell(msg_obj, text):
                     await asyncio.sleep(30)
                     await msg_obj.answer(text)
-                asyncio.create_task(_send_upsell(messages[-1], upsell))
+                if last_msg_obj:
+                    asyncio.create_task(_send_upsell(last_msg_obj, upsell))
 
 
 async def main() -> None:
