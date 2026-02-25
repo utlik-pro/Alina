@@ -15,7 +15,7 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     # Database
     DATABASE_URL: str = os.getenv(
@@ -33,6 +33,9 @@ class Config:
     # Настройки агентов
     RESPONSE_TIMEOUT: int = int(os.getenv("RESPONSE_TIMEOUT", "30"))
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "3"))
+
+    # Redis (for message buffering)
+    REDIS_URL: Optional[str] = os.getenv("REDIS_URL")
 
     # Mock режимы (для MVP без интеграций)
     MOCK_YCLIENTS: bool = os.getenv("MOCK_YCLIENTS", "True").lower() == "true"
