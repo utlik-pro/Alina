@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from sqlalchemy import select, update, func, desc
+from sqlalchemy import select, update, func, desc, delete
 from sqlalchemy.orm import selectinload
 from loguru import logger
 
@@ -74,6 +74,23 @@ class ClientService:
             await session.flush()
             logger.info(f"Updated client {client.id}")
             return client
+
+    async def reset_client(self, telegram_id: str) -> None:
+        """Reset client data (name, location) for fresh start. Keeps medical notes."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Client).where(Client.telegram_id == telegram_id)
+            )
+            client = result.scalar_one_or_none()
+            if not client:
+                return
+            client.name = None
+            client.location_latitude = None
+            client.location_longitude = None
+            client.location_details = None
+            client.updated_at = datetime.utcnow()
+            await session.flush()
+            logger.info(f"Reset client data for {telegram_id}")
 
     async def get_client_stats(self, telegram_id: str) -> Dict[str, Any]:
         """Get client statistics"""
@@ -166,6 +183,22 @@ class MessageService:
         messages = await self.get_recent_messages(telegram_id)
         return [{"role": msg.role, "content": msg.content} for msg in messages]
 
+    async def clear_history(self, telegram_id: str) -> int:
+        """Delete all messages for a client. Returns count of deleted messages."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Client).where(Client.telegram_id == telegram_id)
+            )
+            client = result.scalar_one_or_none()
+            if not client:
+                return 0
+
+            result = await session.execute(
+                delete(Message).where(Message.client_id == client.id)
+            )
+            logger.info(f"Cleared {result.rowcount} messages for client {telegram_id}")
+            return result.rowcount
+
 
 class DialogSessionService:
     """Service for dialog session operations"""
@@ -212,8 +245,11 @@ class DialogSessionService:
                     DialogSession.is_active == True,
                 )
                 .order_by(desc(DialogSession.started_at))
+                .limit(1)
             )
-            dialog_session = result.scalar_one()
+            dialog_session = result.scalar_one_or_none()
+            if not dialog_session:
+                return None
 
             dialog_session.state = state
             dialog_session.last_activity_at = datetime.utcnow()

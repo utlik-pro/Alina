@@ -38,7 +38,7 @@ SERVICE_CATALOG = {
     },
     "body_face_combo": {
         "name": "Body + Face massage",
-        "duration": 85,
+        "duration": 110,
         "price": 650.0,
         "category": "combo",
     },
@@ -66,7 +66,8 @@ SERVICE_CATALOG = {
     "drainage_bandage": {"name": "Drainage body bandage", "duration": 30, "price": 250.0, "category": "body_additional"},
     "taping": {"name": "Taping", "duration": None, "price": 100.0, "category": "body_additional", "price_note": "from"},
     "neck_shoulders": {"name": "Neck and shoulders massage", "duration": 30, "price": 200.0, "category": "body_additional"},
-    "cupping": {"name": "Cupping therapy", "duration": 60, "price": 350.0, "category": "body_additional"},
+    # "cupping" as standalone REMOVED — cupping is a body massage technique (350 AED) or part of 275 AED offer
+    # Kept in SPECIAL_OFFERS as lymphatic_cupping_combo (275 AED)
 
     # ── Facials ───────────────────────────────────────────
     "deep_facial_cleansing": {
@@ -77,16 +78,18 @@ SERVICE_CATALOG = {
         "description": "8 steps, 2h treatment: cleansing, peeling, hydrating gel, ultrasonic machine, deep manual cleansing, antibacterial toning, soothing mask, cream with SPF",
     },
     "carboxy_therapy": {"name": "Carboxy-therapy", "duration": 40, "price": 300.0, "category": "facial"},
+    "carboxy_alginate": {"name": "Carboxy-therapy + alginate mask", "duration": 60, "price": 300.0, "category": "facial"},
+    "shiny_face": {"name": "Shiny face", "duration": None, "price": 299.0, "category": "facial"},
 
     # ── Facial Treatments ─────────────────────────────────
-    "vitamin_c_facial": {"name": "Vitamin C power Brightening Program", "duration": 60, "price": 420.0, "category": "facial_treatment"},
+    # "vitamin_c_facial" REMOVED per Tatyana's request — not in actual price list
     "co2_carboxy": {"name": "CO2 Needle free Carboxy-therapy", "duration": 40, "price": 300.0, "category": "facial_treatment"},
-    "express_facial": {"name": "Express facial Unstressed", "duration": 40, "price": 300.0, "category": "facial_treatment"},
+    # "express_facial" REMOVED per Tatyana's request — not in actual price list
 
     # ── Facial Additional ─────────────────────────────────
     "alginate_mask": {"name": "Alginate mask", "duration": None, "price": 100.0, "category": "facial_additional"},
     "lifting_serum_vc": {"name": "Lifting serum with vitamin C", "duration": None, "price": 100.0, "category": "facial_additional"},
-    "face_massage_25": {"name": "Face massage", "duration": 25, "price": 175.0, "category": "facial_additional"},
+    "face_massage_25": {"name": "Face massage", "duration": 25, "price": 185.0, "category": "facial_additional"},
     "head_spa_15": {"name": "Head spa massage", "duration": 15, "price": 75.0, "category": "facial_additional"},
 
     # ── Body Treatments ───────────────────────────────────
@@ -134,18 +137,18 @@ SERVICE_CATALOG = {
     "lash_ext_2d": {"name": "2D volume eyelash extension", "duration": None, "price": 350.0, "category": "lashes_brows"},
     "lash_ext_russian": {"name": "Russian volume eyelash extension", "duration": None, "price": 400.0, "category": "lashes_brows"},
     "lash_removal": {"name": "Eyelashes removal", "duration": None, "price": 50.0, "category": "lashes_brows"},
-    "lash_lifting": {"name": "Eyelash lifting", "duration": None, "price": 150.0, "category": "lashes_brows"},
+    "lash_lifting": {"name": "Eyelash lifting", "duration": None, "price": 200.0, "category": "lashes_brows"},
     "brow_lamination": {"name": "Eyebrow lamination (shaping included)", "duration": None, "price": 200.0, "category": "lashes_brows"},
     "brow_tinting": {"name": "Brow tinting", "duration": None, "price": 80.0, "category": "lashes_brows"},
     "lash_tinting": {"name": "Eyelash tinting", "duration": None, "price": 50.0, "category": "lashes_brows"},
     "brow_shaping": {"name": "Brow shaping", "duration": None, "price": 40.0, "category": "lashes_brows"},
     "upper_lip_threading": {"name": "Upper lip threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
     "chin_threading": {"name": "Chin threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
-    "lash_brow_combo": {"name": "Combo eyelash lifting + eyebrow lamination", "duration": None, "price": 200.0, "category": "lashes_brows"},
+    "lash_brow_combo": {"name": "Combo eyelash lifting + eyebrow lamination", "duration": None, "price": 350.0, "category": "lashes_brows"},
 
     # ── Permanent Makeup ──────────────────────────────────
-    "pmu_lips": {"name": "Permanent makeup - Lips", "duration": None, "price": 1200.0, "category": "pmu"},
-    "pmu_eyebrows": {"name": "Permanent makeup - Eyebrows", "duration": None, "price": 1000.0, "category": "pmu"},
+    "pmu_lips": {"name": "Permanent makeup - Lips", "duration": None, "price": 900.0, "category": "pmu"},
+    "pmu_eyebrows": {"name": "Permanent makeup - Eyebrows", "duration": None, "price": 900.0, "category": "pmu"},
     "pmu_eyeliner": {"name": "Permanent makeup - Eyeliner", "duration": None, "price": 800.0, "category": "pmu"},
 
     # ── Hair and Makeup ───────────────────────────────────
@@ -172,32 +175,39 @@ SERVICE_CATALOG = {
 
 SPECIAL_OFFERS = {
     "winter_body_combo": {
-        "name": "WINTER BODY COMBO",
+        "name": "OFFER - BODY COMBO",
         "price": 499,
         "was": 720,
         "duration": 100,
         "description": "Lymphatic drainage body massage + Facial lifting massage + Head spa treatment + Alginate mask",
     },
     "ramadan_facial": {
-        "name": "RAMADAN OFFER - Deep Facial Cleansing",
+        "name": "OFFER - Deep Facial Cleansing",
         "price": 420,
         "was": 770,
         "description": "2h treatment + FREE facial massage + FREE hand massage",
     },
     "winter_nails_japanese": {
-        "name": "WINTER NAILS - Japanese mani + pedi",
+        "name": "OFFER - Japanese mani + pedi",
         "price": 330,
         "was": 380,
     },
     "winter_nails_russian": {
-        "name": "WINTER NAILS - Russian gellish mani + pedi",
+        "name": "OFFER - Russian gellish mani + pedi",
         "price": 380,
         "was": 420,
     },
     "winter_lamination": {
-        "name": "WINTER LAMINATION - Eyelash lifting + Eyebrow lamination",
-        "price": 200,
-        "was": 350,
+        "name": "OFFER - Eyelash lifting + Eyebrow lamination",
+        "price": 350,
+        "was": 400,
+    },
+    "lymphatic_cupping_combo": {
+        "name": "NEW OFFER - Lymphatic drainage massage + Cupping + Head spa",
+        "price": 275,
+        "was": 480,
+        "duration": 45,
+        "description": "Lymphatic drainage body massage + Cupping + Head spa treatment",
     },
     "trial_session": {
         "name": "TRIAL SESSION (NEW CLIENTS ONLY)",
@@ -288,16 +298,15 @@ ADDITIONAL BODY SERVICES:
 - Drainage body bandage: 30 min - {p('drainage_bandage'):.0f} AED
 - Taping: from {p('taping'):.0f} AED
 - Neck and shoulders massage: 30 min - {p('neck_shoulders'):.0f} AED
-- Cupping therapy: 60 min - {p('cupping'):.0f} AED
 
 FACIALS:
 - Deep facial cleansing (8 steps, 2h treatment): 90 min - {p('deep_facial_cleansing'):.0f} AED
 - Carboxy-therapy: 40 min - {p('carboxy_therapy'):.0f} AED
+- Carboxy-therapy + alginate mask: 60 min - {p('carboxy_alginate'):.0f} AED
+- Shiny face: {p('shiny_face'):.0f} AED
 
 FACIAL TREATMENTS:
-- Vitamin C power Brightening Program: 60 min - {p('vitamin_c_facial'):.0f} AED
 - CO2 Needle free Carboxy-therapy: 40 min - {p('co2_carboxy'):.0f} AED
-- Express facial Unstressed: 40 min - {p('express_facial'):.0f} AED
 
 FACIAL ADDITIONAL:
 - Alginate mask: {p('alginate_mask'):.0f} AED

@@ -11,6 +11,7 @@ Cultural context (from 22.11.2025 meeting):
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Callable, Awaitable, Optional, Dict, Any
 from loguru import logger
@@ -20,14 +21,37 @@ from services.lost_client_messages import get_lost_client_message_by_attempt
 from prices import get_price
 
 
-# Follow-up timing configuration
+# Trial session follow-up for massage inquiries (5 min delay)
+TRIAL_SESSION_MESSAGE = """Dear, we have trial session for new clients
+(body 60 + face 20)
+80 min = 350 AED 🌟
+
+Share your location please dear and which day/time you prefer? 😊"""
+
+TRIAL_SESSION_IMAGE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "trial_session.jpg")
+
+# Keywords that indicate massage interest
+MASSAGE_KEYWORDS = ["massage", "body", "face", "lymphatic", "deep tissue", "cupping", "relaxing"]
+
+# Follow-up timing — default (initial stage)
 FOLLOW_UP_DELAYS = [
-    timedelta(hours=1),      # 1st follow-up: 1 hour after last activity
-    timedelta(hours=4),      # 2nd: 4 hours
-    timedelta(hours=24),     # 3rd: next day
-    timedelta(hours=48),     # 4th: 2 days
-    timedelta(hours=72),     # 5th: 3 days
+    timedelta(minutes=5),    # 1st follow-up: 5 minutes (trial session for massage)
+    timedelta(hours=1),      # 2nd: 1 hour
+    timedelta(hours=4),      # 3rd: 4 hours
+    timedelta(hours=24),     # 4th: next day
+    timedelta(hours=48),     # 5th: 2 days
 ]
+
+# Follow-up timing — when client is already selecting time/nearly booked (more aggressive)
+FOLLOW_UP_DELAYS_BOOKING = [
+    timedelta(minutes=10),   # 1st: 10 minutes — client was choosing time
+    timedelta(hours=2),      # 2nd: 2 hours
+    timedelta(hours=24),     # 3rd: next day
+]
+
+# States that indicate client is in active booking flow
+BOOKING_FLOW_STATES = {"collecting_location", "selecting_slot", "location_received", "confirming"}
+
 MAX_FOLLOW_UPS = 5
 
 # Upselling recommendations based on booked service
@@ -80,14 +104,17 @@ class FollowUpService:
         self,
         send_message: Callable[[str, str], Awaitable[None]],
         notification_service=None,
+        send_photo: Callable[[str, str, str], Awaitable[None]] = None,
     ):
         """
         Args:
             send_message: async function(user_id, text) to send message to client
             notification_service: NotificationService for admin alerts
+            send_photo: async function(user_id, photo_path, caption) to send photo to client
         """
         self.send_message = send_message
         self.notification_service = notification_service
+        self.send_photo = send_photo
         self._running = False
         self._task: Optional[asyncio.Task] = None
 
@@ -144,27 +171,42 @@ class FollowUpService:
             if state["count"] >= MAX_FOLLOW_UPS:
                 continue
 
+            # Pick delay schedule based on booking stage
+            is_booking_flow = context.state in BOOKING_FLOW_STATES
+            delays = FOLLOW_UP_DELAYS_BOOKING if is_booking_flow else FOLLOW_UP_DELAYS
+
             # Check timing: should we send next follow-up?
-            if state["count"] < len(FOLLOW_UP_DELAYS):
-                required_delay = FOLLOW_UP_DELAYS[state["count"]]
+            if state["count"] < len(delays):
+                required_delay = delays[state["count"]]
             else:
-                required_delay = FOLLOW_UP_DELAYS[-1]  # Use last delay for any extra
+                required_delay = delays[-1]  # Use last delay for any extra
 
             time_since_activity = datetime.now() - context.last_activity
             if time_since_activity < required_delay:
                 continue
 
-            # Check we haven't sent recently (min 30 min between follow-ups)
-            if state["last_sent"] and (datetime.now() - state["last_sent"]) < timedelta(minutes=30):
+            # Check we haven't sent recently (min 10 min between follow-ups)
+            if state["last_sent"] and (datetime.now() - state["last_sent"]) < timedelta(minutes=10):
                 continue
 
             # Send follow-up
             attempt = state["count"] + 1
-            message = get_lost_client_message_by_attempt(attempt)
-            logger.info(f"Sending follow-up #{attempt} to user {user_id}")
+
+            # Check if client was asking about massage — send trial session offer
+            is_massage_inquiry = self._is_massage_inquiry(context)
+
+            if attempt == 1 and is_massage_inquiry and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE):
+                message = TRIAL_SESSION_MESSAGE
+                logger.info(f"Sending trial session follow-up with photo to user {user_id}")
+            else:
+                message = get_lost_client_message_by_attempt(attempt)
+                logger.info(f"Sending follow-up #{attempt} to user {user_id}")
 
             try:
-                await self.send_message(str(user_id), message)
+                if attempt == 1 and is_massage_inquiry and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE):
+                    await self.send_photo(str(user_id), TRIAL_SESSION_IMAGE, message)
+                else:
+                    await self.send_message(str(user_id), message)
 
                 # Update state
                 self.follow_up_state[user_key] = {
@@ -179,6 +221,27 @@ class FollowUpService:
 
             except Exception as e:
                 logger.error(f"Failed to send follow-up to {user_id}: {e}")
+
+    @staticmethod
+    def _is_massage_inquiry(context) -> bool:
+        """Check if the client's conversation is about massage."""
+        # Check recent messages for massage keywords
+        recent = context.recent_messages if hasattr(context, 'recent_messages') else []
+        for msg in recent:
+            if msg.get("role") == "user":
+                text = msg.get("content", "").lower()
+                if any(kw in text for kw in MASSAGE_KEYWORDS):
+                    return True
+        # Check booking data
+        service = ""
+        if hasattr(context, 'booking_data'):
+            service = (context.booking_data.get("service_type") or "").lower()
+        elif hasattr(context, 'client_data'):
+            pass
+        if "massage" in service or "body" in service or "face" in service:
+            return True
+        # Default: treat as massage (most common service)
+        return True
 
     def reset_follow_up(self, user_id):
         """Reset follow-up counter when client responds."""

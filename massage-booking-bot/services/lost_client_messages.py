@@ -94,8 +94,16 @@ def get_lost_client_message_by_attempt(attempt_number: int, available_slots: Lis
     Returns:
         str: Сообщение соответствующее номеру попытки
     """
-    # Попытка 1-2: Дружелюбный тон
-    if attempt_number <= 2:
+    # Попытка 1: Через 1 минуту — вопрос face or body + доступные слоты
+    if attempt_number == 1:
+        return random.choice([
+            "Are you interested in face or body? We have available slots for tomorrow. Would you like to try? 😊",
+            "Dear, are you interested in face or body massage? We have slots available tomorrow 🌹",
+            "Would you like face or body massage? We have available times for tomorrow 😊",
+        ])
+
+    # Попытка 2: Дружелюбный check-in
+    elif attempt_number == 2:
         if available_slots:
             return get_lost_client_message_with_slots(available_slots)
         return LOST_CLIENT_MESSAGES[0]  # Самое дружелюбное

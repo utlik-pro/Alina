@@ -1,6 +1,7 @@
 """Crystal Lab Booking Bot - Telegram MVP with Database Integration"""
 
 import asyncio
+import os
 import time
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message, BotCommand, Location
@@ -15,6 +16,8 @@ from database import init_db, get_db, ClientService, MessageService, BookingServ
 from services.notifications import NotificationService
 from services.follow_up import FollowUpService
 from services.message_buffer import init_buffer, get_buffer, MessageBuffer
+from services.promo_photos import get_promo_photo
+from services.yclients_service import YClientsService
 
 # Инициализация роутера
 router = Router()
@@ -29,6 +32,7 @@ booking_service: BookingService = None
 dialog_session_service: DialogSessionService = None
 notification_service: NotificationService = None
 follow_up_service: FollowUpService = None
+yclients_service: YClientsService = None
 msg_buffer: MessageBuffer = None
 
 
@@ -136,7 +140,7 @@ async def command_status_handler(message: Message) -> None:
 
 @router.message(Command("clear"))
 async def command_clear_handler(message: Message) -> None:
-    """Сброс контекста диалога"""
+    """Сброс контекста диалога и истории сообщений"""
 
     user_id = message.from_user.id
     telegram_id = str(user_id)
@@ -145,11 +149,18 @@ async def command_clear_handler(message: Message) -> None:
     # Clear in-memory context
     dialog_manager.clear_context(user_id)
 
+    # Clear message history from database
+    deleted_count = await message_service.clear_history(telegram_id)
+    logger.info(f"Удалено {deleted_count} сообщений из БД для {user_id}")
+
+    # Reset client data (name, location)
+    await client_service.reset_client(telegram_id)
+
     # End session in database
     await dialog_session_service.end_session(telegram_id)
 
     await message.answer(
-        "Контекст диалога сброшен. Начните заново с /start"
+        "✅ История, имя и локация полностью очищены. Начните заново с /start"
     )
 
 
@@ -283,6 +294,47 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
             if m.get("text"):
                 await _preprocess_user_input(user_id, telegram_id, m["text"], context, client)
 
+        # Inject real YClients available slots into context (if not in mock mode)
+        if yclients_service and not config.MOCK_YCLIENTS:
+            try:
+                # Always inject slots if booking not confirmed yet
+                if not context.booking_data.get("time") or "today" in combined_text.lower() or "сегодня" in combined_text.lower():
+                    from datetime import datetime as _dt, timedelta as _td
+
+                    # Detect which service for filtering — from context or from message text
+                    service_name = context.booking_data.get("service_type") or ""
+                    _text_lower = combined_text.lower()
+                    if not service_name:
+                        # Detect from user message
+                        if any(kw in _text_lower for kw in ["mani", "pedi", "nail", "маникюр", "педикюр", "ногти", "гель"]):
+                            service_name = "Russian gelish manicure"
+                        elif any(kw in _text_lower for kw in ["lash", "eyelash", "ресниц", "наращивание"]):
+                            service_name = "eyelash extension"
+                        elif any(kw in _text_lower for kw in ["brow", "ламинация бров", "брови"]):
+                            service_name = "eyebrow lamination"
+
+                    # Fetch both today and tomorrow (UAE timezone UTC+4)
+                    from datetime import timezone as _tz
+                    _uae = _tz(_td(hours=4))
+                    _now_uae = _dt.now(_uae)
+                    today = _now_uae.strftime("%Y-%m-%d")
+                    tomorrow = (_now_uae + _td(days=1)).strftime("%Y-%m-%d")
+
+                    slots_today = await yclients_service.get_available_slots_summary(
+                        date=today, service_name=service_name)
+                    slots_tomorrow = await yclients_service.get_available_slots_summary(
+                        date=tomorrow, service_name=service_name)
+
+                    slots_text = f"TODAY ({today}):\n{slots_today}\n\nTOMORROW ({tomorrow}):\n{slots_tomorrow}"
+                    context.extra_system_info = (
+                        f"\n\nREAL AVAILABLE SLOTS FROM SCHEDULE:\n{slots_text}\n\n"
+                        "🚨 Use ONLY these real slots. NEVER invent times or therapists. "
+                        "If a therapist is NOT listed — she has a day off. "
+                        "Only offer times that appear above."
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to fetch YClients slots: {e}")
+
         # Process combined message with AI
         bot_response = await booking_agent.process_message(combined_text, context)
 
@@ -302,17 +354,31 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
             else:
                 await last_msg_obj.answer(bot_response.strip())
 
-        # Save bot response to database AND dialog history
-        await message_service.save_message(telegram_id, "assistant", bot_response)
-        dialog_manager.add_bot_response(user_id, bot_response)
+            # Send promo photo if relevant
+            try:
+                promo_path = get_promo_photo(combined_text, bot_response)
+                if promo_path:
+                    from aiogram.types import FSInputFile
+                    photo = FSInputFile(promo_path)
+                    await last_msg_obj.answer_photo(photo=photo)
+                    logger.info(f"User {user_id}: sent promo photo {os.path.basename(promo_path)}")
+            except Exception as e:
+                logger.warning(f"Failed to send promo photo: {e}")
 
-        # Extract and save data from combined text
-        await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client, last_msg_obj)
+        # Save bot response to database AND dialog history
+        if bot_response:
+            await message_service.save_message(telegram_id, "assistant", bot_response)
+            dialog_manager.add_bot_response(user_id, bot_response)
+
+            # Extract and save data from combined text
+            await _extract_and_save_data(user_id, telegram_id, combined_text, bot_response, context, client, last_msg_obj)
+        else:
+            logger.warning(f"User {user_id}: GPT вернул пустой ответ")
 
     except Exception as e:
         logger.error(f"Ошибка при обработке буферизованных сообщений от {user_id}: {e}")
         if original_messages:
-            await original_messages[-1].answer("Извините, произошла техническая ошибка. Попробуйте еще раз.")
+            await original_messages[-1].answer("Sorry, there was a technical issue. Please try again 🙏")
 
     finally:
         await msg_buffer.clear_messages(str(user_id))
@@ -483,6 +549,11 @@ async def _extract_and_save_data(
     last_msg_obj=None,
 ) -> None:
     """Извлечь и сохранить данные из диалога в БД ПОСЛЕ ответа GPT"""
+
+    # Guard: bot_response must be a string
+    if not bot_response:
+        return
+    bot_response = str(bot_response)
 
     # Извлекаем медицинские заметки
     medical_keywords = ["cesarean", "surgery", "operation", "birth", "pregnant", "pain", "bleeding", "medical", "doctor", "hospital"]
@@ -662,19 +733,26 @@ async def _extract_and_save_data(
         # Booking confirmed!
         booking_data = context.booking_data
 
-        # Получаем данные из context
-        service_name = booking_data.get("service_type", "Body massage")
-        duration = booking_data.get("service_duration", 60)
-        base_price = booking_data.get("price", 350.0)
-        booking_time = booking_data.get("time", "TBD")
-        payment_method = booking_data.get("payment_method", "cash")  # Default to cash
+        # Получаем данные из context (with safe None handling)
+        service_name = booking_data.get("service_type") or "Body massage"
+        duration = booking_data.get("service_duration") or 60
+        base_price = booking_data.get("price") or 350.0
+        booking_time = booking_data.get("time") or "TBD"
+        payment_method = booking_data.get("payment_method") or "cash"
 
-        # Парсим дату и время из времени выбранного клиентом
+        # Try to extract time from GPT response if not in context
         from datetime import datetime, timedelta
         import re
 
+        if booking_time == "TBD":
+            # Parse from bot response: "booked on Thursday 26th of March at 5pm"
+            time_in_response = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.))', bot_response.lower())
+            if time_in_response:
+                booking_time = time_in_response.group(1)
+                logger.info(f"Extracted time from GPT response: {booking_time}")
+
         # Определяем дату (today/tomorrow)
-        booking_date_str = booking_data.get("date", "").lower()
+        booking_date_str = (booking_data.get("date") or "").lower()
         if "today" in booking_date_str:
             booking_date = datetime.now()
         else:
@@ -713,6 +791,39 @@ async def _extract_and_save_data(
 
         dialog_manager.update_state(user_id, "completed")
         logger.info(f"✅ Бронирование {booking.id} создано для {telegram_id}")
+
+        # Create booking in YClients (if connected)
+        if yclients_service and not config.MOCK_YCLIENTS:
+            try:
+                # Find service and staff IDs in YClients
+                yc_service_id = await yclients_service.find_service_id(service_name)
+                yc_staff_id = await yclients_service.find_staff_id()
+                yc_date = booking_date.strftime("%Y-%m-%d")
+                yc_time = booking_date.strftime("%H:%M")
+
+                fresh_client = await client_service.get_or_create_client(telegram_id)
+                client_name = fresh_client.name or ""
+                client_phone = fresh_client.phone or ""
+
+                if yc_service_id and yc_staff_id:
+                    yc_result = await yclients_service.create_booking(
+                        staff_id=yc_staff_id,
+                        service_ids=[yc_service_id],
+                        date=yc_date,
+                        time=yc_time,
+                        client_name=client_name,
+                        client_phone=client_phone,
+                        comment=f"Telegram bot booking #{booking.id}",
+                        is_test=True,  # Mark as test during testing phase
+                    )
+                    if yc_result:
+                        logger.info(f"✅ YClients booking created: #{yc_result.get('id', '?')}")
+                    else:
+                        logger.warning("⚠️ YClients booking creation failed")
+                else:
+                    logger.warning(f"⚠️ YClients: service_id={yc_service_id}, staff_id={yc_staff_id} — skipping")
+            except Exception as e:
+                logger.error(f"❌ YClients booking error: {e}")
 
         # Send notification to group
         if notification_service:
@@ -778,12 +889,38 @@ async def main() -> None:
         except Exception as e:
             logger.error(f"Failed to send follow-up to {user_id}: {e}")
 
+    async def _send_telegram_photo(user_id: str, photo_path: str, caption: str):
+        """Send follow-up photo via Telegram."""
+        try:
+            from aiogram.types import FSInputFile
+            photo = FSInputFile(photo_path)
+            await bot.send_photo(chat_id=int(user_id), photo=photo, caption=caption)
+        except Exception as e:
+            logger.error(f"Failed to send photo to {user_id}: {e}")
+            # Fallback to text-only
+            await _send_telegram_follow_up(user_id, caption)
+
     follow_up_service = FollowUpService(
         send_message=_send_telegram_follow_up,
         notification_service=notification_service,
+        send_photo=_send_telegram_photo,
     )
-    await follow_up_service.start(check_interval=300)  # Check every 5 min
+    await follow_up_service.start(check_interval=60)  # Check every 1 min (for 5-min trial follow-up)
     logger.info("Follow-up service started")
+
+    # Initialize YClients service (if not in mock mode)
+    global yclients_service
+    if not config.MOCK_YCLIENTS and config.YCLIENTS_PARTNER_TOKEN and config.YCLIENTS_USER_TOKEN:
+        yclients_service = YClientsService()
+        # Test connection
+        try:
+            staff = await yclients_service.get_staff()
+            logger.info(f"✅ YClients connected: {len(staff)} staff members loaded")
+        except Exception as e:
+            logger.error(f"❌ YClients connection failed: {e}")
+            yclients_service = None
+    else:
+        logger.info("⚠️ YClients in MOCK mode — using mock data")
 
     # Установка команд меню бота
     await bot.set_my_commands([
