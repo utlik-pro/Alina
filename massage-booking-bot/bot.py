@@ -506,13 +506,15 @@ async def _preprocess_user_input(
     # Извлекаем длительность если клиент выбирает (60 min, 90 min)
     if context.state == "consulting" and any(x in user_message.lower() for x in ["60", "90", "min", "minutes"]):
         if "90" in user_message.lower():
+            _price_90 = get_price("body_massage_90")
             dialog_manager.update_booking_data(user_id, "service_duration", 90)
-            dialog_manager.update_booking_data(user_id, "price", 480.0)
-            logger.info(f"Обновлена длительность ДО GPT: 90 мин, 480 AED")
+            dialog_manager.update_booking_data(user_id, "price", _price_90)
+            logger.info(f"Обновлена длительность ДО GPT: 90 мин, {_price_90} AED")
         elif "60" in user_message.lower():
+            _price_60 = get_price("body_massage_60")
             dialog_manager.update_booking_data(user_id, "service_duration", 60)
-            dialog_manager.update_booking_data(user_id, "price", 350.0)
-            logger.info(f"Обновлена длительность ДО GPT: 60 мин, 350 AED")
+            dialog_manager.update_booking_data(user_id, "price", _price_60)
+            logger.info(f"Обновлена длительность ДО GPT: 60 мин, {_price_60} AED")
 
     # Обрабатываем выбор между volume/classic для eyelash extension
     if context.state == "consulting":
@@ -522,21 +524,25 @@ async def _preprocess_user_input(
         # Если услуга eyelash extension уже выбрана, и клиент уточняет volume/classic
         if current_service and "eyelash" in current_service.lower():
             if "russian" in msg_lower or "russian volume" in msg_lower:
+                _lp = get_price("lash_ext_russian")
                 dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension Russian volume")
-                dialog_manager.update_booking_data(user_id, "price", 400.0)
-                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension Russian volume, 400 AED")
+                dialog_manager.update_booking_data(user_id, "price", _lp)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension Russian volume, {_lp} AED")
             elif "2d" in msg_lower:
+                _lp = get_price("lash_ext_2d")
                 dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension 2D volume")
-                dialog_manager.update_booking_data(user_id, "price", 350.0)
-                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, 350 AED")
+                dialog_manager.update_booking_data(user_id, "price", _lp)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, {_lp} AED")
             elif "volume" in msg_lower:
+                _lp = get_price("lash_ext_2d")
                 dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension 2D volume")
-                dialog_manager.update_booking_data(user_id, "price", 350.0)
-                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, 350 AED")
+                dialog_manager.update_booking_data(user_id, "price", _lp)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension 2D volume, {_lp} AED")
             elif "classic" in msg_lower or "classical" in msg_lower:
+                _lp = get_price("lash_ext_classic")
                 dialog_manager.update_booking_data(user_id, "service_type", "Eyelash extension classical volume")
-                dialog_manager.update_booking_data(user_id, "price", 300.0)
-                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension classical volume, 300 AED")
+                dialog_manager.update_booking_data(user_id, "price", _lp)
+                logger.info(f"Обновлена услуга ДО GPT: Eyelash extension classical volume, {_lp} AED")
 
 
 async def _extract_and_save_data(
@@ -690,9 +696,9 @@ async def _extract_and_save_data(
                 base_price = _p("wax_full_face")
             duration = None
         elif "cupping" in msg_lower or "hijama" in msg_lower:
-            service_name = "Cupping therapy"
-            base_price = _p("cupping")
-            duration = 60
+            service_name = "Lymphatic drainage + Cupping + Head spa"
+            base_price = 275.0  # Special offer combo price
+            duration = 45
         elif "deep face clean" in msg_lower or "deep facial" in msg_lower or "deep cleansing" in msg_lower:
             service_name = "Deep facial cleansing"
             duration = 90
