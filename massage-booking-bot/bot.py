@@ -295,17 +295,38 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                 await _preprocess_user_input(user_id, telegram_id, m["text"], context, client)
 
         # Inject real YClients available slots into context (if not in mock mode)
+        # Only fetch slots when we know enough to show relevant ones
         if yclients_service and not config.MOCK_YCLIENTS:
             try:
-                # Always inject slots if booking not confirmed yet
-                if not context.booking_data.get("time") or "today" in combined_text.lower() or "сегодня" in combined_text.lower():
+                _text_lower = combined_text.lower()
+
+                # Detect if client mentioned their area
+                _client_area = context.client_data.get("area") or ""
+                if not _client_area:
+                    if any(kw in _text_lower for kw in ["al ain", "alain", "al-ain", "аль айн"]):
+                        _client_area = "al_ain"
+                        dialog_manager.update_client_data(user_id, "area", "al_ain")
+                    elif any(kw in _text_lower for kw in ["abu dhabi", "abudhabi", "абу даби", "raha", "khalifa", "mussafah", "mbz"]):
+                        _client_area = "abu_dhabi"
+                        dialog_manager.update_client_data(user_id, "area", "abu_dhabi")
+                    elif context.has_location:
+                        _client_area = "known"  # Location shared via GPS
+
+                # Check if client is asking for times/slots or we already have area
+                _wants_slots = (
+                    _client_area  # We know the area
+                    or any(kw in _text_lower for kw in ["time", "when", "available", "slot", "book", "tomorrow", "today",
+                                                         "время", "когда", "свободн", "запис", "завтра", "сегодня"])
+                    or context.booking_data.get("service_type")  # Service already chosen, might need slots next
+                )
+
+                # Only inject slots if we have enough context
+                if _wants_slots and (not context.booking_data.get("time") or "today" in _text_lower or "сегодня" in _text_lower):
                     from datetime import datetime as _dt, timedelta as _td
 
-                    # Detect which service for filtering — from context or from message text
+                    # Detect which service for filtering
                     service_name = context.booking_data.get("service_type") or ""
-                    _text_lower = combined_text.lower()
                     if not service_name:
-                        # Detect from user message
                         if any(kw in _text_lower for kw in ["mani", "pedi", "nail", "маникюр", "педикюр", "ногти", "гель"]):
                             service_name = "Russian gelish manicure"
                         elif any(kw in _text_lower for kw in ["lash", "eyelash", "ресниц", "наращивание"]):
@@ -325,12 +346,27 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                     slots_tomorrow = await yclients_service.get_available_slots_summary(
                         date=tomorrow, service_name=service_name)
 
+                    # Filter by area if known
+                    area_note = ""
+                    if _client_area == "al_ain":
+                        area_note = "\n🚨 Client is in AL AIN. Show ONLY Al Ain therapists (marked 'Al Ain')."
+                    elif _client_area == "abu_dhabi":
+                        area_note = "\n🚨 Client is in ABU DHABI. Do NOT show Al Ain therapists."
+
                     slots_text = f"TODAY ({today}):\n{slots_today}\n\nTOMORROW ({tomorrow}):\n{slots_tomorrow}"
                     context.extra_system_info = (
                         f"\n\nREAL AVAILABLE SLOTS FROM SCHEDULE:\n{slots_text}\n\n"
                         "🚨 Use ONLY these real slots. NEVER invent times or therapists. "
                         "If a therapist is NOT listed — she has a day off. "
                         "Only offer times that appear above."
+                        f"{area_note}"
+                    )
+                elif not _client_area and not context.booking_data.get("time"):
+                    # No area known, no slots — GPT will ask for area per system prompt
+                    context.extra_system_info = (
+                        "\n\n⚠️ CLIENT'S AREA IS NOT KNOWN YET. "
+                        "Ask: 'Are you in Abu Dhabi or Al Ain dear?' BEFORE showing any time slots. "
+                        "Do NOT show slots until you know the area."
                     )
             except Exception as e:
                 logger.warning(f"Failed to fetch YClients slots: {e}")
