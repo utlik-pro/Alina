@@ -71,8 +71,6 @@ class TestServiceDetection:
             return {"name": "Eyebrow lamination", "duration": None, "price": get_price("brow_lamination")}
         elif "wax" in msg_lower:
             return {"name": "Face waxing", "duration": None, "price": get_price("wax_full_face")}
-        elif "cupping" in msg_lower or "hijama" in msg_lower:
-            return {"name": "Cupping therapy", "duration": 60, "price": get_price("cupping")}
         elif "deep" in msg_lower and ("clean" in msg_lower or "facial" in msg_lower):
             return {"name": "Deep facial cleansing", "duration": 90, "price": get_price("deep_facial_cleansing")}
         elif "carboxy" in msg_lower:
@@ -95,8 +93,6 @@ class TestServiceDetection:
         ("permanent makeup lips", "Permanent makeup lips", get_price("pmu_lips")),
         ("permanent makeup for my eyebrows", "Permanent makeup eyebrows", get_price("pmu_eyebrows")),
         ("face waxing", "Face waxing", get_price("wax_full_face")),
-        ("cupping therapy", "Cupping therapy", get_price("cupping")),
-        ("hijama session", "Cupping therapy", get_price("cupping")),
         ("deep facial cleansing", "Deep facial cleansing", get_price("deep_facial_cleansing")),
         ("carboxy therapy", "Carboxy-therapy", get_price("carboxy_therapy")),
         ("neck and shoulder massage", "Neck/shoulders/back massage", get_price("neck_shoulders")),

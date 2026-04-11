@@ -697,10 +697,6 @@ async def _extract_and_save_data(
             service_name = "Deep facial cleansing"
             duration = 90
             base_price = _p("deep_facial_cleansing")
-        elif "vitamin c" in msg_lower:
-            service_name = "Vitamin C facial treatment"
-            duration = None
-            base_price = _p("vitamin_c_facial")
         elif "carboxy" in msg_lower:
             service_name = "Carboxy-therapy"
             duration = 40
