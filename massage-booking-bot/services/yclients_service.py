@@ -7,12 +7,40 @@ CRITICAL SAFETY RULE:
     ⚠️ Test bookings must be marked with [TEST] comment.
 """
 
+import time
 import aiohttp
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
 from config import config
+
+
+class _Cache:
+    """Simple TTL cache for API responses."""
+
+    def __init__(self, ttl: int = 300):
+        self._ttl = ttl
+        self._data: Dict[str, Any] = {}
+        self._timestamps: Dict[str, float] = {}
+
+    def get(self, key: str):
+        ts = self._timestamps.get(key)
+        if ts and (time.time() - ts) < self._ttl:
+            return self._data.get(key)
+        return None
+
+    def set(self, key: str, value: Any):
+        self._data[key] = value
+        self._timestamps[key] = time.time()
+
+    def invalidate(self, key: str = None):
+        if key:
+            self._data.pop(key, None)
+            self._timestamps.pop(key, None)
+        else:
+            self._data.clear()
+            self._timestamps.clear()
 
 
 class YClientsService:
@@ -25,6 +53,7 @@ class YClientsService:
         self.user_token = config.YCLIENTS_USER_TOKEN
         self.company_id = config.YCLIENTS_COMPANY_ID
         self._session: Optional[aiohttp.ClientSession] = None
+        self._cache = _Cache(ttl=300)  # 5 min cache for staff/services
 
     @property
     def _headers(self) -> dict:
@@ -61,19 +90,27 @@ class YClientsService:
             return None
 
     async def get_staff(self) -> List[Dict]:
-        """Get list of therapists/staff."""
+        """Get list of therapists/staff (cached 5 min)."""
+        cached = self._cache.get("staff")
+        if cached is not None:
+            return cached
         data = await self._get(f"staff/{self.company_id}")
         if data and data.get("success"):
             staff = data["data"]
+            self._cache.set("staff", staff)
             logger.info(f"YClients: loaded {len(staff)} staff members")
             return staff
         return []
 
     async def get_services(self) -> List[Dict]:
-        """Get list of services."""
+        """Get list of services (cached 5 min)."""
+        cached = self._cache.get("services")
+        if cached is not None:
+            return cached
         data = await self._get(f"services/{self.company_id}")
         if data and data.get("success"):
             services = data["data"]
+            self._cache.set("services", services)
             logger.info(f"YClients: loaded {len(services)} services")
             return services
         return []
