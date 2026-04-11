@@ -33,7 +33,7 @@ SERVICE_CATALOG = {
     "body_massage_90": {
         "name": "Body massage 90min",
         "duration": 90,
-        "price": 480.0,
+        "price": 460.0,
         "category": "body_massage",
     },
     "body_face_combo": {
@@ -65,7 +65,7 @@ SERVICE_CATALOG = {
     "lifting_bandage": {"name": "Lifting body bandage", "duration": 30, "price": 250.0, "category": "body_additional"},
     "drainage_bandage": {"name": "Drainage body bandage", "duration": 30, "price": 250.0, "category": "body_additional"},
     "taping": {"name": "Taping", "duration": None, "price": 100.0, "category": "body_additional", "price_note": "from"},
-    "neck_shoulders": {"name": "Neck and shoulders massage", "duration": 30, "price": 200.0, "category": "body_additional"},
+    "neck_shoulders": {"name": "Neck and shoulders massage", "duration": 15, "price": 85.0, "category": "body_additional"},
     # "cupping" as standalone REMOVED — cupping is a body massage technique (350 AED) or part of 275 AED offer
     # Kept in SPECIAL_OFFERS as lymphatic_cupping_combo (275 AED)
 
@@ -165,7 +165,7 @@ SERVICE_CATALOG = {
     "wax_chin": {"name": "Chin waxing", "duration": None, "price": 25.0, "category": "face_waxing"},
     "wax_sideburn": {"name": "Sideburn waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
     "wax_forehead": {"name": "Forehead waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
-    "wax_full_face": {"name": "Full face waxing", "duration": None, "price": 100.0, "category": "face_waxing"},
+    "wax_full_face": {"name": "Full face waxing", "duration": None, "price": 110.0, "category": "face_waxing"},
 }
 
 
@@ -297,7 +297,7 @@ ADDITIONAL BODY SERVICES:
 - Lifting body bandage: 30 min - {p('lifting_bandage'):.0f} AED
 - Drainage body bandage: 30 min - {p('drainage_bandage'):.0f} AED
 - Taping: from {p('taping'):.0f} AED
-- Neck and shoulders massage: 30 min - {p('neck_shoulders'):.0f} AED
+- Neck and shoulders massage: {SERVICE_CATALOG['neck_shoulders']['duration']} min - {p('neck_shoulders'):.0f} AED
 
 FACIALS:
 - Deep facial cleansing (8 steps, 2h treatment): 90 min - {p('deep_facial_cleansing'):.0f} AED
