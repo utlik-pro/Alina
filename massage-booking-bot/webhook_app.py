@@ -97,11 +97,20 @@ async def lifespan(application: FastAPI):
             bot_module.yclients_service = None
 
     # Set Telegram webhook
-    webhook_url = f"{config.RENDER_EXTERNAL_URL}/webhook/telegram"
+    import os
+    base_url = config.RENDER_EXTERNAL_URL
+    if not base_url:
+        # Fallback: construct from RENDER_EXTERNAL_HOSTNAME or service name
+        hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
+        if hostname:
+            base_url = f"https://{hostname}"
+        else:
+            base_url = "https://crystal-lab-bot.onrender.com"
+    webhook_url = f"{base_url}/webhook/telegram"
     await bot_instance.set_webhook(
         url=webhook_url,
         secret_token=config.WEBHOOK_SECRET,
-        drop_pending_updates=True,
+        drop_pending_updates=False,
     )
     logger.info(f"✅ Telegram webhook set: {webhook_url}")
     logger.info("🤖 Crystal Lab Bot started in WEBHOOK mode (Render)")
