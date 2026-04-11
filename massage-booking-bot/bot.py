@@ -732,9 +732,9 @@ async def _extract_and_save_data(
                 base_price = _p("wax_full_face")
             duration = None
         elif "cupping" in msg_lower or "hijama" in msg_lower:
-            service_name = "Lymphatic drainage + Cupping + Head spa"
-            base_price = 275.0  # Special offer combo price
-            duration = 45
+            service_name = "Cupping"
+            base_price = get_price("cupping")
+            duration = 15
         elif "deep face clean" in msg_lower or "deep facial" in msg_lower or "deep cleansing" in msg_lower:
             service_name = "Deep facial cleansing"
             duration = 90

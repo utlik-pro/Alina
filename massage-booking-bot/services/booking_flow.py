@@ -48,6 +48,7 @@ def _build_service_catalog() -> Dict[str, Dict[str, Any]]:
         "pmu_eyebrows": "Permanent makeup eyebrows",
         "pmu_eyeliner": "Permanent makeup eyeliner",
         "wax_full_face": "Face waxing",
+        "cupping": "Cupping",
         "neck_shoulders": "Neck/shoulders/back massage",
         "foot_reflexology": "Foot reflexology",
         "hair_makeup": "Hair and makeup",

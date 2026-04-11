@@ -66,8 +66,7 @@ SERVICE_CATALOG = {
     "drainage_bandage": {"name": "Drainage body bandage", "duration": 30, "price": 250.0, "category": "body_additional"},
     "taping": {"name": "Taping", "duration": None, "price": 100.0, "category": "body_additional", "price_note": "from"},
     "neck_shoulders": {"name": "Neck and shoulders massage", "duration": 15, "price": 85.0, "category": "body_additional"},
-    # "cupping" as standalone REMOVED — cupping is a body massage technique (350 AED) or part of 275 AED offer
-    # Kept in SPECIAL_OFFERS as lymphatic_cupping_combo (275 AED)
+    "cupping": {"name": "Cupping", "duration": 15, "price": 100.0, "category": "body_additional"},
 
     # ── Facials ───────────────────────────────────────────
     "deep_facial_cleansing": {
