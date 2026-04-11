@@ -57,6 +57,16 @@ class Config:
     # WhatsApp server settings
     WHATSAPP_WEBHOOK_PORT: int = int(os.getenv("WHATSAPP_WEBHOOK_PORT", "8000"))
 
+    # Render / Webhook mode
+    RENDER: bool = os.getenv("RENDER", "false").lower() == "true"
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
+    PORT: int = int(os.getenv("PORT", "10000"))
+    RENDER_EXTERNAL_URL: str = os.getenv("RENDER_EXTERNAL_URL", "")
+
+    # ManyChat
+    MANYCHAT_API_KEY: Optional[str] = os.getenv("MANYCHAT_API_KEY")
+    MANYCHAT_WEBHOOK_SECRET: str = os.getenv("MANYCHAT_WEBHOOK_SECRET", "")
+
     @classmethod
     def validate(cls) -> bool:
         """Проверка наличия обязательных переменных"""

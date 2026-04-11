@@ -403,13 +403,211 @@
           }
         ]
       }
+      ,
+      {
+        "id": "13",
+        "title": "ManyChat аккаунт и подключение каналов",
+        "description": "Создать ManyChat Pro аккаунт, подключить Instagram Business (@crystal_lab_ae) и WhatsApp Business (+971 55 193 36 62). Сгенерировать API ключ. Настроить базовые Flow с Default Reply для обоих каналов.",
+        "details": "1) Создать аккаунт ManyChat Pro (от $15/мес — нужен для WhatsApp). 2) Подключить Instagram Business аккаунт через Facebook Page (нужна связка с Meta Business Suite). 3) Подключить WhatsApp Business номер через Meta Cloud API. 4) Сгенерировать API Key в Settings → API. 5) Настроить Default Reply Flow для Instagram — External Request на наш сервер. 6) Настроить Default Reply Flow для WhatsApp — External Request на наш сервер. 7) Проверить что сообщения доходят до нашего webhook.",
+        "testStrategy": "Отправить тестовое сообщение в Instagram DM и WhatsApp. Убедиться что ManyChat получает их и делает External Request на наш сервер.",
+        "dependencies": [],
+        "priority": "high",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "13.1",
+            "title": "Создание ManyChat Pro аккаунта",
+            "description": "Зарегистрировать аккаунт ManyChat, оплатить Pro план для доступа к WhatsApp и полному API",
+            "status": "pending"
+          },
+          {
+            "id": "13.2",
+            "title": "Подключение Instagram Business",
+            "description": "Связать Instagram @crystal_lab_ae через Facebook Page с ManyChat. Проверить приём DM сообщений",
+            "status": "pending"
+          },
+          {
+            "id": "13.3",
+            "title": "Подключение WhatsApp Business",
+            "description": "Подключить WhatsApp номер +971 55 193 36 62 через Meta Business Suite в ManyChat",
+            "status": "pending"
+          },
+          {
+            "id": "13.4",
+            "title": "Генерация API ключа и настройка Default Reply Flows",
+            "description": "Получить API Key, настроить Default Reply для Instagram и WhatsApp с External Request на наш webhook",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "14",
+        "title": "ManyChat Webhook endpoint в боте",
+        "description": "Создать endpoint /manychat/webhook в Python backend для приёма External Request от ManyChat. Парсить payload (subscriber_id, last_input_text, channel), маршрутизировать через AI agent, возвращать ответ в формате ManyChat v2 Dynamic Content JSON.",
+        "details": "1) Создать Flask/aiohttp endpoint POST /manychat/webhook. 2) Парсить ManyChat payload: subscriber_id, first_name, last_name, last_input_text, phone, email, channel (instagram/whatsapp). 3) Маппить ManyChat subscriber на внутреннего клиента (по subscriber_id или phone). 4) Передать сообщение в существующую логику AI agent (та же обработка что для Telegram). 5) Сформировать ответ в формате v2: {version: 'v2', content: {messages: [{type: 'text', text: '...'}], actions: [...]}}. 6) Ответ должен прийти за 10 секунд (таймаут ManyChat). 7) Обработка ошибок — fallback ответ если AI не успевает.",
+        "testStrategy": "Отправить тестовый POST запрос с payload ManyChat формата. Проверить что возвращается корректный v2 JSON. Замерить время ответа — должно быть < 10 сек. Тест через реальный ManyChat External Request.",
+        "dependencies": ["13"],
+        "priority": "high",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "14.1",
+            "title": "HTTP endpoint /manychat/webhook",
+            "description": "Создать POST endpoint, парсинг ManyChat payload, валидация входящих данных, аутентификация запросов",
+            "status": "pending"
+          },
+          {
+            "id": "14.2",
+            "title": "Маппинг ManyChat subscriber → внутренний клиент",
+            "description": "Связать ManyChat subscriber_id с клиентом в нашей БД. Создавать нового клиента при первом контакте. Сохранять канал (instagram/whatsapp)",
+            "status": "pending"
+          },
+          {
+            "id": "14.3",
+            "title": "Интеграция с AI agent",
+            "description": "Передать сообщение из ManyChat в существующую логику обработки (conversation manager, AI agent). Получить ответ",
+            "status": "pending"
+          },
+          {
+            "id": "14.4",
+            "title": "Формирование v2 Dynamic Content ответа",
+            "description": "Конвертация ответа AI agent в ManyChat v2 JSON формат (text, buttons, actions, tags). Обработка таймаута 10 сек",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "15",
+        "title": "Instagram Ad Response Flows в ManyChat",
+        "description": "Настроить ManyChat Flows для автоматических ответов на рекламные кампании Instagram: body massage, face massage, deep cleansing, welcome new follower. Каждый Flow отправляет соответствующий шаблон и подключает External Request к нашему AI agent.",
+        "details": "Создать 4 Flow в ManyChat: 1) Body Massage Ad — триггер по keyword из рекламы тела, отправка шаблона с ценами body massage, затем External Request. 2) Face Massage Ad — шаблон лица. 3) Deep Cleansing Ad — шаблон чистки. 4) Welcome New Follower — приветствие с каталогом услуг. Шаблоны уже есть в PRD (раздел 4.3). Все Flow должны передавать контекст рекламы в External Request (ad_type field).",
+        "testStrategy": "Протестировать каждый Flow через ManyChat Preview. Отправить тестовые сообщения с ключевыми словами каждой рекламы. Проверить что шаблоны отправляются корректно и External Request срабатывает.",
+        "dependencies": ["13", "14"],
+        "priority": "high",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "15.1",
+            "title": "Flow: Body Massage Ad Response",
+            "description": "ManyChat Flow с шаблоном body massage из PRD + External Request к webhook с ad_type=body_massage",
+            "status": "pending"
+          },
+          {
+            "id": "15.2",
+            "title": "Flow: Face Massage Ad Response",
+            "description": "ManyChat Flow с шаблоном face massage из PRD + External Request к webhook с ad_type=face_massage",
+            "status": "pending"
+          },
+          {
+            "id": "15.3",
+            "title": "Flow: Deep Cleansing Ad Response",
+            "description": "ManyChat Flow с шаблоном deep cleansing из PRD + External Request к webhook с ad_type=deep_cleansing",
+            "status": "pending"
+          },
+          {
+            "id": "15.4",
+            "title": "Flow: Welcome New Follower",
+            "description": "ManyChat Flow с приветственным шаблоном для новых подписчиков + External Request к webhook",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "16",
+        "title": "Единый слой обработки сообщений (multi-channel)",
+        "description": "Рефакторинг AI agent для поддержки multi-channel: единая логика обработки сообщений из Telegram, Instagram (ManyChat) и WhatsApp (ManyChat). Определение канала, адаптация формата ответа под канал.",
+        "details": "1) Абстрагировать канал доставки от логики обработки. Сейчас бот привязан к Telegram — нужно вынести общую логику в channel-agnostic слой. 2) Роутинг по каналу: telegram → aiogram handler, instagram → ManyChat v2 JSON, whatsapp → ManyChat v2 JSON. 3) Адаптация ответов под ограничения канала: Instagram — макс 3 кнопки, нет carousel; WhatsApp — кнопки + списки. 4) Единая история разговора per client across channels.",
+        "testStrategy": "Отправить одинаковое сообщение через Telegram, Instagram DM и WhatsApp. Проверить что AI agent даёт одинаковый по смыслу ответ. Проверить формат ответов для каждого канала.",
+        "dependencies": ["14"],
+        "priority": "high",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "16.1",
+            "title": "Channel-agnostic message processing layer",
+            "description": "Вынести общую логику обработки сообщений из Telegram handler в отдельный слой, принимающий channel-нейтральный формат",
+            "status": "pending"
+          },
+          {
+            "id": "16.2",
+            "title": "Channel router и адаптеры ответов",
+            "description": "Роутинг ответа по каналу: telegram → aiogram, instagram/whatsapp → ManyChat v2 JSON. Адаптация под ограничения каждого канала",
+            "status": "pending"
+          },
+          {
+            "id": "16.3",
+            "title": "Единая история разговора per client",
+            "description": "Один клиент может писать из разных каналов. Связать conversation history по phone/subscriber_id",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "17",
+        "title": "Instagram → WhatsApp Handoff Flow",
+        "description": "Создать ManyChat Flow для перевода клиента из Instagram DM в WhatsApp. Собрать номер WhatsApp в DM, инициировать WhatsApp conversation через ManyChat или наш API.",
+        "details": "1) В Instagram DM Flow после первичной консультации — предложить продолжить в WhatsApp для бронирования. 2) Собрать WhatsApp номер через User Input step. 3) Сохранить номер в Custom Field. 4) Отправить External Request на наш сервер с номером — для инициации WhatsApp сообщения. 5) Или использовать ManyChat API sendFlow для WhatsApp канала. Учесть: WhatsApp первое сообщение можно отправить только по template (Meta ограничение).",
+        "testStrategy": "Начать разговор в Instagram DM, пройти до запроса WhatsApp номера. Ввести номер. Проверить что WhatsApp сообщение доставлено клиенту.",
+        "dependencies": ["15", "16"],
+        "priority": "medium",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "17.1",
+            "title": "Flow сбора WhatsApp номера в Instagram DM",
+            "description": "User Input step для получения номера, валидация формата, сохранение в Custom Field",
+            "status": "pending"
+          },
+          {
+            "id": "17.2",
+            "title": "Инициация WhatsApp conversation",
+            "description": "Отправка первого сообщения клиенту в WhatsApp через ManyChat API или Meta template message",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "18",
+        "title": "Admin уведомления для ManyChat каналов",
+        "description": "Расширить систему admin уведомлений для лидов из Instagram и WhatsApp (через ManyChat). Пересылка в admin channel с указанием канала источника.",
+        "details": "1) При получении нового лида из ManyChat — отправить уведомление в admin группу (Crystal Lab - Leads, chat_id -1003250489002). 2) Указывать канал: 📸 Instagram DM / 💬 WhatsApp. 3) Включать: имя клиента, первое сообщение, subscriber_id, ссылку на ManyChat профиль. 4) Для Instagram — включать context рекламы если есть (ad_type).",
+        "testStrategy": "Отправить тестовое сообщение через Instagram DM и WhatsApp. Проверить что admin получает уведомление с правильным каналом и данными клиента.",
+        "dependencies": ["14"],
+        "priority": "medium",
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": "18.1",
+            "title": "Уведомления о лидах из Instagram",
+            "description": "Формат уведомления для Instagram DM лидов с контекстом рекламы",
+            "status": "pending"
+          },
+          {
+            "id": "18.2",
+            "title": "Уведомления о лидах из WhatsApp (ManyChat)",
+            "description": "Формат уведомления для WhatsApp лидов через ManyChat",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "19",
+        "title": "E2E тестирование ManyChat интеграции",
+        "description": "Полное end-to-end тестирование всех ManyChat каналов: Instagram DM → AI agent → ответ, WhatsApp → AI agent → ответ, Instagram → WhatsApp handoff, admin уведомления.",
+        "details": "1) Тест Instagram DM: отправить сообщение → получить ответ AI agent → проверить корректность. 2) Тест WhatsApp: отправить сообщение → получить ответ → пройти booking flow. 3) Тест handoff: начать в Instagram → перейти в WhatsApp → продолжить разговор. 4) Тест ad flows: каждый из 4 рекламных шаблонов. 5) Тест admin notifications: все типы лидов. 6) Тест таймаутов: убедиться что ответ < 10 сек. 7) Тест 24-часового окна: что происходит когда окно закрывается.",
+        "testStrategy": "Чеклист из 15+ тест-кейсов покрывающих все сценарии. Тестирование с реальными Instagram и WhatsApp аккаунтами.",
+        "dependencies": ["15", "16", "17", "18"],
+        "priority": "high",
+        "status": "pending",
+        "subtasks": []
+      }
     ],
     "metadata": {
-      "version": "2.0",
+      "version": "2.1",
       "created": "2025-01-27",
-      "lastModified": "2026-02-25",
-      "totalTasks": 12,
-      "pendingTasks": 12,
+      "lastModified": "2026-04-11",
+      "totalTasks": 19,
+      "pendingTasks": 19,
       "completedTasks": 0
     }
   }

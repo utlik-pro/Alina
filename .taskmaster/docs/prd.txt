@@ -559,9 +559,110 @@ These chats should be analyzed to:
 - Client satisfaction: no complaints about AI communication quality
 - Admin workload reduction: 60-80%
 
-## 9. Out of Scope (for now)
+## 9. ManyChat Integration (Instagram DM + WhatsApp)
 
-- Instagram DM integration (future phase)
+### 9.1 Overview
+
+ManyChat serves as a middleware between Instagram DM / WhatsApp and our AI agent backend. This enables:
+- Automated responses to Instagram DM leads from targeted ads
+- Seamless handoff from Instagram to WhatsApp conversations
+- Unified message processing through our existing AI agent
+
+### 9.2 Architecture
+
+```
+Instagram Ads → Client → Instagram DM
+                              ↓
+                         ManyChat Platform
+                    (Default Reply / Keyword triggers)
+                              ↓
+                    External Request (HTTP POST)
+                              ↓
+                    Our Python Backend (/manychat/webhook)
+                              ↓
+                    AI Agent (same logic as Telegram)
+                              ↓
+                    Response (ManyChat v2 Dynamic Content JSON)
+                              ↓
+                    ManyChat → Instagram DM / WhatsApp reply
+```
+
+### 9.3 ManyChat Integration Points
+
+1. **External Request Webhook** — ManyChat sends incoming messages to our server via HTTP POST
+   - URL: `https://<our-domain>/manychat/webhook`
+   - Payload: subscriber_id, last_input_text, channel (instagram/whatsapp), first_name, custom fields
+   - Response: v2 Dynamic Content JSON (text, buttons, images)
+   - **Timeout: 10 seconds max** — response must be fast
+
+2. **ManyChat API** (for proactive actions from our side)
+   - Base URL: `https://api.manychat.com/fb/`
+   - Auth: Bearer Token
+   - Key endpoints: sendContent, sendFlow, subscriber management, tags, custom fields
+   - Rate limit: 10 req/sec general, 25 msg/sec for sending
+
+3. **Channel-specific rules**:
+   - **Instagram DM**: 24-hour messaging window, no broadcasts, text + images + 3 buttons max
+   - **WhatsApp**: 24-hour window, then only pre-approved Meta templates, requires ManyChat Pro ($15+/mo)
+
+### 9.4 ManyChat Flows to Configure (in ManyChat UI)
+
+1. **Default Reply** — catches all incoming messages, forwards to our webhook via External Request
+2. **Instagram Ad Response Flows** — triggered by specific ad keywords:
+   - Body massage ad → send body massage template → External Request to our agent
+   - Face massage ad → send face massage template → External Request to our agent
+   - Deep cleansing ad → send cleansing template → External Request to our agent
+   - Welcome new follower → send welcome template → External Request to our agent
+3. **WhatsApp Default Reply** — same pattern, forwards all messages to our webhook
+4. **Instagram → WhatsApp Handoff Flow** — collects WhatsApp number in DM, triggers WhatsApp conversation
+
+### 9.5 Response Format (v2 Dynamic Content)
+
+Our webhook must return responses in this format:
+```json
+{
+  "version": "v2",
+  "content": {
+    "messages": [
+      {"type": "text", "text": "Response text here"}
+    ],
+    "actions": [
+      {"action": "set_field_value", "field_name": "status", "value": "consulted"},
+      {"action": "add_tag", "tag_name": "lead_from_instagram"}
+    ]
+  }
+}
+```
+
+### 9.6 Implementation Phases
+
+**Phase A: ManyChat Account Setup (no code)**
+- Create ManyChat Pro account
+- Connect Instagram Business account (@crystal_lab_ae)
+- Connect WhatsApp Business number (+971 55 193 36 62)
+- Generate API key
+- Set up basic flows with External Request pointing to our server
+
+**Phase B: Webhook Endpoint (code)**
+- Create `/manychat/webhook` endpoint in our Python backend
+- Parse ManyChat payload (subscriber_id, message, channel)
+- Route through existing AI agent conversation logic
+- Format response as ManyChat v2 Dynamic Content JSON
+- Handle 10-second timeout constraint (async processing if needed)
+
+**Phase C: Channel-Specific Logic**
+- Instagram DM: ad-specific quick response templates
+- WhatsApp: full booking flow integration
+- Channel detection and routing (instagram vs whatsapp vs telegram)
+- Subscriber mapping to internal client database
+
+**Phase D: Admin Notifications & Testing**
+- Forward ManyChat leads to admin channel (same as Telegram leads)
+- End-to-end testing with real Instagram ads
+- Monitor response times and error rates
+
+## 10. Out of Scope (for now)
+
 - Mobile app for therapists/drivers
 - Automated driver notifications
 - Payment gateway integration

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: crystal-lab-bot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: RENDER
+        value: "true"
+      - key: PORT
+        value: "10000"
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ADMIN_GROUP_CHAT_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: YCLIENTS_PARTNER_TOKEN
+        sync: false
+      - key: YCLIENTS_USER_TOKEN
+        sync: false
+      - key: YCLIENTS_COMPANY_ID
+        sync: false
+      - key: MOCK_YCLIENTS
+        sync: false
