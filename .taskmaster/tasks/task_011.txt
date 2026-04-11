@@ -1,0 +1,31 @@
+# Task ID: 11
+# Title: Database Schema и миграции (PostgreSQL)
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Спроектировать и создать схему базы данных PostgreSQL для хранения клиентов, разговоров, записей, пакетов.
+# Details:
+Таблицы: clients (wa_phone, name, yclients_id, gender, first_contact_date, notes), conversations (client_id, messages JSONB, state, current_intent, created_at, updated_at), bookings (client_id, yclients_booking_id, service, datetime, location, status, payment_method, payment_status), packages (client_id, package_type, total_sessions, used_sessions, expires_at). Использовать миграции (knex или prisma).
+
+# Test Strategy:
+Прогнать миграции на чистой БД, проверить создание всех таблиц, проверить foreign keys и индексы.
+
+# Subtasks:
+## 1. Выбор ORM и настройка [pending]
+### Dependencies: None
+### Description: Выбрать и настроить ORM/query builder (Prisma или Knex) с PostgreSQL подключением
+### Details:
+
+
+## 2. Схема и миграции [pending]
+### Dependencies: None
+### Description: Создать миграции для всех таблиц: clients, conversations, bookings, packages
+### Details:
+
+
+## 3. Seed Data [pending]
+### Dependencies: None
+### Description: Тестовые данные для разработки: тестовые клиенты, записи, пакеты
+### Details:
+
+

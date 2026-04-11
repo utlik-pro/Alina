@@ -1,0 +1,37 @@
+# Task ID: 6
+# Title: Booking Flow — полный цикл бронирования через агента
+# Status: pending
+# Dependencies: 4, 5
+# Priority: high
+# Description: Реализовать полный цикл бронирования: от сбора информации через AI агента до создания записи в YClients и отправки подтверждения клиенту.
+# Details:
+Процесс: 1) Агент определяет intent=booking, 2) Собирает данные: услуга, дата/время, локация, 3) Проверяет доступность в YClients, 4) Предлагает слоты клиенту, 5) Клиент подтверждает, 6) Создаёт запись в YClients, 7) Отправляет подтверждение клиенту по шаблону, 8) Уведомляет администратора. Должен обрабатывать edge cases: нет свободных слотов, клиент меняет время/услугу в процессе.
+
+# Test Strategy:
+End-to-end тест: сообщение 'I want to book body massage tomorrow at 3pm' → агент собирает данные → проверяет YClients → подтверждает → создаёт запись. Тест с недоступным слотом. Тест со сменой услуги в процессе.
+
+# Subtasks:
+## 1. Booking Data Collector [pending]
+### Dependencies: None
+### Description: Модуль сбора данных для записи: service, date/time, location через диалог с клиентом
+### Details:
+
+
+## 2. Availability Check и предложение слотов [pending]
+### Dependencies: None
+### Description: Проверка доступности через YClients API и формирование предложения слотов клиенту
+### Details:
+
+
+## 3. Booking Creation и подтверждение [pending]
+### Dependencies: None
+### Description: Создание записи в YClients после подтверждения клиентом, отправка confirmation message
+### Details:
+
+
+## 4. Edge Cases и ошибки [pending]
+### Dependencies: None
+### Description: Обработка: нет слотов, смена услуги, отмена в процессе, ошибки API, timeout
+### Details:
+
+

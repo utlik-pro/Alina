@@ -1,0 +1,25 @@
+# Task ID: 17
+# Title: Instagram → WhatsApp Handoff Flow
+# Status: pending
+# Dependencies: 15, 16
+# Priority: medium
+# Description: Создать ManyChat Flow для перевода клиента из Instagram DM в WhatsApp. Собрать номер WhatsApp в DM, инициировать WhatsApp conversation через ManyChat или наш API.
+# Details:
+1) В Instagram DM Flow после первичной консультации — предложить продолжить в WhatsApp для бронирования. 2) Собрать WhatsApp номер через User Input step. 3) Сохранить номер в Custom Field. 4) Отправить External Request на наш сервер с номером — для инициации WhatsApp сообщения. 5) Или использовать ManyChat API sendFlow для WhatsApp канала. Учесть: WhatsApp первое сообщение можно отправить только по template (Meta ограничение).
+
+# Test Strategy:
+Начать разговор в Instagram DM, пройти до запроса WhatsApp номера. Ввести номер. Проверить что WhatsApp сообщение доставлено клиенту.
+
+# Subtasks:
+## 1. Flow сбора WhatsApp номера в Instagram DM [pending]
+### Dependencies: None
+### Description: User Input step для получения номера, валидация формата, сохранение в Custom Field
+### Details:
+
+
+## 2. Инициация WhatsApp conversation [pending]
+### Dependencies: None
+### Description: Отправка первого сообщения клиенту в WhatsApp через ManyChat API или Meta template message
+### Details:
+
+

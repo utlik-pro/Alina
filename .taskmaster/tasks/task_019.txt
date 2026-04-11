@@ -1,0 +1,11 @@
+# Task ID: 19
+# Title: E2E тестирование ManyChat интеграции
+# Status: pending
+# Dependencies: 15, 16, 17, 18
+# Priority: high
+# Description: Полное end-to-end тестирование всех ManyChat каналов: Instagram DM → AI agent → ответ, WhatsApp → AI agent → ответ, Instagram → WhatsApp handoff, admin уведомления.
+# Details:
+1) Тест Instagram DM: отправить сообщение → получить ответ AI agent → проверить корректность. 2) Тест WhatsApp: отправить сообщение → получить ответ → пройти booking flow. 3) Тест handoff: начать в Instagram → перейти в WhatsApp → продолжить разговор. 4) Тест ad flows: каждый из 4 рекламных шаблонов. 5) Тест admin notifications: все типы лидов. 6) Тест таймаутов: убедиться что ответ < 10 сек. 7) Тест 24-часового окна: что происходит когда окно закрывается.
+
+# Test Strategy:
+Чеклист из 15+ тест-кейсов покрывающих все сценарии. Тестирование с реальными Instagram и WhatsApp аккаунтами.

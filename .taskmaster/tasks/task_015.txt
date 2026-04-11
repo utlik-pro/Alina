@@ -1,0 +1,37 @@
+# Task ID: 15
+# Title: Instagram Ad Response Flows в ManyChat
+# Status: pending
+# Dependencies: 13, 14
+# Priority: high
+# Description: Настроить ManyChat Flows для автоматических ответов на рекламные кампании Instagram: body massage, face massage, deep cleansing, welcome new follower. Каждый Flow отправляет соответствующий шаблон и подключает External Request к нашему AI agent.
+# Details:
+Создать 4 Flow в ManyChat: 1) Body Massage Ad — триггер по keyword из рекламы тела, отправка шаблона с ценами body massage, затем External Request. 2) Face Massage Ad — шаблон лица. 3) Deep Cleansing Ad — шаблон чистки. 4) Welcome New Follower — приветствие с каталогом услуг. Шаблоны уже есть в PRD (раздел 4.3). Все Flow должны передавать контекст рекламы в External Request (ad_type field).
+
+# Test Strategy:
+Протестировать каждый Flow через ManyChat Preview. Отправить тестовые сообщения с ключевыми словами каждой рекламы. Проверить что шаблоны отправляются корректно и External Request срабатывает.
+
+# Subtasks:
+## 1. Flow: Body Massage Ad Response [pending]
+### Dependencies: None
+### Description: ManyChat Flow с шаблоном body massage из PRD + External Request к webhook с ad_type=body_massage
+### Details:
+
+
+## 2. Flow: Face Massage Ad Response [pending]
+### Dependencies: None
+### Description: ManyChat Flow с шаблоном face massage из PRD + External Request к webhook с ad_type=face_massage
+### Details:
+
+
+## 3. Flow: Deep Cleansing Ad Response [pending]
+### Dependencies: None
+### Description: ManyChat Flow с шаблоном deep cleansing из PRD + External Request к webhook с ad_type=deep_cleansing
+### Details:
+
+
+## 4. Flow: Welcome New Follower [pending]
+### Dependencies: None
+### Description: ManyChat Flow с приветственным шаблоном для новых подписчиков + External Request к webhook
+### Details:
+
+

@@ -1,0 +1,37 @@
+# Task ID: 9
+# Title: Продвинутые функции агента
+# Status: pending
+# Dependencies: 6
+# Priority: medium
+# Description: Реализовать дополнительные интеллектуальные функции: follow-up сообщения, upselling, работа с пакетами, реферальная программа, подтверждение записей за день.
+# Details:
+1) Follow-up: если клиент не отвечает X часов — отправить мягкий push с текстом про медицинское образование терапистов. 2) Upselling: после основной услуги предложить дополнительные (head spa к body massage, alginate mask к facial). 3) Пакеты: предлагать пакеты при подходящем количестве сессий. 4) Реферальная программа 'Book a Friend': объяснять условия, трекать купоны. 5) Confirmation: за день до визита отправить подтверждение по шаблону.
+
+# Test Strategy:
+Тест follow-up: начать диалог, не отвечать 4 часа, проверить что пришло follow-up сообщение. Тест upselling: забронировать body massage, проверить что предложены доп.услуги.
+
+# Subtasks:
+## 1. Follow-up система [pending]
+### Dependencies: None
+### Description: Автоматические follow-up сообщения для неотвечающих клиентов с настраиваемым delay
+### Details:
+
+
+## 2. Upselling логика [pending]
+### Dependencies: None
+### Description: Рекомендации доп.услуг и пакетов на основе выбранной услуги и истории клиента
+### Details:
+
+
+## 3. Booking Confirmation (day-before) [pending]
+### Dependencies: None
+### Description: Автоматическая отправка подтверждения записи за день по шаблону Crystal Lab
+### Details:
+
+
+## 4. Referral Program Tracking [pending]
+### Dependencies: None
+### Description: Отслеживание реферальной программы 'Book a Friend' — купоны 50 AED, условия активации
+### Details:
+
+

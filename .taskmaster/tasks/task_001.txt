@@ -1,0 +1,37 @@
+# Task ID: 1
+# Title: Настройка WhatsApp Cloud API подключения
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Настроить подключение к WhatsApp Business Cloud API: регистрация приложения в Meta Business Suite, настройка webhook для приёма входящих сообщений, реализация отправки ответных сообщений через API.
+# Details:
+Необходимо: 1) Зарегистрировать приложение в Meta for Developers, 2) Настроить WhatsApp Business Account, 3) Получить access token, 4) Настроить webhook endpoint в Express.js для получения входящих сообщений, 5) Реализовать отправку текстовых сообщений через Cloud API, 6) Верификация webhook (challenge verification). Телефон бизнеса: +971 55 193 36 62.
+
+# Test Strategy:
+Отправить тестовое сообщение на WhatsApp номер и убедиться что webhook получает его. Отправить ответ через API и проверить доставку.
+
+# Subtasks:
+## 1. Регистрация Meta Business App [pending]
+### Dependencies: None
+### Description: Создать приложение в Meta for Developers, настроить WhatsApp Business Account, получить permanent access token
+### Details:
+
+
+## 2. Webhook endpoint для входящих сообщений [pending]
+### Dependencies: None
+### Description: Реализовать Express.js endpoint для приёма webhook от WhatsApp Cloud API с верификацией challenge
+### Details:
+
+
+## 3. Модуль отправки сообщений [pending]
+### Dependencies: None
+### Description: Создать сервис для отправки текстовых сообщений через WhatsApp Cloud API (text, template messages)
+### Details:
+
+
+## 4. Обработка типов сообщений [pending]
+### Dependencies: None
+### Description: Поддержка приёма text, location, image, contacts типов сообщений от клиентов
+### Details:
+
+

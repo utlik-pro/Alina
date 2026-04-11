@@ -1,0 +1,31 @@
+# Task ID: 16
+# Title: Единый слой обработки сообщений (multi-channel)
+# Status: pending
+# Dependencies: 14
+# Priority: high
+# Description: Рефакторинг AI agent для поддержки multi-channel: единая логика обработки сообщений из Telegram, Instagram (ManyChat) и WhatsApp (ManyChat). Определение канала, адаптация формата ответа под канал.
+# Details:
+1) Абстрагировать канал доставки от логики обработки. Сейчас бот привязан к Telegram — нужно вынести общую логику в channel-agnostic слой. 2) Роутинг по каналу: telegram → aiogram handler, instagram → ManyChat v2 JSON, whatsapp → ManyChat v2 JSON. 3) Адаптация ответов под ограничения канала: Instagram — макс 3 кнопки, нет carousel; WhatsApp — кнопки + списки. 4) Единая история разговора per client across channels.
+
+# Test Strategy:
+Отправить одинаковое сообщение через Telegram, Instagram DM и WhatsApp. Проверить что AI agent даёт одинаковый по смыслу ответ. Проверить формат ответов для каждого канала.
+
+# Subtasks:
+## 1. Channel-agnostic message processing layer [pending]
+### Dependencies: None
+### Description: Вынести общую логику обработки сообщений из Telegram handler в отдельный слой, принимающий channel-нейтральный формат
+### Details:
+
+
+## 2. Channel router и адаптеры ответов [pending]
+### Dependencies: None
+### Description: Роутинг ответа по каналу: telegram → aiogram, instagram/whatsapp → ManyChat v2 JSON. Адаптация под ограничения каждого канала
+### Details:
+
+
+## 3. Единая история разговора per client [pending]
+### Dependencies: None
+### Description: Один клиент может писать из разных каналов. Связать conversation history по phone/subscriber_id
+### Details:
+
+

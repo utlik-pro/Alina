@@ -2,7 +2,11 @@ services:
   - type: web
     name: crystal-lab-bot
     runtime: docker
-    plan: free
+    plan: starter
+    disk:
+      name: crystal-lab-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: RENDER
         value: "true"

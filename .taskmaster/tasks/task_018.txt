@@ -1,0 +1,25 @@
+# Task ID: 18
+# Title: Admin уведомления для ManyChat каналов
+# Status: pending
+# Dependencies: 14
+# Priority: medium
+# Description: Расширить систему admin уведомлений для лидов из Instagram и WhatsApp (через ManyChat). Пересылка в admin channel с указанием канала источника.
+# Details:
+1) При получении нового лида из ManyChat — отправить уведомление в admin группу (Crystal Lab - Leads, chat_id -1003250489002). 2) Указывать канал: 📸 Instagram DM / 💬 WhatsApp. 3) Включать: имя клиента, первое сообщение, subscriber_id, ссылку на ManyChat профиль. 4) Для Instagram — включать context рекламы если есть (ad_type).
+
+# Test Strategy:
+Отправить тестовое сообщение через Instagram DM и WhatsApp. Проверить что admin получает уведомление с правильным каналом и данными клиента.
+
+# Subtasks:
+## 1. Уведомления о лидах из Instagram [pending]
+### Dependencies: None
+### Description: Формат уведомления для Instagram DM лидов с контекстом рекламы
+### Details:
+
+
+## 2. Уведомления о лидах из WhatsApp (ManyChat) [pending]
+### Dependencies: None
+### Description: Формат уведомления для WhatsApp лидов через ManyChat
+### Details:
+
+

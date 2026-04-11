@@ -1,0 +1,37 @@
+# Task ID: 14
+# Title: ManyChat Webhook endpoint в боте
+# Status: pending
+# Dependencies: 13
+# Priority: high
+# Description: Создать endpoint /manychat/webhook в Python backend для приёма External Request от ManyChat. Парсить payload (subscriber_id, last_input_text, channel), маршрутизировать через AI agent, возвращать ответ в формате ManyChat v2 Dynamic Content JSON.
+# Details:
+1) Создать Flask/aiohttp endpoint POST /manychat/webhook. 2) Парсить ManyChat payload: subscriber_id, first_name, last_name, last_input_text, phone, email, channel (instagram/whatsapp). 3) Маппить ManyChat subscriber на внутреннего клиента (по subscriber_id или phone). 4) Передать сообщение в существующую логику AI agent (та же обработка что для Telegram). 5) Сформировать ответ в формате v2: {version: 'v2', content: {messages: [{type: 'text', text: '...'}], actions: [...]}}. 6) Ответ должен прийти за 10 секунд (таймаут ManyChat). 7) Обработка ошибок — fallback ответ если AI не успевает.
+
+# Test Strategy:
+Отправить тестовый POST запрос с payload ManyChat формата. Проверить что возвращается корректный v2 JSON. Замерить время ответа — должно быть < 10 сек. Тест через реальный ManyChat External Request.
+
+# Subtasks:
+## 1. HTTP endpoint /manychat/webhook [pending]
+### Dependencies: None
+### Description: Создать POST endpoint, парсинг ManyChat payload, валидация входящих данных, аутентификация запросов
+### Details:
+
+
+## 2. Маппинг ManyChat subscriber → внутренний клиент [pending]
+### Dependencies: None
+### Description: Связать ManyChat subscriber_id с клиентом в нашей БД. Создавать нового клиента при первом контакте. Сохранять канал (instagram/whatsapp)
+### Details:
+
+
+## 3. Интеграция с AI agent [pending]
+### Dependencies: None
+### Description: Передать сообщение из ManyChat в существующую логику обработки (conversation manager, AI agent). Получить ответ
+### Details:
+
+
+## 4. Формирование v2 Dynamic Content ответа [pending]
+### Dependencies: None
+### Description: Конвертация ответа AI agent в ManyChat v2 JSON формат (text, buttons, actions, tags). Обработка таймаута 10 сек
+### Details:
+
+

@@ -1,0 +1,37 @@
+# Task ID: 12
+# Title: End-to-End тестирование и запуск
+# Status: pending
+# Dependencies: 6, 7, 8
+# Priority: high
+# Description: Провести полное E2E тестирование системы с реальными сценариями из клиентских чатов. Подготовить к production запуску.
+# Details:
+1) E2E тесты основных flow: new client → consultation → booking → confirmation, 2) Тесты edge cases: returning client with active package, male client, 'too expensive' objection, location sharing, multi-message sequences, 3) Load testing: обработка параллельных диалогов, 4) Мониторинг и алерты, 5) Инструкция для администраторов Crystal Lab по работе с системой.
+
+# Test Strategy:
+Прогнать 10 реальных сценариев из экспортированных чатов через систему. Проверить корректность всех ответов и созданных записей.
+
+# Subtasks:
+## 1. Integration Tests [pending]
+### Dependencies: None
+### Description: Автоматические тесты для основных flow: WhatsApp → Agent → YClients → Notification
+### Details:
+
+
+## 2. Real Scenario Testing [pending]
+### Dependencies: None
+### Description: Ручное тестирование с реальными сценариями из клиентских чатов
+### Details:
+
+
+## 3. Monitoring и Alerting [pending]
+### Dependencies: None
+### Description: Настройка мониторинга: uptime, error rates, response times. Alerting при сбоях.
+### Details:
+
+
+## 4. Production Deployment [pending]
+### Dependencies: None
+### Description: Deploy на VPS/cloud, настройка SSL, domain, environment variables, process manager (PM2)
+### Details:
+
+

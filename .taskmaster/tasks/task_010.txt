@@ -1,0 +1,31 @@
+# Task ID: 10
+# Title: Анализ клиентских чатов для обучения агента
+# Status: pending
+# Dependencies: None
+# Priority: medium
+# Description: Обработать 25+ экспортированных WhatsApp чатов с клиентами для: 1) анализа паттернов общения, 2) извлечения типичных вопросов и edge cases, 3) fine-tuning стиля ответов агента, 4) создания тестовых сценариев.
+# Details:
+Доступны архивы чатов: Sara, Azza, Mai, Faiza, Fatima, Najoud, Amna, Amal, Aysha, Fakhera, Varvara, Hamama, Jennifer, Aliaa, Derya Aktan, Mariam (multiple), Huda, Ghada, Ohood, Shaikha, Hanin, Johanna, Boutayna, Fakhra, Neelanjona, Meera, Alya, Shahili. Нужно: распаковать ZIP архивы, парсить _chat.txt файлы, классифицировать диалоги (successful booking, just inquiry, objection, etc.), извлечь FAQ.
+
+# Test Strategy:
+Проверить что парсер корректно обрабатывает все форматы чатов. Проверить что извлечённые паттерны покрывают основные сценарии.
+
+# Subtasks:
+## 1. Парсер WhatsApp чатов [pending]
+### Dependencies: None
+### Description: Скрипт для распаковки ZIP и парсинга _chat.txt в структурированный формат (sender, timestamp, message)
+### Details:
+
+
+## 2. Анализ паттернов и FAQ [pending]
+### Dependencies: None
+### Description: Классификация диалогов, извлечение частых вопросов, типичных сценариев, edge cases
+### Details:
+
+
+## 3. Test Scenarios Generation [pending]
+### Dependencies: None
+### Description: Создание набора тестовых сценариев на основе реальных диалогов для валидации агента
+### Details:
+
+

@@ -1,0 +1,31 @@
+# Task ID: 7
+# Title: Admin Notification Channel
+# Status: pending
+# Dependencies: 4
+# Priority: high
+# Description: Реализовать канал уведомлений для администратора: пересылка лидов, новых записей и важных событий в Telegram канал или WhatsApp группу.
+# Details:
+При каждом значимом событии отправлять уведомление администратору: 1) Новый лид (клиент начал диалог), 2) Запись создана (детали услуги, клиент, время), 3) Клиент просит связь с живым оператором, 4) Агент не уверен в ответе и перенаправляет на админа. Формат: структурированное сообщение с key info. Уже есть прототип: @crystal_lab_leads в Telegram.
+
+# Test Strategy:
+Проверить что при создании записи уведомление приходит в Telegram канал с полной информацией. Проверить формат сообщения.
+
+# Subtasks:
+## 1. Telegram Bot для уведомлений [pending]
+### Dependencies: None
+### Description: Настроить Telegram Bot API для отправки уведомлений в канал @crystal_lab_leads
+### Details:
+
+
+## 2. Форматирование уведомлений [pending]
+### Dependencies: None
+### Description: Шаблоны уведомлений: new_lead, booking_created, escalation_required, payment_info
+### Details:
+
+
+## 3. Escalation Logic [pending]
+### Dependencies: None
+### Description: Определение когда агент должен передать диалог живому оператору и уведомить об этом
+### Details:
+
+

@@ -1,0 +1,37 @@
+# Task ID: 3
+# Title: Knowledge Base — база знаний агента
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Создать структурированную базу знаний для AI агента: полный каталог услуг с ценами, актуальные акции, скрипты ответов, правила работы с возражениями, бизнес-правила.
+# Details:
+База знаний должна быть легко обновляемой (JSON/YAML файлы). Включает: 1) Полный прайс-лист всех услуг Crystal Lab (body massage, facial, nails, lashes, permanent makeup, hair, waxing и т.д.), 2) Текущие акции (Winter/Ramadan 2026), 3) Пакеты абонементов, 4) Quick response шаблоны для 3 типов рекламы, 5) Скрипты возражений ('дорого', 'где вы находитесь'), 6) Шаблон подтверждения записи, 7) Правила оплаты (cash/transfer/terminal + VAT), 8) Реферальная программа 'Book a Friend'.
+
+# Test Strategy:
+Проверить что агент корректно отвечает на вопросы о ценах для всех категорий услуг. Проверить что акции актуальны. Протестировать все скрипты возражений.
+
+# Subtasks:
+## 1. Структура каталога услуг [pending]
+### Dependencies: None
+### Description: Создать JSON/YAML файл с полным каталогом услуг: категории, названия, цены, длительность, описания
+### Details:
+
+
+## 2. Акции и пакеты [pending]
+### Dependencies: None
+### Description: Структурировать текущие promotional offers и massage packages в обновляемом формате
+### Details:
+
+
+## 3. Скрипты и шаблоны [pending]
+### Dependencies: None
+### Description: Оформить quick response templates, objection scripts, booking confirmation template, welcome message
+### Details:
+
+
+## 4. Бизнес-правила [pending]
+### Dependencies: None
+### Description: Оформить правила: gender policy, payment rules, location info, operational rules, referral program
+### Details:
+
+

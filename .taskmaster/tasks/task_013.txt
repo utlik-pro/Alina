@@ -1,0 +1,37 @@
+# Task ID: 13
+# Title: ManyChat аккаунт и подключение каналов
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Создать ManyChat Pro аккаунт, подключить Instagram Business (@crystal_lab_ae) и WhatsApp Business (+971 55 193 36 62). Сгенерировать API ключ. Настроить базовые Flow с Default Reply для обоих каналов.
+# Details:
+1) Создать аккаунт ManyChat Pro (от $15/мес — нужен для WhatsApp). 2) Подключить Instagram Business аккаунт через Facebook Page (нужна связка с Meta Business Suite). 3) Подключить WhatsApp Business номер через Meta Cloud API. 4) Сгенерировать API Key в Settings → API. 5) Настроить Default Reply Flow для Instagram — External Request на наш сервер. 6) Настроить Default Reply Flow для WhatsApp — External Request на наш сервер. 7) Проверить что сообщения доходят до нашего webhook.
+
+# Test Strategy:
+Отправить тестовое сообщение в Instagram DM и WhatsApp. Убедиться что ManyChat получает их и делает External Request на наш сервер.
+
+# Subtasks:
+## 1. Создание ManyChat Pro аккаунта [pending]
+### Dependencies: None
+### Description: Зарегистрировать аккаунт ManyChat, оплатить Pro план для доступа к WhatsApp и полному API
+### Details:
+
+
+## 2. Подключение Instagram Business [pending]
+### Dependencies: None
+### Description: Связать Instagram @crystal_lab_ae через Facebook Page с ManyChat. Проверить приём DM сообщений
+### Details:
+
+
+## 3. Подключение WhatsApp Business [pending]
+### Dependencies: None
+### Description: Подключить WhatsApp номер +971 55 193 36 62 через Meta Business Suite в ManyChat
+### Details:
+
+
+## 4. Генерация API ключа и настройка Default Reply Flows [pending]
+### Dependencies: None
+### Description: Получить API Key, настроить Default Reply для Instagram и WhatsApp с External Request на наш webhook
+### Details:
+
+

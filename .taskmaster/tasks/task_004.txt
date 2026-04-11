@@ -1,0 +1,43 @@
+# Task ID: 4
+# Title: AI Agent Core — разговорный движок
+# Status: pending
+# Dependencies: 3
+# Priority: high
+# Description: Создать ядро AI агента на базе LLM (Claude/OpenAI API) с system prompt, knowledge base контекстом и управлением состоянием диалога.
+# Details:
+Агент должен: 1) Принимать буферизованные сообщения клиента, 2) Загружать контекст из knowledge base, 3) Определять intent клиента (консультация, бронирование, вопрос о цене, возражение), 4) Генерировать ответ в стиле Crystal Lab (дружелюбный, профессиональный, на английском), 5) Управлять состоянием диалога (greeting → consultation → booking → confirmation), 6) Использовать emoji умеренно как в оригинальных скриптах. System prompt должен включать все бизнес-правила из knowledge base.
+
+# Test Strategy:
+Протестировать диалоги: новый клиент с рекламы body massage, клиент спрашивает про цены facial, клиент говорит 'too expensive', клиент хочет забронировать, клиент-мужчина. Проверить что ответы соответствуют скриптам Crystal Lab.
+
+# Subtasks:
+## 1. System Prompt и конфигурация LLM [pending]
+### Dependencies: None
+### Description: Создать system prompt с полным контекстом Crystal Lab, настроить вызов Claude/OpenAI API
+### Details:
+
+
+## 2. Conversation Manager [pending]
+### Dependencies: None
+### Description: Система управления состоянием диалога: хранение истории, определение фазы (greeting/consultation/booking/confirmation), переключение контекста
+### Details:
+
+
+## 3. Intent Detection [pending]
+### Dependencies: None
+### Description: Определение намерений клиента: price_inquiry, booking_request, objection, question, greeting, location_share
+### Details:
+
+
+## 4. Response Generation [pending]
+### Dependencies: None
+### Description: Генерация ответов с учётом контекста, скриптов и стиля Crystal Lab. Поддержка emoji, структурированных прайс-листов
+### Details:
+
+
+## 5. Conversation History Storage (PostgreSQL) [pending]
+### Dependencies: None
+### Description: Хранение истории разговоров в PostgreSQL для контекста и аналитики
+### Details:
+
+

@@ -1,0 +1,25 @@
+# Task ID: 8
+# Title: Финансовый модуль — VAT и способы оплаты
+# Status: pending
+# Dependencies: 5
+# Priority: medium
+# Description: Реализовать расчёт стоимости с учётом способа оплаты и 5% VAT. Отслеживание статуса оплаты в привязке к записям.
+# Details:
+Правила: Cash = цена без VAT (tax free), Bank transfer = цена + 5% VAT, Terminal = цена + 5% VAT (предупреждение что нужно заказывать заранее). Агент при обсуждении цены всегда называет цену без VAT и добавляет 'Cash - tax free / Bank transfer + 5% VAT'. При создании записи фиксируется способ оплаты. Пакеты/абонементы также подчиняются правилам VAT.
+
+# Test Strategy:
+Проверить расчёт: услуга 350 AED, cash = 350, transfer = 367.5. Проверить что агент корректно информирует о VAT. Проверить terminal warning.
+
+# Subtasks:
+## 1. VAT Calculator [pending]
+### Dependencies: None
+### Description: Модуль расчёта VAT: base_price → cash_price (no VAT) / transfer_price (+5%)
+### Details:
+
+
+## 2. Payment Method Tracking [pending]
+### Dependencies: None
+### Description: Отслеживание способа оплаты для каждой записи, синхронизация с YClients
+### Details:
+
+
