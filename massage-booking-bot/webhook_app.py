@@ -108,13 +108,12 @@ async def lifespan(application: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown — do NOT delete webhook, new instance will re-set it on startup
     logger.info("Shutting down...")
     if bot_module.follow_up_service:
         await bot_module.follow_up_service.stop()
     if bot_module.msg_buffer:
         await bot_module.msg_buffer.close()
-    await bot_instance.delete_webhook()
     await bot_instance.session.close()
     await db.close()
 
