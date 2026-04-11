@@ -160,8 +160,8 @@ SERVICE_CATALOG = {
 
     # ── Face Waxing ───────────────────────────────────────
     "wax_eyebrow": {"name": "Eyebrow waxing", "duration": None, "price": 40.0, "category": "face_waxing"},
-    "wax_upper_lip": {"name": "Upper lip waxing", "duration": None, "price": 25.0, "category": "face_waxing"},
-    "wax_chin": {"name": "Chin waxing", "duration": None, "price": 25.0, "category": "face_waxing"},
+    "wax_upper_lip": {"name": "Upper lip waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
+    "wax_chin": {"name": "Chin waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
     "wax_sideburn": {"name": "Sideburn waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
     "wax_forehead": {"name": "Forehead waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
     "wax_full_face": {"name": "Full face waxing", "duration": None, "price": 110.0, "category": "face_waxing"},
