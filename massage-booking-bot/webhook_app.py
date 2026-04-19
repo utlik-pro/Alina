@@ -169,6 +169,17 @@ async def telegram_webhook(request: Request):
     return Response(status_code=200)
 
 
+async def _reset_user(user_id: str, telegram_id: str):
+    """Clear context, history, and client data for a user."""
+    import bot as bot_module
+    dialog_manager.clear_context(user_id)
+    deleted = await bot_module.message_service.clear_history(telegram_id)
+    await bot_module.client_service.reset_client(telegram_id)
+    await bot_module.dialog_session_service.end_session(telegram_id)
+    logger.info(f"Reset user {user_id}: deleted {deleted} messages")
+    return deleted
+
+
 async def _process_wappi_message(phone: str, text: str, sender_name: str):
     """Background task: process WhatsApp message through AI agent."""
     try:
@@ -176,6 +187,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         user_id = f"wappi_{phone}"
         telegram_id = user_id
+
+        # Check for reset commands
+        _cmd = text.strip().lower()
+        if _cmd in ("/clear", "/reset", "/start", "reset", "очистить", "сброс", "clear"):
+            await _reset_user(user_id, telegram_id)
+            if wappi_client:
+                await wappi_client.send_message(
+                    phone,
+                    "✅ Memory cleared dear 🌹 Let's start fresh! What services are you interested in?"
+                )
+            return
 
         client = await bot_module.client_service.get_or_create_client(telegram_id)
         if sender_name and not client.name:
@@ -290,6 +312,23 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 )
             except Exception:
                 pass
+
+
+@app.post("/admin/reset/{phone}")
+async def admin_reset(phone: str, request: Request):
+    """Clear dialog history for a WhatsApp user by phone.
+
+    Protected by WEBHOOK_SECRET header: X-Admin-Secret
+    Usage: curl -X POST https://.../admin/reset/375447574000 -H "X-Admin-Secret: <secret>"
+    """
+    secret = request.headers.get("X-Admin-Secret", "")
+    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+        return Response(status_code=403, content="forbidden")
+
+    phone_clean = phone.replace("+", "").strip()
+    user_id = f"wappi_{phone_clean}"
+    deleted = await _reset_user(user_id, user_id)
+    return {"status": "ok", "phone": phone_clean, "messages_deleted": deleted}
 
 
 @app.post("/webhook/wappi")
