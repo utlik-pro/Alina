@@ -250,9 +250,25 @@ class FollowUpService:
             del self.follow_up_state[user_key]
 
     def get_upsell_message(self, service_name: str) -> Optional[str]:
-        """Get upselling recommendation for a service."""
+        """Get upselling recommendation for a service.
+
+        Skip upselling for combos/packages (per PRD 4.7 "where appropriate"):
+        - already combo (Body + Face)
+        - already a package
+        - already a special offer (trial session, cupping combo, etc.)
+        """
+        if not service_name:
+            return None
+        name_lower = service_name.lower()
+        skip_keywords = [
+            "combo", "package", "trial", "offer", "пакет", "комбо",
+            "body + face", "face + body", "mani + pedi",
+            "winter", "ramadan", "lymphatic drainage + cupping",
+        ]
+        if any(kw in name_lower for kw in skip_keywords):
+            return None
         for key, messages in UPSELL_RECOMMENDATIONS.items():
-            if key.lower() in service_name.lower():
+            if key.lower() in name_lower:
                 import random
                 return random.choice(messages)
         return None

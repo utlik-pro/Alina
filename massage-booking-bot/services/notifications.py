@@ -164,6 +164,33 @@ class NotificationService:
         except TelegramBadRequest as e:
             logger.error(f"Failed to send confirmation: {e}")
 
+    async def send_lead(self, client: Client, channel: str = "telegram"):
+        """Notify admin about a qualified lead (client provided name+phone but not yet booked).
+
+        Per PRD 4.2 step 11: forward lead/booking details to admin channel.
+        """
+        if not self.group_chat_id:
+            return
+        channel_emoji = {"telegram": "💬", "wappi": "📱", "instagram": "📸", "whatsapp": "📱"}.get(channel, "💬")
+        name = client.name or "—"
+        phone = client.phone or "—"
+        message = (
+            f"🔥 <b>Новый лид ({channel_emoji} {channel})</b>\n\n"
+            f"👤 Имя: {name}\n"
+            f"📞 Телефон: {phone}\n"
+            f"🆔 ID: <code>{client.telegram_id}</code>\n\n"
+            f"Клиент оставил контакты, но ещё не забронировал."
+        )
+        try:
+            await self.bot.send_message(
+                chat_id=self.group_chat_id,
+                text=message,
+                parse_mode="HTML",
+            )
+            logger.info(f"Sent lead notification for {client.telegram_id}")
+        except Exception as e:
+            logger.error(f"Failed to send lead notification: {e}")
+
     async def send_booking_failed(self, telegram_id: str, reason: str):
         """Notify admin that a booking was confirmed by bot but could not be saved
         (missing service/price/date). Admin should handle manually."""
