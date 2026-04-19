@@ -508,6 +508,12 @@ You are Alina who speaks whatever language the client uses."""
             # КРИТИЧНО: Постобработка - удаляем упоминания VAT из ответа
             answer = self._remove_vat_from_response(answer)
 
+            # КРИТИЧНО: удаляем фразы про предоплату (PRD 4.6 — оплата ПОСЛЕ услуги)
+            answer = self._remove_prepayment_from_response(answer)
+
+            # КРИТИЧНО: удаляем фразы "checking, one moment" (у нас нет async tools)
+            answer = self._remove_checking_from_response(answer)
+
             logger.info(f"GPT ответ (после очистки, len={len(answer)}): {repr(answer[:200])}")
 
             return answer
@@ -549,6 +555,79 @@ You are Alina who speaks whatever language the client uses."""
         cleaned = cleaned.strip()
 
         return cleaned
+
+    def _remove_prepayment_from_response(self, text: str) -> str:
+        """Удалить любые упоминания предоплаты — оплата ПОСЛЕ услуги (PRD 4.6).
+
+        Удаляет строки вида:
+        - "I will send bank details now"
+        - "Please transfer first"
+        - "After transfer please send screenshot"
+        - "Send me payment/screenshot to confirm"
+        - "IBAN/account number"
+        - "Deposit/prepayment required"
+        """
+        import re
+        # Строки целиком удаляются если содержат триггеры предоплаты
+        line_patterns = [
+            r"(?:i\s+will|i'?ll|we\s+will|we'?ll)\s+send\s+(?:you\s+)?(?:the\s+)?bank\s+details",
+            r"please\s+transfer\s+first",
+            r"(?:please\s+)?transfer\s+(?:the\s+)?(?:amount|money|payment)\s+(?:first|now|before|to\s+confirm)",
+            r"after\s+transfer\s+please\s+send\s+(?:me\s+)?(?:a\s+)?screenshot",
+            r"send\s+(?:me\s+)?(?:a\s+)?screenshot\s+(?:of\s+)?(?:the\s+)?(?:transfer|payment)",
+            r"send\s+(?:me\s+)?(?:the\s+)?(?:payment|transfer)\s+to\s+confirm",
+            r"(?:iban|account\s+number)\s*[:=]",
+            r"deposit\s+(?:is\s+)?required",
+            r"prepayment\s+(?:is\s+)?required",
+            r"pay\s+(?:in\s+advance|upfront|first)",
+            r"before\s+(?:i\s+)?(?:can\s+)?confirm\s+(?:the\s+)?booking.*?(?:transfer|pay|deposit)",
+            # Russian
+            r"переведи(?:те)?\s+(?:сначала|заранее|до)",
+            r"отправь(?:те)?\s+(?:сначала|первым|мне)\s+(?:скрин|фото|подтверждение)",
+            r"предоплат[уа]\s+(?:обязательна|нужна|требуется)",
+        ]
+
+        cleaned = text
+        for pattern in line_patterns:
+            # Удаляем всю строку содержащую триггер
+            cleaned = re.sub(
+                r"^[^\n]*" + pattern + r"[^\n]*(?:\n|$)",
+                "",
+                cleaned,
+                flags=re.IGNORECASE | re.MULTILINE,
+            )
+
+        # Если удалили всё — вернуть безопасный ответ
+        if not cleaned.strip():
+            logger.warning("Prepayment filter removed entire response, using safe fallback")
+            return "Ok dear, your booking is confirmed 🌹 You'll pay at the appointment (cash or bank transfer — as you prefer) 🙏"
+
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
+
+    def _remove_checking_from_response(self, text: str) -> str:
+        """Удалить 'checking availability, one moment' — у нас нет async tools.
+
+        GPT должен отвечать сразу с доступными слотами.
+        """
+        import re
+        patterns = [
+            r"(?:i'?ll|i\s+will|let\s+me)\s+check(?:ing)?\s+(?:the\s+)?(?:availability|slots|schedule)[^.!?\n]*[.!?]?",
+            r"(?:still\s+)?checking\s+availability[^.!?\n]*[.!?]?",
+            r"one\s+moment\s+please\s*[🙏🌹✨]*",
+            r"please\s+wait\s+a\s+moment[^.!?\n]*[.!?]?",
+            r"give\s+me\s+(?:just\s+)?a\s+(?:moment|second|minute)[^.!?\n]*[.!?]?",
+            # Russian
+            r"сейчас\s+проверю[^.!?\n]*[.!?]?",
+            r"одну\s+минуту[^.!?\n]*[.!?]?",
+        ]
+        cleaned = text
+        for pattern in patterns:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+        cleaned = re.sub(r'[^\S\n]+', ' ', cleaned)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
 
     def _format_booking_context(self, context: Dict[str, Any]) -> str:
         """Форматировать контекст бронирования для GPT"""

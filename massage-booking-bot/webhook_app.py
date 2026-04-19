@@ -19,6 +19,11 @@ from loguru import logger
 _processed_message_ids: dict[str, float] = {}
 _DEDUP_TTL = 300  # 5 minutes
 
+# Wappi message buffering: phone → {"messages": [text,...], "timer": Task, "sender_name": str}
+# Per PRD 4.1 rule 6: wait 7s to collect multi-part messages before responding
+_wappi_buffer: dict[str, dict] = {}
+_WAPPI_BUFFER_DELAY = 7.0  # seconds
+
 from config import config
 from bot import router, booking_agent
 from database import init_db, ClientService, MessageService, BookingService, DialogSessionService
@@ -167,6 +172,37 @@ async def telegram_webhook(request: Request):
     update = Update.model_validate(data, context={"bot": bot_instance})
     await dp.feed_update(bot=bot_instance, update=update)
     return Response(status_code=200)
+
+
+async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
+    """Buffer incoming Wappi messages — wait 7s, then process combined.
+
+    If a new message arrives within 7s, restart the timer (PRD 4.1 rule 6).
+    """
+    entry = _wappi_buffer.setdefault(phone, {"messages": [], "timer": None, "sender_name": sender_name})
+    entry["messages"].append(text)
+    if sender_name and not entry.get("sender_name"):
+        entry["sender_name"] = sender_name
+
+    # Cancel existing timer if any (reset 7s window)
+    if entry.get("timer") and not entry["timer"].done():
+        entry["timer"].cancel()
+
+    async def _flush():
+        try:
+            await asyncio.sleep(_WAPPI_BUFFER_DELAY)
+            buf = _wappi_buffer.pop(phone, None)
+            if not buf:
+                return
+            combined = "\n".join(buf["messages"])
+            logger.info(f"Wappi buffer [{phone}]: flushing {len(buf['messages'])} messages")
+            await _process_wappi_message(phone, combined, buf["sender_name"])
+        except asyncio.CancelledError:
+            pass  # new message arrived, will be handled by new timer
+        except Exception as e:
+            logger.error(f"Wappi buffer flush error: {e}", exc_info=True)
+
+    entry["timer"] = asyncio.create_task(_flush())
 
 
 async def _reset_user(user_id: str, telegram_id: str):
@@ -389,8 +425,8 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
             )
         return {"status": "non_text"}
 
-    # Schedule AI processing in background — return 200 immediately
-    background_tasks.add_task(_process_wappi_message, phone, text, sender_name)
+    # Schedule buffered processing (7s wait to combine multi-part messages per PRD 4.1.6)
+    background_tasks.add_task(_buffer_and_process_wappi, phone, text, sender_name)
     return {"status": "accepted"}
 
 

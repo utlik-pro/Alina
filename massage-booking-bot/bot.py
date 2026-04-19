@@ -797,10 +797,27 @@ async def _extract_and_save_data(
         # Booking confirmed!
         booking_data = context.booking_data
 
-        # Получаем данные из context (with safe None handling)
-        service_name = booking_data.get("service_type") or "Body massage"
+        # CRITICAL: Не создаём бронь с fallback данными — это порча данных в YClients
+        service_name = booking_data.get("service_type")
+        base_price = booking_data.get("price")
+        if not service_name or base_price is None:
+            logger.error(
+                f"❌ Booking attempted without service/price in context: "
+                f"service_type={service_name} price={base_price}. Skipping YClients + DB write. "
+                f"GPT response: {bot_response[:200]}"
+            )
+            # Уведомить админа о проблеме — пусть обработает вручную
+            if notification_service:
+                try:
+                    await notification_service.send_booking_failed(
+                        telegram_id=telegram_id,
+                        reason=f"Service/price not extracted. GPT said: {bot_response[:200]}"
+                    )
+                except Exception:
+                    pass
+            return  # не продолжаем создание брони
+
         duration = booking_data.get("service_duration") or 60
-        base_price = booking_data.get("price") or 350.0
         booking_time = booking_data.get("time") or "TBD"
         payment_method = booking_data.get("payment_method") or "cash"
 
@@ -815,12 +832,62 @@ async def _extract_and_save_data(
                 booking_time = time_in_response.group(1)
                 logger.info(f"Extracted time from GPT response: {booking_time}")
 
-        # Определяем дату (today/tomorrow)
+        # Определяем дату — парсим из GPT response (PRD-compliant)
+        # Формат GPT: "booked on Wednesday 26th of February at 5pm"
+        from datetime import timezone as _tz2
+        _uae_tz = _tz2(timedelta(hours=4))
+        _now_uae = datetime.now(_uae_tz).replace(tzinfo=None)
         booking_date_str = (booking_data.get("date") or "").lower()
-        if "today" in booking_date_str:
-            booking_date = datetime.now()
-        else:
-            booking_date = datetime.now() + timedelta(days=1)  # default: tomorrow
+        booking_date = None
+
+        # 1. Try to parse day-of-week + ordinal from GPT response
+        day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                   "friday": 4, "saturday": 5, "sunday": 6}
+        month_map = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
+                     "june": 6, "july": 7, "august": 8, "september": 9,
+                     "october": 10, "november": 11, "december": 12}
+
+        # Match "Wednesday 26th of February" or "Sunday 26th of April"
+        dow_match = re.search(
+            r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(\d{1,2})(?:st|nd|rd|th)?\s+of\s+(\w+)',
+            bot_response.lower()
+        )
+        if dow_match:
+            try:
+                day_num = int(dow_match.group(2))
+                month_name = dow_match.group(3).lower()
+                if month_name in month_map:
+                    month_num = month_map[month_name]
+                    year = _now_uae.year
+                    # If month already passed this year → next year
+                    if month_num < _now_uae.month or (month_num == _now_uae.month and day_num < _now_uae.day):
+                        year += 1
+                    booking_date = datetime(year, month_num, day_num)
+                    logger.info(f"Parsed booking date from GPT: {booking_date.date()}")
+            except Exception as e:
+                logger.warning(f"Failed to parse date from GPT: {e}")
+
+        # 2. Try day-of-week only ("this Sunday", "Friday")
+        if booking_date is None:
+            for day_kw, weekday in day_map.items():
+                if day_kw in booking_date_str or day_kw in bot_response.lower():
+                    days_ahead = (weekday - _now_uae.weekday()) % 7
+                    if days_ahead == 0:
+                        days_ahead = 7  # "sunday" when today=sunday → next sunday
+                    booking_date = _now_uae + timedelta(days=days_ahead)
+                    logger.info(f"Parsed booking date from weekday '{day_kw}': {booking_date.date()}")
+                    break
+
+        # 3. today/tomorrow keywords
+        if booking_date is None:
+            if "today" in booking_date_str or "сегодня" in booking_date_str:
+                booking_date = _now_uae
+            elif "tomorrow" in booking_date_str or "завтра" in booking_date_str:
+                booking_date = _now_uae + timedelta(days=1)
+            else:
+                # 4. Fallback: tomorrow (but warn!)
+                booking_date = _now_uae + timedelta(days=1)
+                logger.warning(f"⚠️ Could not parse date, defaulting to tomorrow. date_str='{booking_date_str}', response preview='{bot_response[:100]}'")
 
         # Пытаемся извлечь время из строки типа "5pm", "12:00 p.m", "3 pm"
         if booking_time and booking_time != "TBD":
@@ -870,6 +937,8 @@ async def _extract_and_save_data(
                 client_phone = fresh_client.phone or ""
 
                 if yc_service_id and yc_staff_id:
+                    # is_test flag — controlled by env var (default: real bookings in prod)
+                    _is_test = os.getenv("YCLIENTS_TEST_BOOKINGS", "false").lower() == "true"
                     yc_result = await yclients_service.create_booking(
                         staff_id=yc_staff_id,
                         service_ids=[yc_service_id],
@@ -878,7 +947,7 @@ async def _extract_and_save_data(
                         client_name=client_name,
                         client_phone=client_phone,
                         comment=f"Telegram bot booking #{booking.id}",
-                        is_test=True,  # Mark as test during testing phase
+                        is_test=_is_test,
                     )
                     if yc_result:
                         logger.info(f"✅ YClients booking created: #{yc_result.get('id', '?')}")

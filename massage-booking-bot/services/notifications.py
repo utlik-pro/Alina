@@ -164,6 +164,28 @@ class NotificationService:
         except TelegramBadRequest as e:
             logger.error(f"Failed to send confirmation: {e}")
 
+    async def send_booking_failed(self, telegram_id: str, reason: str):
+        """Notify admin that a booking was confirmed by bot but could not be saved
+        (missing service/price/date). Admin should handle manually."""
+        if not self.group_chat_id:
+            return
+        message = (
+            f"⚠️ <b>Бронирование требует ручной обработки</b>\n\n"
+            f"Клиент: <code>{telegram_id}</code>\n"
+            f"Причина: {reason[:500]}\n\n"
+            f"Бот подтвердил бронь, но не смог извлечь услугу/цену/дату. "
+            f"Проверьте диалог и создайте запись вручную."
+        )
+        try:
+            await self.bot.send_message(
+                chat_id=self.group_chat_id,
+                text=message,
+                parse_mode="HTML",
+            )
+            logger.warning(f"Sent booking_failed notification for {telegram_id}")
+        except Exception as e:
+            logger.error(f"Failed to send booking_failed notification: {e}")
+
     async def send_booking_cancelled(
         self,
         client: Client,
