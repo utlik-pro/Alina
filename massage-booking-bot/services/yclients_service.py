@@ -297,6 +297,41 @@ class YClientsService:
 
         return staff[0]["id"] if staff else None
 
+    async def find_client_by_phone(self, phone: str) -> Optional[Dict]:
+        """Search for a client in YClients by phone number. Returns first match or None.
+
+        Phone should be in international format (e.g. "971501234567" or "+971501234567").
+        """
+        if not phone:
+            return None
+        # Normalize: strip non-digits
+        phone_clean = "".join(c for c in phone if c.isdigit())
+        if not phone_clean:
+            return None
+
+        # YClients supports search by phone via ?phone= or ?q= param
+        data = await self._get(f"company/{self.company_id}/clients/search", params={
+            "phone": phone_clean,
+        })
+        if not data:
+            # Fallback: old-style /clients/search might not exist, try records?phone=
+            return None
+
+        clients_list = data.get("data") if isinstance(data, dict) else data
+        if not isinstance(clients_list, list) or not clients_list:
+            return None
+        return clients_list[0]
+
+    async def get_client_bookings(self, client_id: int, limit: int = 10) -> List[Dict]:
+        """Get recent bookings (records) for a client."""
+        data = await self._get(f"records/{self.company_id}", params={
+            "client_id": client_id,
+            "count": limit,
+        })
+        if data and isinstance(data.get("data"), list):
+            return data["data"]
+        return []
+
     async def get_records(self, staff_id: int, date: str) -> List[Dict]:
         """Get existing bookings for a staff member on a date. READ ONLY."""
         data = await self._get(f"records/{self.company_id}", params={

@@ -306,7 +306,14 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                     if any(kw in _text_lower for kw in ["al ain", "alain", "al-ain", "аль айн"]):
                         _client_area = "al_ain"
                         dialog_manager.update_client_data(user_id, "area", "al_ain")
-                    elif any(kw in _text_lower for kw in ["abu dhabi", "abudhabi", "абу даби", "raha", "khalifa", "mussafah", "mbz"]):
+                    elif any(kw in _text_lower for kw in [
+                        "abu dhabi", "abudhabi", "абу даби",
+                        "raha", "al raha", "khalifa", "al khalifa",
+                        "mussafah", "mbz", "mohammed bin zayed", "mohamed bin zayed",
+                        "yas", "yas island", "saadiyat", "al reem", "reem island",
+                        "corniche", "tourist club", "al bateen", "bateen",
+                        "shahama", "baniyas", "shamkha", "al wathba", "wathba",
+                    ]):
                         _client_area = "abu_dhabi"
                         dialog_manager.update_client_data(user_id, "area", "abu_dhabi")
                     elif context.has_location:
@@ -359,7 +366,9 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                         if kw in _text_lower:
                             _current_wd = _now_uae.weekday()
                             days_ahead = (weekday - _current_wd) % 7
-                            if days_ahead == 0:
+                            # If today matches — today (not next week)
+                            # If client writes "next sunday" explicitly → +7
+                            if days_ahead == 0 and "next" in _text_lower:
                                 days_ahead = 7
                             target_date = (_now_uae + _td(days=days_ahead)).strftime("%Y-%m-%d")
                             if target_date not in (today, tomorrow):
