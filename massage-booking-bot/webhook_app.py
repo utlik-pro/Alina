@@ -7,12 +7,17 @@ Handles:
 """
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from loguru import logger
+
+# Deduplication cache: message_id → timestamp (processed within last 5 min)
+_processed_message_ids: dict[str, float] = {}
+_DEDUP_TTL = 300  # 5 minutes
 
 from config import config
 from bot import router, booking_agent
@@ -164,60 +169,20 @@ async def telegram_webhook(request: Request):
     return Response(status_code=200)
 
 
-@app.post("/webhook/wappi")
-async def wappi_webhook(request: Request):
-    """Receive WhatsApp messages via Wappi.pro webhook.
-
-    Wappi sends all selected event types (incoming_message, delivery_status, etc).
-    We process only incoming_message events and respond via Wappi API.
-    """
-    # Verify optional auth secret
-    if config.WAPPI_WEBHOOK_SECRET:
-        auth = request.headers.get("Authorization", "")
-        if auth != config.WAPPI_WEBHOOK_SECRET:
-            logger.warning("Wappi webhook: invalid auth")
-            return Response(status_code=403)
-
-    data = await request.json()
-    parsed = parse_incoming_message(data)
-    if not parsed:
-        # Not an incoming message (e.g. delivery_status) — acknowledge and ignore
-        return {"status": "ignored"}
-
-    phone = parsed["phone"]
-    text = parsed["text"]
-    sender_name = parsed["sender_name"]
-    msg_type = parsed["message_type"]
-
-    logger.info(f"Wappi [{phone}] {sender_name}: {text[:100]}")
-
-    # Only process text messages for now
-    if msg_type != "chat" or not text:
-        if wappi_client:
-            await wappi_client.send_message(
-                phone,
-                "Sorry dear, I can only read text messages right now 🙏 "
-                "Please type your question in text 🌹"
-            )
-        return {"status": "non_text"}
-
-    # Process via AI agent — reuse channel-agnostic logic
+async def _process_wappi_message(phone: str, text: str, sender_name: str):
+    """Background task: process WhatsApp message through AI agent."""
     try:
         import bot as bot_module
 
-        # Use phone as unique user identifier
         user_id = f"wappi_{phone}"
         telegram_id = user_id
 
-        # Create/get client in DB (using phone-based telegram_id)
         client = await bot_module.client_service.get_or_create_client(telegram_id)
         if sender_name and not client.name:
             await bot_module.client_service.update_client(telegram_id, name=sender_name)
 
-        # Dialog context
         context = dialog_manager.get_or_create_context(user_id)
 
-        # Load DB history into context if empty
         if not context.recent_messages:
             db_history = await bot_module.message_service.get_conversation_history(telegram_id)
             if db_history:
@@ -227,7 +192,6 @@ async def wappi_webhook(request: Request):
                         "content": msg["content"],
                     })
 
-        # Save incoming message
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
 
@@ -272,32 +236,92 @@ async def wappi_webhook(request: Request):
                 except Exception as e:
                     logger.warning(f"Wappi: failed to fetch slots: {e}")
 
-        # Generate response via AI agent (pass context object directly — it has .get())
         response_text = await booking_agent.process_message(text, context)
 
         if not response_text or not response_text.strip():
             response_text = "Just a moment dear 🙏"
 
-        # Save bot response
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
 
-        # Send via Wappi — split on ---MESSAGE_SPLIT--- if present
         if wappi_client:
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
             for part in parts:
                 await wappi_client.send_message(phone, part)
 
-        return {"status": "processed"}
-
     except Exception as e:
-        logger.error(f"Wappi webhook processing error: {e}", exc_info=True)
+        logger.error(f"Wappi background processing error: {e}", exc_info=True)
         if wappi_client:
-            await wappi_client.send_message(
+            try:
+                await wappi_client.send_message(
+                    phone,
+                    "Sorry dear, technical issue 🙏 Please try again in a moment 🌹"
+                )
+            except Exception:
+                pass
+
+
+@app.post("/webhook/wappi")
+async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Receive WhatsApp messages via Wappi.pro webhook.
+
+    Responds with 200 OK immediately, then processes in background.
+    Prevents Wappi retries that cause duplicate responses.
+    Deduplicates by message_id (5 min TTL).
+    """
+    # Verify optional auth secret
+    if config.WAPPI_WEBHOOK_SECRET:
+        auth = request.headers.get("Authorization", "")
+        if auth != config.WAPPI_WEBHOOK_SECRET:
+            logger.warning("Wappi webhook: invalid auth")
+            return Response(status_code=403)
+
+    try:
+        data = await request.json()
+    except Exception as e:
+        logger.error(f"Wappi webhook: invalid JSON: {e}")
+        return {"status": "bad_json"}
+
+    parsed = parse_incoming_message(data)
+    if not parsed:
+        return {"status": "ignored"}
+
+    phone = parsed["phone"]
+    text = parsed["text"]
+    sender_name = parsed["sender_name"]
+    msg_type = parsed["message_type"]
+    message_id = parsed.get("message_id", "")
+
+    # Dedup: skip if we've already processed this message_id
+    now_ts = time.time()
+    # Cleanup old entries
+    expired = [k for k, ts in _processed_message_ids.items() if now_ts - ts > _DEDUP_TTL]
+    for k in expired:
+        _processed_message_ids.pop(k, None)
+
+    if message_id and message_id in _processed_message_ids:
+        logger.info(f"Wappi: duplicate message {message_id} ignored")
+        return {"status": "duplicate"}
+
+    if message_id:
+        _processed_message_ids[message_id] = now_ts
+
+    logger.info(f"Wappi [{phone}] {sender_name}: {text[:100]}")
+
+    # Non-text messages — quick response, no AI
+    if msg_type != "chat" or not text:
+        if wappi_client:
+            background_tasks.add_task(
+                wappi_client.send_message,
                 phone,
-                "Sorry dear, technical issue 🙏 Please try again in a moment 🌹"
+                "Sorry dear, I can only read text messages right now 🙏 "
+                "Please type your question in text 🌹"
             )
-        return {"status": "error"}
+        return {"status": "non_text"}
+
+    # Schedule AI processing in background — return 200 immediately
+    background_tasks.add_task(_process_wappi_message, phone, text, sender_name)
+    return {"status": "accepted"}
 
 
 @app.post("/webhook/manychat")
