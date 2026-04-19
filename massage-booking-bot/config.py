@@ -67,6 +67,11 @@ class Config:
     MANYCHAT_API_KEY: Optional[str] = os.getenv("MANYCHAT_API_KEY")
     MANYCHAT_WEBHOOK_SECRET: str = os.getenv("MANYCHAT_WEBHOOK_SECRET", "")
 
+    # Wappi.pro (WhatsApp via QR-bound profile)
+    WAPPI_TOKEN: Optional[str] = os.getenv("WAPPI_TOKEN")
+    WAPPI_PROFILE_ID: Optional[str] = os.getenv("WAPPI_PROFILE_ID")
+    WAPPI_WEBHOOK_SECRET: str = os.getenv("WAPPI_WEBHOOK_SECRET", "")
+
     @classmethod
     def validate(cls) -> bool:
         """Проверка наличия обязательных переменных"""
