@@ -346,6 +346,31 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                     slots_tomorrow = await yclients_service.get_available_slots_summary(
                         date=tomorrow, service_name=service_name)
 
+                    # Detect specific day mentioned and fetch its slots
+                    _day_keywords = {
+                        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                        "friday": 4, "saturday": 5, "sunday": 6,
+                        "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+                        "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
+                        "пятниц": 4, "суббот": 5, "воскрес": 6,
+                    }
+                    extra_slots_text = ""
+                    for kw, weekday in _day_keywords.items():
+                        if kw in _text_lower:
+                            _current_wd = _now_uae.weekday()
+                            days_ahead = (weekday - _current_wd) % 7
+                            if days_ahead == 0:
+                                days_ahead = 7
+                            target_date = (_now_uae + _td(days=days_ahead)).strftime("%Y-%m-%d")
+                            if target_date not in (today, tomorrow):
+                                try:
+                                    extra_slots = await yclients_service.get_available_slots_summary(
+                                        date=target_date, service_name=service_name)
+                                    extra_slots_text = f"\n\n{target_date}:\n{extra_slots}"
+                                except Exception:
+                                    pass
+                            break
+
                     # Filter by area if known
                     area_note = ""
                     if _client_area == "al_ain":
@@ -353,10 +378,11 @@ async def _process_buffered_messages(user_id: int, telegram_id: str, delay_secon
                     elif _client_area == "abu_dhabi":
                         area_note = "\n🚨 Client is in ABU DHABI. Do NOT show Al Ain therapists."
 
-                    slots_text = f"TODAY ({today}):\n{slots_today}\n\nTOMORROW ({tomorrow}):\n{slots_tomorrow}"
+                    slots_text = f"TODAY ({today}):\n{slots_today}\n\nTOMORROW ({tomorrow}):\n{slots_tomorrow}{extra_slots_text}"
                     context.extra_system_info = (
                         f"\n\nREAL AVAILABLE SLOTS FROM SCHEDULE:\n{slots_text}\n\n"
                         "🚨 Use ONLY these real slots. NEVER invent times or therapists. "
+                        "🚨 Answer IMMEDIATELY with these slots — do NOT say 'checking' or 'one moment'. "
                         "If a therapist is NOT listed — she has a day off. "
                         "Only offer times that appear above."
                         f"{area_note}"

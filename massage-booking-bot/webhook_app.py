@@ -221,6 +221,36 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     slots_tomorrow = await bot_module.yclients_service.get_available_slots_summary(
                         date=tomorrow, service_name=service_name)
 
+                    # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
+                    extra_dates = []
+                    _day_keywords = {
+                        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                        "friday": 4, "saturday": 5, "sunday": 6,
+                        "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+                        "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
+                        "пятниц": 4, "суббот": 5, "воскрес": 6,
+                    }
+                    for kw, weekday in _day_keywords.items():
+                        if kw in _text_lower:
+                            _current_wd = _now.weekday()
+                            days_ahead = (weekday - _current_wd) % 7
+                            if days_ahead == 0:
+                                days_ahead = 7  # next week, not today
+                            target_date = (_now + _td(days=days_ahead)).strftime("%Y-%m-%d")
+                            if target_date != today and target_date != tomorrow:
+                                extra_dates.append(target_date)
+                            break
+
+                    # Fetch slots for specific date if mentioned
+                    extra_slots_text = ""
+                    for d in extra_dates[:1]:  # limit to 1 extra
+                        try:
+                            slots = await bot_module.yclients_service.get_available_slots_summary(
+                                date=d, service_name=service_name)
+                            extra_slots_text += f"\n\n{d}:\n{slots}"
+                        except Exception:
+                            pass
+
                     area_note = ""
                     if _client_area == "al_ain":
                         area_note = "\n🚨 Client in AL AIN. Show ONLY Al Ain therapists."
@@ -229,8 +259,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
                     context.extra_system_info = (
                         f"\n\nREAL AVAILABLE SLOTS:\nTODAY ({today}):\n{slots_today}\n\n"
-                        f"TOMORROW ({tomorrow}):\n{slots_tomorrow}\n\n"
-                        "🚨 Use ONLY these real slots."
+                        f"TOMORROW ({tomorrow}):\n{slots_tomorrow}"
+                        f"{extra_slots_text}\n\n"
+                        "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
                         f"{area_note}"
                     )
                 except Exception as e:
