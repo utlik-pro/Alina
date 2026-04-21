@@ -1,6 +1,7 @@
 """AI Агент для бронирования массажа - основан на реальных WhatsApp диалогах"""
 
-from typing import Dict, Any, Optional
+import json
+from typing import Dict, Any, Optional, Tuple
 from openai import AsyncOpenAI
 from loguru import logger
 from datetime import datetime
@@ -10,6 +11,7 @@ from prices import (
     format_price_list_for_prompt, format_special_offers_for_prompt,
     get_price, SERVICE_CATALOG, SPECIAL_OFFERS, PACKAGES,
 )
+from agents.tools import BOOKING_TOOLS, BookingCall
 
 
 class BookingAgent:
@@ -533,6 +535,151 @@ You are Alina who speaks whatever language the client uses."""
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения: {e}")
             return "Sorry dear, there was a technical issue. Please try again 🙏"
+
+    async def process_message_with_tools(
+        self, message: str, context: Dict[str, Any]
+    ) -> Tuple[str, Optional[BookingCall]]:
+        """Like process_message, but enables the book_appointment tool.
+
+        Returns (answer_text, booking_call_or_None).
+
+        When the model calls book_appointment the parsed BookingCall is
+        returned alongside the reply text; the caller creates the YClients
+        record from those structured fields instead of regex-parsing the
+        text. When the model does NOT call the tool the second element
+        is None — the caller should treat a ✅ confirmation without a
+        tool call as a failure (not fabricate a date from the text).
+
+        Existing process_message is untouched so the Telegram path keeps
+        working identically.
+        """
+        try:
+            messages = self._assemble_messages(message, context)
+
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=BOOKING_TOOLS,
+                tool_choice="auto",
+            )
+
+            choice = response.choices[0]
+            msg = choice.message
+            answer = msg.content or ""
+            tool_calls = msg.tool_calls or []
+            tokens_used = response.usage.completion_tokens if response.usage else 0
+
+            logger.info(
+                f"GPT-tools: finish_reason={choice.finish_reason}, "
+                f"tokens={tokens_used}, text_len={len(answer)}, "
+                f"tool_calls={len(tool_calls)}"
+            )
+
+            # Retry on empty finish_reason=length, same as process_message.
+            if choice.finish_reason == "length" and not answer.strip() and not tool_calls:
+                logger.warning("GPT-tools empty (finish_reason=length). Retrying.")
+                retry_messages = [
+                    m for m in messages
+                    if not (m["role"] == "system" and "КРИТИЧНО" in m.get("content", ""))
+                ]
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=retry_messages,
+                    tools=BOOKING_TOOLS,
+                    tool_choice="auto",
+                )
+                choice = response.choices[0]
+                msg = choice.message
+                answer = msg.content or ""
+                tool_calls = msg.tool_calls or []
+
+            # Extract book_appointment call if the model made one.
+            booking_call: Optional[BookingCall] = None
+            for tc in tool_calls:
+                fn = getattr(tc, "function", None)
+                if fn is None:
+                    continue
+                if fn.name != "book_appointment":
+                    logger.warning(f"GPT-tools: ignoring unknown tool call {fn.name!r}")
+                    continue
+                try:
+                    args = json.loads(fn.arguments or "{}")
+                    booking_call = BookingCall.from_tool_args(args)
+                    logger.info(
+                        f"GPT-tools: book_appointment parsed — "
+                        f"{booking_call.service} {booking_call.date} "
+                        f"{booking_call.time} {booking_call.area}"
+                    )
+                    break  # only take the first valid call
+                except (json.JSONDecodeError, KeyError, ValueError) as e:
+                    logger.error(
+                        f"GPT-tools: book_appointment args malformed: {e} "
+                        f"raw={fn.arguments!r}"
+                    )
+
+            # Same post-processing as process_message.
+            answer = self._remove_vat_from_response(answer)
+            answer = self._remove_prepayment_from_response(answer)
+            answer = self._remove_checking_from_response(answer)
+
+            return answer, booking_call
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке (with_tools): {e}", exc_info=True)
+            return "Sorry dear, there was a technical issue. Please try again 🙏", None
+
+    def _assemble_messages(self, message: str, context: Dict[str, Any]) -> list:
+        """Build the OpenAI messages list from system prompt + context + user msg.
+
+        Extracted so both process_message and process_message_with_tools
+        compose the prompt identically. Mirrors the original inline code
+        including the dedupe fix and the VAT-reminder system message.
+        """
+        messages = [{"role": "system", "content": self.system_prompt}]
+
+        recent = context.get("recent_messages", []) or []
+        for m in recent:
+            messages.append({"role": m["role"], "content": m["content"]})
+
+        # Dedupe: don't append current message if the last history entry
+        # already is it (caller may have called add_user_message first).
+        last = recent[-1] if recent else None
+        already_present = (
+            last is not None
+            and last.get("role") == "user"
+            and last.get("content") == message
+        )
+        if not already_present:
+            messages.append({"role": "user", "content": message})
+
+        # Booking state snapshot.
+        booking_context = self._format_booking_context(context)
+        if booking_context:
+            messages.append({
+                "role": "system",
+                "content": f"ТЕКУЩЕЕ СОСТОЯНИЕ БРОНИРОВАНИЯ:\n{booking_context}"
+            })
+
+        # Extra per-turn system info (slot injection, area hints) set by
+        # the caller before invoking the agent.
+        extra = getattr(context, "extra_system_info", None) if not isinstance(context, dict) else context.get("extra_system_info")
+        if extra:
+            messages.append({"role": "system", "content": str(extra)})
+
+        # VAT reminder — only when the user talks about services/prices.
+        price_keywords = ("massage", "service", "price", "aed",
+                          "manicure", "pedicure", "eyelash")
+        if any(kw in message.lower() for kw in price_keywords):
+            messages.append({
+                "role": "system",
+                "content": (
+                    "🚨 КРИТИЧНО: Если показываешь цены - ТОЛЬКО цифра + AED "
+                    "(например \"350 AED\"). ЗАПРЕЩЕНО добавлять \"+ 5% VAT\" "
+                    "или \"= 367.50 AED\". Клиент НЕ должен видеть расчет VAT!"
+                ),
+            })
+
+        return messages
 
     def _remove_vat_from_response(self, text: str) -> str:
         """
