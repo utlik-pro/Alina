@@ -456,14 +456,25 @@ You are Alina who speaks whatever language the client uses."""
             messages = [{"role": "system", "content": self.system_prompt}]
 
             # Добавляем контекст предыдущих сообщений
-            for msg in context.get("recent_messages", []):
+            recent = context.get("recent_messages", []) or []
+            for msg in recent:
                 messages.append({
                     "role": msg["role"],
                     "content": msg["content"]
                 })
 
-            # Добавляем текущее сообщение
-            messages.append({"role": "user", "content": message})
+            # Добавляем текущее сообщение — но только если оно ещё не в истории
+            # (вызывающий код мог уже вызвать dialog_manager.add_user_message).
+            # Иначе GPT увидит одно и то же сообщение дважды и генерирует
+            # повторяющиеся блоки ответа (см. bug #1).
+            last = recent[-1] if recent else None
+            already_present = (
+                last is not None
+                and last.get("role") == "user"
+                and last.get("content") == message
+            )
+            if not already_present:
+                messages.append({"role": "user", "content": message})
 
             # Добавляем контекст бронирования если есть
             booking_context = self._format_booking_context(context)
