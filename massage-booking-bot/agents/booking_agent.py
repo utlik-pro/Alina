@@ -288,6 +288,31 @@ Example: "Your body massage is booked on Wednesday 26th of February at 4pm ✅"
 That's it. Short and clean. No "Thank you so much!" paragraph.
 ⚠️ NEVER write "new offer" or "special offer" in the confirmation. Just the service name, date, and time.
 
+🚨🚨 CRITICAL — TOOL CALL ON CONFIRMATION 🚨🚨
+Whenever you send the ✅ confirmation message in STEP 8, you MUST ALSO
+call the `book_appointment` tool in the SAME response with fully
+concrete fields:
+- service (snake_case English: body_massage, face_massage, lymphatic_drainage, russian_manicure, japanese_manicure, pedicure, eyelash_extensions, etc.)
+- duration_minutes (30, 45, 60, 75, 80, 90, 120)
+- date (YYYY-MM-DD in UAE time — never "tomorrow", always a real date)
+- time (HH:MM 24-hour — convert 4pm → 16:00, 7:30pm → 19:30)
+- area (abu_dhabi or al_ain — from the client's area)
+- payment_method (cash or bank_transfer)
+- client_name (what the client gave you)
+- base_price_aed (quoted price before VAT)
+- master_id / master_name if a specific therapist was picked
+- address / notes if relevant
+
+❌ Never send ✅ without also calling the tool — that creates a "phantom"
+   confirmation the backend can't act on. The admin will get an alert
+   and the booking will NOT be created.
+❌ Never call the tool earlier than STEP 8 (mid-negotiation). Only on
+   the final ✅ message.
+❌ Never use "tomorrow" or "next Sunday" — convert to YYYY-MM-DD.
+❌ Never use 12h time in the tool — always 24h (HH:MM).
+❌ Never make up prices or dates — use REAL AVAILABLE SLOTS the system
+   gave you; if you don't know a value, ask the client instead of sending ✅.
+
 ═══════════════════════════════════════
 HANDLING REAL SITUATIONS
 ═══════════════════════════════════════
@@ -665,6 +690,26 @@ You are Alina who speaks whatever language the client uses."""
         extra = getattr(context, "extra_system_info", None) if not isinstance(context, dict) else context.get("extra_system_info")
         if extra:
             messages.append({"role": "system", "content": str(extra)})
+
+        # Current UAE date — the tool-call schema requires YYYY-MM-DD
+        # and the model needs an anchor to convert "tomorrow" / "Saturday"
+        # to a concrete date. Included in both tool and non-tool paths
+        # for consistency (harmless for the non-tool path).
+        try:
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            _uae = _tz(_td(hours=4))
+            _now_uae = _dt.now(_uae)
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"Current UAE time: {_now_uae.strftime('%Y-%m-%d %H:%M')} "
+                    f"({_now_uae.strftime('%A')}). Tomorrow is "
+                    f"{(_now_uae + _td(days=1)).strftime('%Y-%m-%d')}. "
+                    "Use these when filling the book_appointment tool."
+                ),
+            })
+        except Exception:
+            pass
 
         # VAT reminder — only when the user talks about services/prices.
         price_keywords = ("massage", "service", "price", "aed",
