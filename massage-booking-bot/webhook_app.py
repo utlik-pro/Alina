@@ -64,6 +64,7 @@ from services.follow_up import FollowUpService
 from services.message_buffer import init_buffer, MessageBuffer
 from services.yclients_service import YClientsService
 from services.wappi_client import WappiClient, parse_incoming_message
+from agents.tools import BookingCall
 
 # ── Global instances ─────────────────────────────────────────────────
 bot_instance: Bot = None
@@ -236,241 +237,119 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
     entry["timer"] = asyncio.create_task(_flush())
 
 
-async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
-                                 sender_name: str, context, response_text: str):
-    """If bot response contains confirmation marker, create booking in DB + YClients.
+async def _maybe_create_booking(
+    user_id: str,
+    telegram_id: str,
+    phone: str,
+    sender_name: str,
+    context,
+    response_text: str,
+    booking_call: Optional[BookingCall] = None,
+):
+    """Create DB + YClients records from a structured BookingCall.
 
-    We trigger ONLY on a strong confirmation marker: word-boundary "booked"
-    AND a ✅ checkmark in the same message, AND no negation/future-tense
-    phrase right before "booked" ("not yet booked", "will be booked",
-    "cannot be booked", etc). Previously any occurrence of the substring
-    "booked" (e.g. "not yet booked") would create a real YClients record.
+    Flow:
+    - If booking_call is None but the bot sent a ✅ confirmation — that's
+      a phantom confirmation (model forgot to call the tool). Alert the
+      admin and DO NOT create anything.
+    - If booking_call is None and there's no ✅ — nothing to do.
+    - If booking_call is present — validate, persist locally, create in
+      YClients, notify admin.
+
+    All the old regex date/time parsing is gone; structured fields from
+    the tool call are the only source of truth.
     """
     import re as _re
-    text_low = response_text.lower()
-    if "✅" not in response_text:
-        return
-    # Require standalone word "booked"
-    if not _re.search(r"\bbooked\b", text_low):
-        return
-    # Reject if "booked" is negated / future-tense / conditional
-    negation_re = _re.compile(
-        r"(?:not\s+yet|won'?t\s+be|will\s+be|going\s+to\s+be|"
-        r"cannot\s+be|can'?t\s+be|is\s+not|isn'?t|aren'?t|"
-        r"would\s+be|should\s+be|could\s+be|maybe|might)\s+booked",
-        _re.IGNORECASE,
-    )
-    if negation_re.search(text_low):
-        logger.info("Booking trigger skipped — negated 'booked' in response")
-        return
-
     import bot as bot_module
     from datetime import datetime, timedelta, timezone as _tz
-    import re
 
-    booking_data = context.booking_data
-
-    service_name = booking_data.get("service_type")
-    base_price = booking_data.get("price")
-    if not service_name or base_price is None:
-        logger.error(
-            f"Wappi: booking not created — missing service/price. "
-            f"service={service_name} price={base_price} response={response_text[:200]}"
-        )
-        if bot_module.notification_service:
-            try:
-                await bot_module.notification_service.send_booking_failed(
-                    telegram_id=telegram_id,
-                    reason=f"Service/price not extracted. Bot said: {response_text[:200]}"
-                )
-            except Exception:
-                pass
-        return
-
-    duration = booking_data.get("service_duration") or 60
-    booking_time = booking_data.get("time") or "TBD"
-    payment_method = booking_data.get("payment_method") or "cash"
-
-    # Parse time from response if missing.
-    # Supports both 12h ("at 4pm", "at 4:30 pm") and 24h ("at 16:00", "at 19:30").
-    # YClients returns slots in 24h format and the agent's system prompt now
-    # echoes that format back, so the 24h branch is hit most often.
-    if booking_time == "TBD":
-        m = re.search(
-            r'at\s+('
-            r'\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)'  # 4pm / 4:30 pm
-            r'|'
-            r'\d{1,2}:\d{2}'                                 # 16:00 / 19:30
-            r')',
-            response_text.lower(),
-        )
-        if m:
-            booking_time = m.group(1)
-
-    # Parse date from response
     uae_tz = _tz(timedelta(hours=4))
     now_uae = datetime.now(uae_tz).replace(tzinfo=None)
-    booking_date_str = (booking_data.get("date") or "").lower()
-    booking_date = None
 
-    day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-               "friday": 4, "saturday": 5, "sunday": 6}
-    month_map = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
-                 "june": 6, "july": 7, "august": 8, "september": 9,
-                 "october": 10, "november": 11, "december": 12}
-
-    dow_match = re.search(
-        r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(\d{1,2})(?:st|nd|rd|th)?\s+of\s+(\w+)',
-        response_text.lower()
+    # Detect phantom confirmation: ✅ + "booked" but no tool call.
+    text_low = response_text.lower()
+    has_confirm_marker = (
+        "✅" in response_text
+        and _re.search(r"\bbooked\b", text_low) is not None
     )
-    if dow_match:
-        try:
-            day_num = int(dow_match.group(2))
-            month_name = dow_match.group(3).lower()
-            if month_name in month_map:
-                month_num = month_map[month_name]
-                year = now_uae.year
-                if month_num < now_uae.month or (month_num == now_uae.month and day_num < now_uae.day):
-                    year += 1
-                booking_date = datetime(year, month_num, day_num)
-        except Exception:
-            pass
+    if has_confirm_marker:
+        # Filter out negated forms ("not yet booked", "will be booked"…)
+        negation_re = _re.compile(
+            r"(?:not\s+yet|won'?t\s+be|will\s+be|going\s+to\s+be|"
+            r"cannot\s+be|can'?t\s+be|is\s+not|isn'?t|aren'?t|"
+            r"would\s+be|should\s+be|could\s+be|maybe|might)\s+booked",
+            _re.IGNORECASE,
+        )
+        if negation_re.search(text_low):
+            has_confirm_marker = False
 
-    if booking_date is None:
-        # booking_data["date"] is authoritative when present — it was set
-        # by the agent's own state extraction and isn't polluted by
-        # off-topic mentions in the reply text.
-        chosen_weekday = None
-        resp_low = response_text.lower()
-
-        for day_kw, weekday in day_map.items():
-            if day_kw in booking_date_str:
-                chosen_weekday = (day_kw, weekday)
-                break
-
-        # Otherwise scan response_text but pick the day whose position
-        # is closest to "booked" (or to ✅ as a fallback anchor). This
-        # avoids picking up off-topic mentions like:
-        #     "Booked on Friday ✅. Monday is fully booked already."
-        # where the old code would take Monday simply because it came
-        # first in the dict iteration.
-        if chosen_weekday is None:
-            anchor = resp_low.find("booked")
-            if anchor == -1:
-                anchor = response_text.find("✅")
-            if anchor == -1:
-                anchor = 0
-
-            best_dist = None
-            for day_kw, weekday in day_map.items():
-                # Find the occurrence of this day closest to the anchor.
-                start = 0
-                while True:
-                    idx = resp_low.find(day_kw, start)
-                    if idx == -1:
-                        break
-                    dist = abs(idx - anchor)
-                    if best_dist is None or dist < best_dist:
-                        best_dist = dist
-                        chosen_weekday = (day_kw, weekday)
-                    start = idx + len(day_kw)
-
-        if chosen_weekday is not None:
-            _, weekday = chosen_weekday
-            days_ahead = (weekday - now_uae.weekday()) % 7
-            if days_ahead == 0 and "next" in resp_low:
-                days_ahead = 7
-            booking_date = now_uae + timedelta(days=days_ahead)
-
-    if booking_date is None:
-        # today / tomorrow keywords in booking_data (agent state) OR in
-        # the response text. We intentionally do NOT fall back to a
-        # silent "tomorrow" default: guessing a date the client never
-        # asked for produces ghost bookings the admin can't reconcile.
-        resp_low_date = response_text.lower()
-        if (
-            "today" in booking_date_str
-            or "сегодня" in booking_date_str
-            or "today" in resp_low_date
-            or "сегодня" in resp_low_date
-        ):
-            booking_date = now_uae
-        elif (
-            "tomorrow" in booking_date_str
-            or "завтра" in booking_date_str
-            or "tomorrow" in resp_low_date
-            or "завтра" in resp_low_date
-        ):
-            booking_date = now_uae + timedelta(days=1)
-        else:
+    if booking_call is None:
+        if has_confirm_marker:
             logger.error(
-                f"Wappi: booking not created — date could not be parsed. "
-                f"booking_data.date={booking_data.get('date')!r} "
-                f"response={response_text[:200]!r}"
+                f"Wappi: ✅ confirmation WITHOUT book_appointment tool call — "
+                f"phantom booking ignored. response={response_text[:200]!r}"
             )
             if bot_module.notification_service:
                 try:
                     await bot_module.notification_service.send_booking_failed(
                         telegram_id=telegram_id,
                         reason=(
-                            "Date could not be parsed from bot reply. "
+                            "Bot sent ✅ confirmation but did NOT call "
+                            "book_appointment tool. No record created. "
                             f"Bot said: {response_text[:200]}"
                         ),
                     )
                 except Exception:
                     pass
-            return
+        return
 
-    # Parse HH:MM from booking_time — handle 12h (with am/pm) and 24h.
-    if booking_time and booking_time != "TBD":
-        bt = booking_time.lower().strip()
-        # Try 12h first: "4pm", "4:30 pm", "12 a.m."
-        tm = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?|am|pm)', bt)
-        if tm:
-            hour = int(tm.group(1))
-            minute = int(tm.group(2)) if tm.group(2) else 0
-            ampm = tm.group(3).replace('.', '').replace(' ', '')
-            if 'p' in ampm and hour != 12:
-                hour += 12
-            elif 'a' in ampm and hour == 12:
-                hour = 0
-            booking_date = booking_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        else:
-            # 24h fallback: "16:00", "19:30". Require colon to avoid treating
-            # bare day numbers ("26") as an hour.
-            tm24 = re.search(r'\b(\d{1,2}):(\d{2})\b', bt)
-            if tm24:
-                hour = int(tm24.group(1))
-                minute = int(tm24.group(2))
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    booking_date = booking_date.replace(
-                        hour=hour, minute=minute, second=0, microsecond=0
-                    )
-
-    # Sanity check on the parsed date. The parser combines several fuzzy
-    # heuristics and can land on a date that's clearly wrong:
-    #   - in the past (agent hallucinated "last Monday", or time parsing
-    #     set an hour earlier today than now)
-    #   - far in the future (year-rollover bug on edge months)
-    # Creating a YClients record in either case is worse than failing
-    # loudly — the admin will reach out and re-confirm with the client.
-    _max_future = timedelta(days=60)
-    _past_grace = timedelta(hours=1)  # allow "today 9am" confirmed at 9:05am
-    if booking_date < now_uae - _past_grace or booking_date > now_uae + _max_future:
+    # Parse structured date/time into a datetime.
+    try:
+        booking_date = datetime.strptime(
+            f"{booking_call.date} {booking_call.time}", "%Y-%m-%d %H:%M"
+        )
+    except ValueError as e:
         logger.error(
-            f"Wappi: booking not created — date {booking_date.isoformat()} "
-            f"outside sane window (now_uae={now_uae.isoformat()}). "
-            f"response={response_text[:200]!r}"
+            f"Wappi: BookingCall has malformed date/time — "
+            f"date={booking_call.date!r} time={booking_call.time!r} err={e}"
         )
         if bot_module.notification_service:
             try:
                 await bot_module.notification_service.send_booking_failed(
                     telegram_id=telegram_id,
                     reason=(
-                        f"Parsed date {booking_date.isoformat()} is outside "
-                        f"the sane window (past or >60d future). "
-                        f"Bot said: {response_text[:200]}"
+                        f"book_appointment tool returned malformed "
+                        f"date/time: {booking_call.date} {booking_call.time}"
                     ),
+                )
+            except Exception:
+                pass
+        return
+
+    # Sanity window: not in the past (1h grace), not >60 days future.
+    if booking_date < now_uae - timedelta(hours=1):
+        logger.error(
+            f"Wappi: BookingCall date in the past: {booking_date.isoformat()} "
+            f"(now={now_uae.isoformat()})"
+        )
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=f"Tool date is in the past: {booking_date.isoformat()}",
+                )
+            except Exception:
+                pass
+        return
+    if booking_date > now_uae + timedelta(days=60):
+        logger.error(
+            f"Wappi: BookingCall date too far in future: {booking_date.isoformat()}"
+        )
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=f"Tool date >60 days out: {booking_date.isoformat()}",
                 )
             except Exception:
                 pass
@@ -478,22 +357,29 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
 
     # Save in local DB
     try:
-        # Ensure phone is set in client record
         client = await bot_module.client_service.get_or_create_client(telegram_id)
         if not client.phone:
             await bot_module.client_service.update_client(telegram_id, phone=phone)
+        if booking_call.client_name and not client.name:
+            await bot_module.client_service.update_client(
+                telegram_id, name=booking_call.client_name
+            )
 
         booking = await bot_module.booking_service.create_booking(
             telegram_id=telegram_id,
-            service_name=service_name,
-            duration=duration,
-            base_price=base_price,
+            service_name=booking_call.service,
+            duration=booking_call.duration_minutes,
+            base_price=booking_call.base_price_aed,
             booking_date=booking_date,
-            payment_method=payment_method,
+            payment_method=booking_call.payment_method,
         )
         await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
         dialog_manager.update_state(user_id, "completed")
-        logger.info(f"✅ Wappi booking {booking.id} saved in DB for {telegram_id}")
+        logger.info(
+            f"✅ Wappi booking {booking.id} saved "
+            f"({booking_call.service} {booking_call.date} {booking_call.time} "
+            f"{booking_call.area})"
+        )
     except Exception as e:
         logger.error(f"Wappi DB booking error: {e}", exc_info=True)
         return
@@ -502,33 +388,49 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
     if bot_module.yclients_service and not config.MOCK_YCLIENTS:
         try:
             import os as _os
-            yc_service_id = await bot_module.yclients_service.find_service_id(service_name)
-            yc_staff_id = await bot_module.yclients_service.find_staff_id()
-            yc_date = booking_date.strftime("%Y-%m-%d")
-            yc_time = booking_date.strftime("%H:%M")
+            yc_service_id = await bot_module.yclients_service.find_service_id(
+                booking_call.service
+            )
+            yc_staff_id = booking_call.master_id or await bot_module.yclients_service.find_staff_id()
 
             fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
-            client_name = fresh_client.name or sender_name or "WhatsApp Client"
-            client_phone = fresh_client.phone or phone
+            client_name = (
+                booking_call.client_name
+                or fresh_client.name
+                or sender_name
+                or "WhatsApp Client"
+            )
+            client_phone = booking_call.client_phone or fresh_client.phone or phone
 
             if yc_service_id and yc_staff_id:
                 _is_test = _os.getenv("YCLIENTS_TEST_BOOKINGS", "false").lower() == "true"
                 yc_result = await bot_module.yclients_service.create_booking(
                     staff_id=yc_staff_id,
                     service_ids=[yc_service_id],
-                    date=yc_date,
-                    time=yc_time,
+                    date=booking_call.date,
+                    time=booking_call.time,
                     client_name=client_name,
                     client_phone=client_phone,
-                    comment=f"WhatsApp (Wappi) bot booking #{booking.id}",
+                    comment=(
+                        f"WhatsApp (Wappi) bot booking #{booking.id}. "
+                        f"Area: {booking_call.area}. "
+                        + (f"Notes: {booking_call.notes}. " if booking_call.notes else "")
+                        + (f"Address: {booking_call.address}." if booking_call.address else "")
+                    ),
                     is_test=_is_test,
                 )
                 if yc_result:
-                    logger.info(f"✅ YClients booking created from WhatsApp: #{yc_result.get('id', '?')}")
+                    logger.info(
+                        f"✅ YClients booking created from WhatsApp: "
+                        f"#{yc_result.get('id', '?')}"
+                    )
                 else:
                     logger.warning("⚠️ YClients booking creation failed")
             else:
-                logger.warning(f"⚠️ YClients: service_id={yc_service_id}, staff_id={yc_staff_id} — skipping")
+                logger.warning(
+                    f"⚠️ YClients: service_id={yc_service_id}, "
+                    f"staff_id={yc_staff_id} — skipping"
+                )
         except Exception as e:
             logger.error(f"❌ YClients booking error from WhatsApp: {e}")
 
