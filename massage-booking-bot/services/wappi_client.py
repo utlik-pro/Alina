@@ -5,11 +5,18 @@ Unofficial WhatsApp API via QR code binding. Used for:
 - Sending text messages back to clients
 """
 
+import asyncio
+
 import aiohttp
 from typing import Optional, Dict, Any
 from loguru import logger
 
 from config import config
+
+# Retry config for transient Wappi/network failures when sending messages.
+# 5xx and network errors are retried; 4xx (auth, invalid recipient) are not.
+_SEND_MAX_ATTEMPTS = 3
+_SEND_BACKOFF_BASE_SEC = 0.5  # 0.5, 1.0, 2.0 s
 
 
 class WappiClient:
@@ -57,17 +64,44 @@ class WappiClient:
         payload = {"body": body, "recipient": recipient}
 
         session = await self._get_session()
-        try:
-            async with session.post(url, params=params, headers=self._headers, json=payload, timeout=10) as resp:
-                data = await resp.json()
-                if resp.status == 200:
-                    logger.info(f"Wappi: sent to {recipient}: {body[:50]}...")
-                else:
-                    logger.error(f"Wappi send failed ({resp.status}): {data}")
-                return data
-        except Exception as e:
-            logger.error(f"Wappi send exception: {e}")
-            return None
+        last_exc: Optional[Exception] = None
+        last_data: Optional[Dict[str, Any]] = None
+        for attempt in range(1, _SEND_MAX_ATTEMPTS + 1):
+            try:
+                async with session.post(
+                    url, params=params, headers=self._headers, json=payload, timeout=10
+                ) as resp:
+                    data = await resp.json()
+                    last_data = data
+                    if resp.status == 200:
+                        logger.info(f"Wappi: sent to {recipient}: {body[:50]}...")
+                        return data
+                    # 4xx (auth/invalid recipient) — no point retrying.
+                    if 400 <= resp.status < 500:
+                        logger.error(f"Wappi send failed ({resp.status}) — no retry: {data}")
+                        return data
+                    logger.warning(
+                        f"Wappi send attempt {attempt}/{_SEND_MAX_ATTEMPTS} "
+                        f"failed ({resp.status}): {data}"
+                    )
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_exc = e
+                logger.warning(
+                    f"Wappi send attempt {attempt}/{_SEND_MAX_ATTEMPTS} exception: {e}"
+                )
+            except Exception as e:
+                # Unexpected — log full trace and don't retry.
+                logger.error(f"Wappi send unexpected exception: {e}", exc_info=True)
+                return None
+
+            if attempt < _SEND_MAX_ATTEMPTS:
+                await asyncio.sleep(_SEND_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
+
+        logger.error(
+            f"Wappi send exhausted {_SEND_MAX_ATTEMPTS} attempts "
+            f"to {recipient}: last_exc={last_exc}, last_data={last_data}"
+        )
+        return last_data
 
     async def set_webhook(self, webhook_url: str, auth: str = "") -> bool:
         """Configure Wappi to send events to our webhook URL.
