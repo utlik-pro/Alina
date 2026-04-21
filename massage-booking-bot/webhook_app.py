@@ -474,10 +474,18 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             _text_lower = text.lower()
             _client_area = context.client_data.get("area") or ""
             if not _client_area:
-                if any(kw in _text_lower for kw in ["al ain", "alain", "al-ain", "аль айн"]):
+                import re as _re_area
+                # Short tokens like "raha", "yas", "mbz" match inside unrelated
+                # words if we just check substring containment (e.g. "raha"
+                # inside "Sarah", "yas" inside "always"). Require word
+                # boundaries. Multi-word tokens like "abu dhabi" still work.
+                def _has_kw(kw: str) -> bool:
+                    return _re_area.search(r"\b" + _re_area.escape(kw) + r"\b", _text_lower) is not None
+
+                if any(_has_kw(kw) for kw in ["al ain", "alain", "al-ain", "аль айн"]):
                     _client_area = "al_ain"
                     dialog_manager.update_client_data(user_id, "area", "al_ain")
-                elif any(kw in _text_lower for kw in [
+                elif any(_has_kw(kw) for kw in [
                     "abu dhabi", "abudhabi", "абу даби",
                     "raha", "al raha", "khalifa", "al khalifa",
                     "mussafah", "mbz", "mohammed bin zayed", "mohamed bin zayed",
@@ -511,8 +519,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
                         "пятниц": 4, "суббот": 5, "воскрес": 6,
                     }
+                    import re as _re_day
                     for kw, weekday in _day_keywords.items():
-                        if kw in _text_lower:
+                        # Word-boundary match: "sat" must not match "satellite",
+                        # "mon" must not match "money", "fri" must not match
+                        # "afraid". Russian prefixes (e.g. "понедел") anchor
+                        # only at start — still match "понедельник".
+                        if _re_day.search(r"\b" + kw, _text_lower):
+                            # For English full/short forms also require \b at
+                            # end. "понедел" is a prefix, leave trailing open.
+                            if kw.isascii() and not _re_day.search(r"\b" + kw + r"\b", _text_lower):
+                                continue
                             _current_wd = _now.weekday()
                             days_ahead = (weekday - _current_wd) % 7
                             # If today matches — today (not next week)
