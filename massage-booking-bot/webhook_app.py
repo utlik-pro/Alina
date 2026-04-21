@@ -205,6 +205,170 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
     entry["timer"] = asyncio.create_task(_flush())
 
 
+async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
+                                 sender_name: str, context, response_text: str):
+    """If bot response contains confirmation marker, create booking in DB + YClients."""
+    if "booked" not in response_text.lower() or "✅" not in response_text:
+        return
+
+    import bot as bot_module
+    from datetime import datetime, timedelta, timezone as _tz
+    import re
+
+    booking_data = context.booking_data
+
+    service_name = booking_data.get("service_type")
+    base_price = booking_data.get("price")
+    if not service_name or base_price is None:
+        logger.error(
+            f"Wappi: booking not created — missing service/price. "
+            f"service={service_name} price={base_price} response={response_text[:200]}"
+        )
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=f"Service/price not extracted. Bot said: {response_text[:200]}"
+                )
+            except Exception:
+                pass
+        return
+
+    duration = booking_data.get("service_duration") or 60
+    booking_time = booking_data.get("time") or "TBD"
+    payment_method = booking_data.get("payment_method") or "cash"
+
+    # Parse time from response if missing
+    if booking_time == "TBD":
+        m = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.))', response_text.lower())
+        if m:
+            booking_time = m.group(1)
+
+    # Parse date from response
+    uae_tz = _tz(timedelta(hours=4))
+    now_uae = datetime.now(uae_tz).replace(tzinfo=None)
+    booking_date_str = (booking_data.get("date") or "").lower()
+    booking_date = None
+
+    day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+               "friday": 4, "saturday": 5, "sunday": 6}
+    month_map = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
+                 "june": 6, "july": 7, "august": 8, "september": 9,
+                 "october": 10, "november": 11, "december": 12}
+
+    dow_match = re.search(
+        r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(\d{1,2})(?:st|nd|rd|th)?\s+of\s+(\w+)',
+        response_text.lower()
+    )
+    if dow_match:
+        try:
+            day_num = int(dow_match.group(2))
+            month_name = dow_match.group(3).lower()
+            if month_name in month_map:
+                month_num = month_map[month_name]
+                year = now_uae.year
+                if month_num < now_uae.month or (month_num == now_uae.month and day_num < now_uae.day):
+                    year += 1
+                booking_date = datetime(year, month_num, day_num)
+        except Exception:
+            pass
+
+    if booking_date is None:
+        for day_kw, weekday in day_map.items():
+            if day_kw in booking_date_str or day_kw in response_text.lower():
+                days_ahead = (weekday - now_uae.weekday()) % 7
+                if days_ahead == 0 and "next" in response_text.lower():
+                    days_ahead = 7
+                booking_date = now_uae + timedelta(days=days_ahead)
+                break
+
+    if booking_date is None:
+        if "today" in booking_date_str or "сегодня" in booking_date_str:
+            booking_date = now_uae
+        elif "tomorrow" in booking_date_str or "завтра" in booking_date_str:
+            booking_date = now_uae + timedelta(days=1)
+        else:
+            booking_date = now_uae + timedelta(days=1)
+            logger.warning(f"Wappi: defaulting to tomorrow. response='{response_text[:150]}'")
+
+    # Parse time HH:MM
+    if booking_time and booking_time != "TBD":
+        tm = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?|am|pm)', booking_time.lower())
+        if tm:
+            hour = int(tm.group(1))
+            minute = int(tm.group(2)) if tm.group(2) else 0
+            ampm = tm.group(3).replace('.', '').replace(' ', '')
+            if 'p' in ampm and hour != 12:
+                hour += 12
+            elif 'a' in ampm and hour == 12:
+                hour = 0
+            booking_date = booking_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    # Save in local DB
+    try:
+        # Ensure phone is set in client record
+        client = await bot_module.client_service.get_or_create_client(telegram_id)
+        if not client.phone:
+            await bot_module.client_service.update_client(telegram_id, phone=phone)
+
+        booking = await bot_module.booking_service.create_booking(
+            telegram_id=telegram_id,
+            service_name=service_name,
+            duration=duration,
+            base_price=base_price,
+            booking_date=booking_date,
+            payment_method=payment_method,
+        )
+        await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
+        dialog_manager.update_state(user_id, "completed")
+        logger.info(f"✅ Wappi booking {booking.id} saved in DB for {telegram_id}")
+    except Exception as e:
+        logger.error(f"Wappi DB booking error: {e}", exc_info=True)
+        return
+
+    # Create in YClients
+    if bot_module.yclients_service and not config.MOCK_YCLIENTS:
+        try:
+            import os as _os
+            yc_service_id = await bot_module.yclients_service.find_service_id(service_name)
+            yc_staff_id = await bot_module.yclients_service.find_staff_id()
+            yc_date = booking_date.strftime("%Y-%m-%d")
+            yc_time = booking_date.strftime("%H:%M")
+
+            fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
+            client_name = fresh_client.name or sender_name or "WhatsApp Client"
+            client_phone = fresh_client.phone or phone
+
+            if yc_service_id and yc_staff_id:
+                _is_test = _os.getenv("YCLIENTS_TEST_BOOKINGS", "false").lower() == "true"
+                yc_result = await bot_module.yclients_service.create_booking(
+                    staff_id=yc_staff_id,
+                    service_ids=[yc_service_id],
+                    date=yc_date,
+                    time=yc_time,
+                    client_name=client_name,
+                    client_phone=client_phone,
+                    comment=f"WhatsApp (Wappi) bot booking #{booking.id}",
+                    is_test=_is_test,
+                )
+                if yc_result:
+                    logger.info(f"✅ YClients booking created from WhatsApp: #{yc_result.get('id', '?')}")
+                else:
+                    logger.warning("⚠️ YClients booking creation failed")
+            else:
+                logger.warning(f"⚠️ YClients: service_id={yc_service_id}, staff_id={yc_staff_id} — skipping")
+        except Exception as e:
+            logger.error(f"❌ YClients booking error from WhatsApp: {e}")
+
+    # Notify admin
+    if bot_module.notification_service:
+        try:
+            fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
+            await bot_module.notification_service.send_booking_confirmed(fresh_client, booking)
+        except Exception as e:
+            logger.error(f"Wappi: failed to notify admin: {e}")
+
+
 async def _reset_user(user_id: str, telegram_id: str):
     """Clear context, history, and client data for a user."""
     import bot as bot_module
@@ -345,6 +509,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
             for part in parts:
                 await wappi_client.send_message(phone, part)
+
+        # Post-booking: create in YClients + notify admin
+        await _maybe_create_booking(user_id, telegram_id, phone, sender_name, context, response_text)
 
     except Exception as e:
         logger.error(f"Wappi background processing error: {e}", exc_info=True)
