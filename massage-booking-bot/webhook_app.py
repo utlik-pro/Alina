@@ -383,13 +383,43 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
             booking_date = now_uae + timedelta(days=days_ahead)
 
     if booking_date is None:
-        if "today" in booking_date_str or "сегодня" in booking_date_str:
+        # today / tomorrow keywords in booking_data (agent state) OR in
+        # the response text. We intentionally do NOT fall back to a
+        # silent "tomorrow" default: guessing a date the client never
+        # asked for produces ghost bookings the admin can't reconcile.
+        resp_low_date = response_text.lower()
+        if (
+            "today" in booking_date_str
+            or "сегодня" in booking_date_str
+            or "today" in resp_low_date
+            or "сегодня" in resp_low_date
+        ):
             booking_date = now_uae
-        elif "tomorrow" in booking_date_str or "завтра" in booking_date_str:
+        elif (
+            "tomorrow" in booking_date_str
+            or "завтра" in booking_date_str
+            or "tomorrow" in resp_low_date
+            or "завтра" in resp_low_date
+        ):
             booking_date = now_uae + timedelta(days=1)
         else:
-            booking_date = now_uae + timedelta(days=1)
-            logger.warning(f"Wappi: defaulting to tomorrow. response='{response_text[:150]}'")
+            logger.error(
+                f"Wappi: booking not created — date could not be parsed. "
+                f"booking_data.date={booking_data.get('date')!r} "
+                f"response={response_text[:200]!r}"
+            )
+            if bot_module.notification_service:
+                try:
+                    await bot_module.notification_service.send_booking_failed(
+                        telegram_id=telegram_id,
+                        reason=(
+                            "Date could not be parsed from bot reply. "
+                            f"Bot said: {response_text[:200]}"
+                        ),
+                    )
+                except Exception:
+                    pass
+            return
 
     # Parse HH:MM from booking_time — handle 12h (with am/pm) and 24h.
     if booking_time and booking_time != "TBD":
