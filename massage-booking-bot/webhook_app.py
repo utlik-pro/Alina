@@ -8,6 +8,7 @@ Handles:
 
 import asyncio
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher
@@ -15,9 +16,38 @@ from aiogram.types import Update
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from loguru import logger
 
-# Deduplication cache: message_id → timestamp (processed within last 5 min)
-_processed_message_ids: dict[str, float] = {}
+# Deduplication cache: message_id → timestamp (processed within last 5 min).
+# OrderedDict so we can evict oldest entries when hitting the size cap —
+# prevents unbounded memory growth and keeps TTL-cleanup O(log n) amortized.
+_processed_message_ids: "OrderedDict[str, float]" = OrderedDict()
 _DEDUP_TTL = 300  # 5 minutes
+_DEDUP_MAX_ENTRIES = 5000
+
+
+def _dedup_seen(message_id: str, now_ts: float) -> bool:
+    """Return True if message_id was processed recently; otherwise record it.
+
+    Evicts expired entries (oldest-first) and caps total size. Safe under
+    asyncio single-thread assumptions — no locks needed.
+    """
+    if not message_id:
+        return False
+    # Evict expired from the oldest end.
+    while _processed_message_ids:
+        oldest_id, oldest_ts = next(iter(_processed_message_ids.items()))
+        if now_ts - oldest_ts > _DEDUP_TTL:
+            _processed_message_ids.popitem(last=False)
+        else:
+            break
+    # Cap size.
+    while len(_processed_message_ids) >= _DEDUP_MAX_ENTRIES:
+        _processed_message_ids.popitem(last=False)
+    if message_id in _processed_message_ids:
+        # Refresh position so genuine repeats don't get evicted mid-storm.
+        _processed_message_ids.move_to_end(message_id)
+        return True
+    _processed_message_ids[message_id] = now_ts
+    return False
 
 # Wappi message buffering: phone → {"messages": [text,...], "timer": Task, "sender_name": str}
 # Per PRD 4.1 rule 6: wait 7s to collect multi-part messages before responding
@@ -595,19 +625,10 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     msg_type = parsed["message_type"]
     message_id = parsed.get("message_id", "")
 
-    # Dedup: skip if we've already processed this message_id
-    now_ts = time.time()
-    # Cleanup old entries
-    expired = [k for k, ts in _processed_message_ids.items() if now_ts - ts > _DEDUP_TTL]
-    for k in expired:
-        _processed_message_ids.pop(k, None)
-
-    if message_id and message_id in _processed_message_ids:
+    # Dedup: skip if we've already processed this message_id.
+    if _dedup_seen(message_id, time.time()):
         logger.info(f"Wappi: duplicate message {message_id} ignored")
         return {"status": "duplicate"}
-
-    if message_id:
-        _processed_message_ids[message_id] = now_ts
 
     logger.info(f"Wappi [{phone}] {sender_name}: {text[:100]}")
 
