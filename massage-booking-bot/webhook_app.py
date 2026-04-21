@@ -591,9 +591,16 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # LLM timeout — OpenAI hangs cost us background-task slots and
         # leave clients silent indefinitely. 30s is well above p99 for
         # GPT-4o-class models; anything longer is a hang, not a slow run.
+        #
+        # Uses the with_tools path: the agent may call book_appointment,
+        # in which case we get a structured BookingCall alongside the
+        # reply text and create the YClients record directly from those
+        # fields — no regex parsing of the reply.
+        response_text: str = ""
+        booking_call: Optional[BookingCall] = None
         try:
-            response_text = await asyncio.wait_for(
-                booking_agent.process_message(text, context),
+            response_text, booking_call = await asyncio.wait_for(
+                booking_agent.process_message_with_tools(text, context),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
@@ -619,8 +626,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     await asyncio.sleep(0.4)
                 await wappi_client.send_message(phone, part)
 
-        # Post-booking: create in YClients + notify admin
-        await _maybe_create_booking(user_id, telegram_id, phone, sender_name, context, response_text)
+        # Post-booking: create DB + YClients record if the agent called
+        # the book_appointment tool. If it sent a ✅ confirmation WITHOUT
+        # calling the tool, _maybe_create_booking alerts the admin and
+        # doesn't create anything — no more guessing dates from text.
+        await _maybe_create_booking(
+            user_id, telegram_id, phone, sender_name, context,
+            response_text, booking_call,
+        )
 
     except Exception as e:
         logger.error(f"Wappi background processing error: {e}", exc_info=True)
