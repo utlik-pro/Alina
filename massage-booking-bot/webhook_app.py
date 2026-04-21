@@ -337,13 +337,50 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
             pass
 
     if booking_date is None:
+        # booking_data["date"] is authoritative when present — it was set
+        # by the agent's own state extraction and isn't polluted by
+        # off-topic mentions in the reply text.
+        chosen_weekday = None
+        resp_low = response_text.lower()
+
         for day_kw, weekday in day_map.items():
-            if day_kw in booking_date_str or day_kw in response_text.lower():
-                days_ahead = (weekday - now_uae.weekday()) % 7
-                if days_ahead == 0 and "next" in response_text.lower():
-                    days_ahead = 7
-                booking_date = now_uae + timedelta(days=days_ahead)
+            if day_kw in booking_date_str:
+                chosen_weekday = (day_kw, weekday)
                 break
+
+        # Otherwise scan response_text but pick the day whose position
+        # is closest to "booked" (or to ✅ as a fallback anchor). This
+        # avoids picking up off-topic mentions like:
+        #     "Booked on Friday ✅. Monday is fully booked already."
+        # where the old code would take Monday simply because it came
+        # first in the dict iteration.
+        if chosen_weekday is None:
+            anchor = resp_low.find("booked")
+            if anchor == -1:
+                anchor = response_text.find("✅")
+            if anchor == -1:
+                anchor = 0
+
+            best_dist = None
+            for day_kw, weekday in day_map.items():
+                # Find the occurrence of this day closest to the anchor.
+                start = 0
+                while True:
+                    idx = resp_low.find(day_kw, start)
+                    if idx == -1:
+                        break
+                    dist = abs(idx - anchor)
+                    if best_dist is None or dist < best_dist:
+                        best_dist = dist
+                        chosen_weekday = (day_kw, weekday)
+                    start = idx + len(day_kw)
+
+        if chosen_weekday is not None:
+            _, weekday = chosen_weekday
+            days_ahead = (weekday - now_uae.weekday()) % 7
+            if days_ahead == 0 and "next" in resp_low:
+                days_ahead = 7
+            booking_date = now_uae + timedelta(days=days_ahead)
 
     if booking_date is None:
         if "today" in booking_date_str or "сегодня" in booking_date_str:
