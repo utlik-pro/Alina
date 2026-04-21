@@ -447,6 +447,35 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
                         hour=hour, minute=minute, second=0, microsecond=0
                     )
 
+    # Sanity check on the parsed date. The parser combines several fuzzy
+    # heuristics and can land on a date that's clearly wrong:
+    #   - in the past (agent hallucinated "last Monday", or time parsing
+    #     set an hour earlier today than now)
+    #   - far in the future (year-rollover bug on edge months)
+    # Creating a YClients record in either case is worse than failing
+    # loudly — the admin will reach out and re-confirm with the client.
+    _max_future = timedelta(days=60)
+    _past_grace = timedelta(hours=1)  # allow "today 9am" confirmed at 9:05am
+    if booking_date < now_uae - _past_grace or booking_date > now_uae + _max_future:
+        logger.error(
+            f"Wappi: booking not created — date {booking_date.isoformat()} "
+            f"outside sane window (now_uae={now_uae.isoformat()}). "
+            f"response={response_text[:200]!r}"
+        )
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=(
+                        f"Parsed date {booking_date.isoformat()} is outside "
+                        f"the sane window (past or >60d future). "
+                        f"Bot said: {response_text[:200]}"
+                    ),
+                )
+            except Exception:
+                pass
+        return
+
     # Save in local DB
     try:
         # Ensure phone is set in client record
