@@ -559,7 +559,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         if wappi_client:
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
-            for part in parts:
+            # Small delay between parts: Wappi + WhatsApp can reorder
+            # near-simultaneous sends, which breaks narrative flow (parts
+            # arriving out of order, or admin/marketing inserts falling
+            # between them). 0.4s per part gives WhatsApp time to process
+            # in the intended order and also feels more natural to the
+            # recipient (simulates typing).
+            for i, part in enumerate(parts):
+                if i > 0:
+                    await asyncio.sleep(0.4)
                 await wappi_client.send_message(phone, part)
 
         # Post-booking: create in YClients + notify admin
