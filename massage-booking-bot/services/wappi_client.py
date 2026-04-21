@@ -131,14 +131,23 @@ class WappiClient:
             return False
 
 
-def parse_incoming_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
+def parse_incoming_message(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Extract relevant fields from Wappi incoming webhook payload.
 
     Wappi sends: {"messages": [{wh_type, body, from, senderName, type, time, ...}]}
     or sometimes: {"messages": {...}} (single object)
 
-    Returns dict with: {phone, text, sender_name, message_type, timestamp}
+    Returns dict with:
+        phone, text, sender_name, message_type, timestamp, message_id,
+        latitude (float|None), longitude (float|None)
     or None if not a processable incoming message.
+
+    For location messages (type="location") Wappi exposes coordinates in
+    several shapes depending on WhatsApp client and SDK version:
+        - top-level lat / lng (or latitude / longitude)
+        - nested "location": {"lat", "lng"} or {"latitude", "longitude"}
+        - sometimes body = "lat,lng" string fallback
+    We probe all of them and return None-safe floats.
     """
     messages = payload.get("messages")
     if not messages:
@@ -169,6 +178,8 @@ def parse_incoming_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     if "@g.us" in msg.get("from", ""):
         return None
 
+    latitude, longitude = _extract_coords(msg)
+
     return {
         "phone": phone,
         "text": msg.get("body", ""),
@@ -176,4 +187,46 @@ def parse_incoming_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
         "message_type": msg.get("type", "chat"),
         "timestamp": msg.get("time", 0),
         "message_id": msg.get("id", ""),
+        "latitude": latitude,
+        "longitude": longitude,
     }
+
+
+def _extract_coords(msg: Dict[str, Any]) -> tuple:
+    """Best-effort extraction of (lat, lng) floats from a Wappi message.
+
+    Returns (None, None) if no valid coordinates are found.
+    """
+    def _to_float(v: Any) -> Optional[float]:
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    # 1) Top-level keys.
+    lat = _to_float(msg.get("lat") or msg.get("latitude"))
+    lng = _to_float(msg.get("lng") or msg.get("longitude"))
+    if lat is not None and lng is not None:
+        return lat, lng
+
+    # 2) Nested "location" object.
+    loc = msg.get("location")
+    if isinstance(loc, dict):
+        lat = _to_float(loc.get("lat") or loc.get("latitude"))
+        lng = _to_float(loc.get("lng") or loc.get("longitude"))
+        if lat is not None and lng is not None:
+            return lat, lng
+
+    # 3) Fallback: body = "lat,lng".
+    body = msg.get("body", "")
+    if isinstance(body, str) and "," in body and msg.get("type") == "location":
+        parts = [p.strip() for p in body.split(",", 1)]
+        if len(parts) == 2:
+            lat = _to_float(parts[0])
+            lng = _to_float(parts[1])
+            if lat is not None and lng is not None:
+                return lat, lng
+
+    return None, None
