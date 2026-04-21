@@ -291,9 +291,19 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
     booking_time = booking_data.get("time") or "TBD"
     payment_method = booking_data.get("payment_method") or "cash"
 
-    # Parse time from response if missing
+    # Parse time from response if missing.
+    # Supports both 12h ("at 4pm", "at 4:30 pm") and 24h ("at 16:00", "at 19:30").
+    # YClients returns slots in 24h format and the agent's system prompt now
+    # echoes that format back, so the 24h branch is hit most often.
     if booking_time == "TBD":
-        m = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.))', response_text.lower())
+        m = re.search(
+            r'at\s+('
+            r'\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)'  # 4pm / 4:30 pm
+            r'|'
+            r'\d{1,2}:\d{2}'                                 # 16:00 / 19:30
+            r')',
+            response_text.lower(),
+        )
         if m:
             booking_time = m.group(1)
 
@@ -344,9 +354,11 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
             booking_date = now_uae + timedelta(days=1)
             logger.warning(f"Wappi: defaulting to tomorrow. response='{response_text[:150]}'")
 
-    # Parse time HH:MM
+    # Parse HH:MM from booking_time — handle 12h (with am/pm) and 24h.
     if booking_time and booking_time != "TBD":
-        tm = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?|am|pm)', booking_time.lower())
+        bt = booking_time.lower().strip()
+        # Try 12h first: "4pm", "4:30 pm", "12 a.m."
+        tm = re.search(r'(\d{1,2}):?(\d{2})?\s*(a\.?m\.?|p\.?m\.?|am|pm)', bt)
         if tm:
             hour = int(tm.group(1))
             minute = int(tm.group(2)) if tm.group(2) else 0
@@ -356,6 +368,17 @@ async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
             elif 'a' in ampm and hour == 12:
                 hour = 0
             booking_date = booking_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        else:
+            # 24h fallback: "16:00", "19:30". Require colon to avoid treating
+            # bare day numbers ("26") as an hour.
+            tm24 = re.search(r'\b(\d{1,2}):(\d{2})\b', bt)
+            if tm24:
+                hour = int(tm24.group(1))
+                minute = int(tm24.group(2))
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    booking_date = booking_date.replace(
+                        hour=hour, minute=minute, second=0, microsecond=0
+                    )
 
     # Save in local DB
     try:
