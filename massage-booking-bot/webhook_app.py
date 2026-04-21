@@ -10,6 +10,7 @@ import asyncio
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
@@ -659,6 +660,8 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     sender_name = parsed["sender_name"]
     msg_type = parsed["message_type"]
     message_id = parsed.get("message_id", "")
+    latitude = parsed.get("latitude")
+    longitude = parsed.get("longitude")
 
     # Dedup: skip if we've already processed this message_id.
     if _dedup_seen(message_id, time.time()):
@@ -667,7 +670,35 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
 
     logger.info(f"Wappi [{phone}] {sender_name}: {text[:100]}")
 
-    # Non-text messages — quick response, no AI
+    # Location message — synthesize a text representation so the agent
+    # treats it like a client sharing their address. Also prime
+    # context.client_data with coords + inferred area so the slot-injection
+    # code path in _process_wappi_message picks the right therapists.
+    if msg_type == "location" and latitude is not None and longitude is not None:
+        user_id = f"wappi_{phone}"
+        area = _area_from_coords(latitude, longitude)
+        dialog_manager.update_client_data(
+            user_id, "location", {"lat": latitude, "lng": longitude}
+        )
+        if area:
+            dialog_manager.update_client_data(user_id, "area", area)
+
+        area_label = {
+            "abu_dhabi": "Abu Dhabi",
+            "al_ain": "Al Ain",
+        }.get(area, "unknown area")
+        synthetic_text = (
+            f"[Client shared GPS location: lat={latitude:.5f}, "
+            f"lng={longitude:.5f} — detected {area_label}]"
+        )
+        logger.info(f"Wappi [{phone}] location → {area_label}")
+        background_tasks.add_task(
+            _buffer_and_process_wappi, phone, synthetic_text, sender_name
+        )
+        return {"status": "location_accepted", "area": area or "unknown"}
+
+    # Other non-text messages (image, audio, video, document, sticker…) —
+    # we can't read them yet. Acknowledge politely and ask for text.
     if msg_type != "chat" or not text:
         if wappi_client:
             background_tasks.add_task(
@@ -681,6 +712,37 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     # Schedule buffered processing (7s wait to combine multi-part messages per PRD 4.1.6)
     background_tasks.add_task(_buffer_and_process_wappi, phone, text, sender_name)
     return {"status": "accepted"}
+
+
+# ── Coordinate → area classifier ─────────────────────────────────────
+# Crystal Lab serves Abu Dhabi + Al Ain only. Pick the nearer of the two
+# city centers, but only if within ~0.6° (~66 km). Anything farther
+# (Dubai, Sharjah, outside UAE) returns None — the agent will ask the
+# client to confirm the area in text.
+_AREA_CENTERS = {
+    "abu_dhabi": (24.47, 54.37),   # Abu Dhabi city
+    "al_ain":    (24.21, 55.75),   # Al Ain city
+}
+_AREA_RADIUS_DEG = 0.6  # ~66 km; covers outskirts, excludes Dubai
+
+
+def _area_from_coords(lat: float, lng: float) -> Optional[str]:
+    """Return 'abu_dhabi' | 'al_ain' | None for a GPS coordinate.
+
+    None means "unknown / outside service area" — the agent should ask
+    the client to confirm their area in text rather than assume.
+    """
+    best_area: Optional[str] = None
+    best_d2 = _AREA_RADIUS_DEG * _AREA_RADIUS_DEG
+    for area, (clat, clng) in _AREA_CENTERS.items():
+        # Squared Euclidean distance in degrees. Good enough at UAE
+        # latitudes for a binary classifier with a 0.6° threshold —
+        # no need for haversine.
+        d2 = (lat - clat) ** 2 + (lng - clng) ** 2
+        if d2 < best_d2:
+            best_d2 = d2
+            best_area = area
+    return best_area
 
 
 @app.post("/webhook/manychat")
