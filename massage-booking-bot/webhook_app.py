@@ -549,7 +549,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 except Exception as e:
                     logger.warning(f"Wappi: failed to fetch slots: {e}")
 
-        response_text = await booking_agent.process_message(text, context)
+        # LLM timeout — OpenAI hangs cost us background-task slots and
+        # leave clients silent indefinitely. 30s is well above p99 for
+        # GPT-4o-class models; anything longer is a hang, not a slow run.
+        try:
+            response_text = await asyncio.wait_for(
+                booking_agent.process_message(text, context),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Wappi [{phone}]: booking_agent timed out after 30s")
+            response_text = "Sorry dear, one moment 🙏 Please repeat your message 🌹"
 
         if not response_text or not response_text.strip():
             response_text = "Just a moment dear 🙏"
