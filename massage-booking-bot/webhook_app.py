@@ -207,8 +207,30 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
 
 async def _maybe_create_booking(user_id: str, telegram_id: str, phone: str,
                                  sender_name: str, context, response_text: str):
-    """If bot response contains confirmation marker, create booking in DB + YClients."""
-    if "booked" not in response_text.lower() or "✅" not in response_text:
+    """If bot response contains confirmation marker, create booking in DB + YClients.
+
+    We trigger ONLY on a strong confirmation marker: word-boundary "booked"
+    AND a ✅ checkmark in the same message, AND no negation/future-tense
+    phrase right before "booked" ("not yet booked", "will be booked",
+    "cannot be booked", etc). Previously any occurrence of the substring
+    "booked" (e.g. "not yet booked") would create a real YClients record.
+    """
+    import re as _re
+    text_low = response_text.lower()
+    if "✅" not in response_text:
+        return
+    # Require standalone word "booked"
+    if not _re.search(r"\bbooked\b", text_low):
+        return
+    # Reject if "booked" is negated / future-tense / conditional
+    negation_re = _re.compile(
+        r"(?:not\s+yet|won'?t\s+be|will\s+be|going\s+to\s+be|"
+        r"cannot\s+be|can'?t\s+be|is\s+not|isn'?t|aren'?t|"
+        r"would\s+be|should\s+be|could\s+be|maybe|might)\s+booked",
+        _re.IGNORECASE,
+    )
+    if negation_re.search(text_low):
+        logger.info("Booking trigger skipped — negated 'booked' in response")
         return
 
     import bot as bot_module
