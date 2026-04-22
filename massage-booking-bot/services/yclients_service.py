@@ -75,18 +75,37 @@ class YClientsService:
     # ─── READ OPERATIONS ────────────────────────────────────
 
     async def _get(self, endpoint: str, params: dict = None) -> Optional[dict]:
-        """Safe GET request."""
+        """Safe GET request.
+
+        Returns the response dict ONLY on HTTP 2xx AND success=true. On
+        any failure (network, 4xx/5xx, success=false) logs and returns
+        None. Callers MUST distinguish None (API failure) from an empty
+        data list (legitimate "no results") — otherwise we end up
+        showing made-up content when auth expires.
+        """
         url = f"{self.BASE_URL}/{endpoint}"
         try:
             session = await self._get_session()
             async with session.get(url, headers=self._headers, params=params) as resp:
-                data = await resp.json()
-                if data.get("success") or isinstance(data.get("data"), list):
-                    return data
-                logger.warning(f"YClients GET {endpoint}: {data.get('meta', {}).get('message', 'Unknown error')}")
+                try:
+                    data = await resp.json()
+                except Exception as e:
+                    logger.error(
+                        f"YClients GET {endpoint}: non-JSON response "
+                        f"(status={resp.status}): {e}"
+                    )
+                    return None
+
+                if resp.status >= 400 or not data.get("success"):
+                    msg = (data.get("meta") or {}).get("message", "Unknown error")
+                    logger.error(
+                        f"YClients GET {endpoint} failed "
+                        f"(status={resp.status}, success={data.get('success')}): {msg}"
+                    )
+                    return None
                 return data
         except Exception as e:
-            logger.error(f"YClients GET {endpoint} failed: {e}")
+            logger.error(f"YClients GET {endpoint} exception: {e}")
             return None
 
     async def get_staff(self) -> List[Dict]:
@@ -247,7 +266,14 @@ class YClientsService:
 
         if slots_info:
             return f"Available on {date}:\n" + "\n".join(slots_info)
-        return "Available slots: 10am, 12pm, 4pm, 7:30pm"  # fallback
+        # No mock/hardcoded fallback here — if every therapist returned
+        # empty slots (day off OR records API failure) we must tell the
+        # agent the truth so it doesn't fabricate times.
+        return (
+            "No slots available for this date from the schedule. "
+            "Tell the client honestly there's no availability and "
+            "offer to check another day — do NOT invent times."
+        )
 
     async def find_service_id(self, service_name: str) -> Optional[int]:
         """Find YClients service ID by name (fuzzy match)."""
@@ -332,14 +358,22 @@ class YClientsService:
             return data["data"]
         return []
 
-    async def get_records(self, staff_id: int, date: str) -> List[Dict]:
-        """Get existing bookings for a staff member on a date. READ ONLY."""
+    async def get_records(self, staff_id: int, date: str) -> Optional[List[Dict]]:
+        """Get existing bookings for a staff member on a date. READ ONLY.
+
+        Returns None on API failure (auth, network, server error) so the
+        caller can distinguish "schedule unavailable" from "schedule is
+        empty". Returns [] when the API succeeds but the staff member
+        has zero bookings that day.
+        """
         data = await self._get(f"records/{self.company_id}", params={
             "staff_id": staff_id,
             "start_date": date,
             "end_date": date,
         })
-        if data and data.get("success") and isinstance(data.get("data"), list):
+        if data is None:
+            return None  # API failure — propagate upward
+        if isinstance(data.get("data"), list):
             return data["data"]
         return []
 
@@ -364,6 +398,15 @@ class YClientsService:
             return []  # Day off — no slots
 
         records = await self.get_records(staff_id, date)
+        if records is None:
+            # YClients records API failed (auth, network, 5xx). Returning
+            # a slot grid with 0 bookings subtracted would produce fake
+            # availability — worse than saying nothing. Refuse to guess.
+            logger.error(
+                f"YClients: records API unavailable for staff {staff_id} "
+                f"on {date} — refusing to generate slots (would be fake)"
+            )
+            return []
 
         # Parse booking blocks: [(start_min, end_min_with_buffer), ...]
         blocks = []
