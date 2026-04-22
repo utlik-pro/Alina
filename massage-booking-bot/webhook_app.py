@@ -664,6 +664,61 @@ async def admin_reset(phone: str, request: Request):
     return {"status": "ok", "phone": phone_clean, "messages_deleted": deleted}
 
 
+@app.get("/admin/health/yclients")
+async def admin_yclients_health(request: Request):
+    """Diagnostic: is the YClients user_token still valid?
+
+    Runs get_records() for the first staff member on today's date.
+    A 401 ("Не указан идентификатор пользователя") means the token
+    on this deploy has expired — the bot will stop producing real
+    slots until it's rotated.
+
+    Protected by X-Admin-Secret header.
+    Usage: curl https://.../admin/health/yclients -H "X-Admin-Secret: <secret>"
+    """
+    secret = request.headers.get("X-Admin-Secret", "")
+    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+        return Response(status_code=403, content="forbidden")
+
+    import bot as bot_module
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    if not bot_module.yclients_service:
+        return {
+            "status": "not_configured",
+            "detail": "yclients_service is None (MOCK_YCLIENTS or missing tokens)",
+        }
+
+    try:
+        staff = await bot_module.yclients_service.get_staff()
+    except Exception as e:
+        return {"status": "error", "stage": "get_staff", "detail": str(e)}
+
+    if not staff:
+        return {"status": "partner_token_fail", "detail": "get_staff returned empty"}
+
+    today = _dt.now(_tz(_td(hours=4))).strftime("%Y-%m-%d")
+    sample = staff[0]
+    recs = await bot_module.yclients_service.get_records(sample["id"], today)
+    if recs is None:
+        return {
+            "status": "user_token_fail",
+            "detail": (
+                "records API returned None (likely 401 'Не указан "
+                "идентификатор пользователя'). Rotate YCLIENTS_USER_TOKEN "
+                "in the deploy env and redeploy."
+            ),
+            "staff_probed": {"id": sample["id"], "name": sample.get("name")},
+            "date": today,
+        }
+    return {
+        "status": "ok",
+        "records_count": len(recs),
+        "staff_probed": {"id": sample["id"], "name": sample.get("name")},
+        "date": today,
+    }
+
+
 @app.post("/webhook/wappi")
 async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     """Receive WhatsApp messages via Wappi.pro webhook.
