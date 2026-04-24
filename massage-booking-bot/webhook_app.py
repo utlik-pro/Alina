@@ -303,6 +303,19 @@ async def _maybe_create_booking(
                     pass
         return
 
+    # Anti-duplicate guard: the session is already marked "completed"
+    # (a booking was created earlier in this conversation). The model
+    # sometimes re-calls book_appointment when the client writes a
+    # follow-up like "thanks" — creating a second identical DB row
+    # and a second YClients record. Refuse politely.
+    if getattr(context, "state", None) == "completed":
+        logger.warning(
+            f"Wappi: suppressing duplicate book_appointment call — "
+            f"state already 'completed'. new_call={booking_call.service} "
+            f"{booking_call.date} {booking_call.time}"
+        )
+        return
+
     # Parse structured date/time into a datetime.
     try:
         booking_date = datetime.strptime(
