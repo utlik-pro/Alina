@@ -423,7 +423,38 @@ async def _maybe_create_booking(
                         )
                     except Exception:
                         pass
-            yc_staff_id = booking_call.master_id or await bot_module.yclients_service.find_staff_id()
+            # Staff resolution priority:
+            #   1. master_id from tool call — the model picked a concrete therapist
+            #   2. master_name from tool call, filtered by area
+            #   3. any non-admin staff in the client's area
+            # Never falls back to an unfiltered default: sending an
+            # Al-Ain therapist to an Abu-Dhabi client (or vice versa)
+            # means a 90-minute misrouted drive and a missed appointment.
+            yc_staff_id = booking_call.master_id
+            if not yc_staff_id:
+                yc_staff_id = await bot_module.yclients_service.find_staff_id(
+                    name=booking_call.master_name,
+                    area=booking_call.area,
+                )
+            if not yc_staff_id:
+                logger.error(
+                    f"YClients: no staff found for area={booking_call.area!r} "
+                    f"master_name={booking_call.master_name!r}. "
+                    f"Skipping YClients record creation."
+                )
+                if bot_module.notification_service:
+                    try:
+                        await bot_module.notification_service.send_booking_failed(
+                            telegram_id=telegram_id,
+                            reason=(
+                                f"Couldn't find a therapist in {booking_call.area} "
+                                f"for {booking_call.master_name or 'any'}. "
+                                f"Local booking #{booking.id} saved but NOT "
+                                f"synced to YClients. Admin must assign manually."
+                            ),
+                        )
+                    except Exception:
+                        pass
 
             fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
             client_name = (

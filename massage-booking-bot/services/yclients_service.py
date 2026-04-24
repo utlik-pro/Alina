@@ -415,28 +415,91 @@ class YClientsService:
         )
         return best["id"]
 
-    async def find_staff_id(self, name: str = None) -> Optional[int]:
-        """Find staff ID by name. Returns first available therapist if no name given."""
+    async def find_staff_id(
+        self,
+        name: Optional[str] = None,
+        area: Optional[str] = None,
+    ) -> Optional[int]:
+        """Find staff ID by name and/or area.
+
+        Args:
+            name: therapist first name (English or Russian). Matched
+                by substring, case-insensitive.
+            area: "abu_dhabi" | "al_ain" | None. When set, filters out
+                therapists based on the "Al Ain" marker in their name:
+                  - abu_dhabi → exclude "Al Ain" therapists (they work
+                    in a different emirate; sending them to Abu Dhabi
+                    costs a 90-minute drive each way).
+                  - al_ain → only "Al Ain" therapists.
+                  - None → no area filter.
+
+        When both name and area are set, area is the hard filter; name
+        is matched within the area-filtered pool.
+
+        Returns None if nothing matches.  Callers that got None should
+        NOT fall back to a random therapist — they should surface the
+        problem to the admin instead, otherwise the therapist is sent
+        to the wrong city.
+        """
         staff = await self.get_staff()
         if not staff:
             return None
 
-        if name:
-            name_lower = name.lower()
-            for s in staff:
-                staff_name = (s.get("name", "") or "").lower()
-                if name_lower in staff_name or staff_name.startswith(name_lower):
-                    return s["id"]
-            # Name given but not found — return None (don't fallback to random therapist)
+        def _is_al_ain(s: Dict) -> bool:
+            return "al ain" in (s.get("name", "") or "").lower()
+
+        def _is_admin(s: Dict) -> bool:
+            n = (s.get("name", "") or "").upper()
+            return "АДМИНИСТРАТОР" in n or "ЛИСТ ОЖИДАНИЯ" in n
+
+        # Apply area filter first.
+        pool = [s for s in staff if not _is_admin(s)]
+        if area == "al_ain":
+            pool = [s for s in pool if _is_al_ain(s)]
+        elif area == "abu_dhabi":
+            pool = [s for s in pool if not _is_al_ain(s)]
+
+        if not pool:
+            logger.warning(
+                f"YClients.find_staff_id: no candidates for "
+                f"area={area!r} name={name!r}"
+            )
             return None
 
-        # No name given — return first non-admin staff
-        for s in staff:
-            sname = (s.get("name", "") or "").upper()
-            if "АДМИНИСТРАТОР" not in sname and "ЛИСТ ОЖИДАНИЯ" not in sname:
-                return s["id"]
+        if name:
+            # Catalog names are in Russian ("Алеся", "Марина", …) but
+            # clients and the agent use English names. Expand the query
+            # to both languages. Reverse of NAMES_RU_EN from
+            # get_available_slots_summary.
+            EN_TO_RU = {
+                "makhabat": "макхабат",
+                "olesya":   "алеся",
+                "elena":    "елена",
+                "masha":    "маша",
+                "svetlana": "светлана",
+                "marina":   "марина",
+                "safina":   "сафина",
+            }
+            needle = name.lower().strip()
+            aliases = {needle}
+            # If English → add Russian form, and vice-versa.
+            if needle in EN_TO_RU:
+                aliases.add(EN_TO_RU[needle])
+            for en, ru in EN_TO_RU.items():
+                if needle == ru:
+                    aliases.add(en)
+            for s in pool:
+                staff_name = (s.get("name", "") or "").lower()
+                if any(a in staff_name or staff_name.startswith(a) for a in aliases):
+                    return s["id"]
+            logger.warning(
+                f"YClients.find_staff_id: name {name!r} (aliases={aliases}) "
+                f"not found in area={area!r} pool (size={len(pool)})"
+            )
+            return None
 
-        return staff[0]["id"] if staff else None
+        # No name — return first from filtered pool.
+        return pool[0]["id"]
 
     async def find_client_by_phone(self, phone: str) -> Optional[Dict]:
         """Search for a client in YClients by phone number. Returns first match or None.
