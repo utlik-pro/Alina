@@ -536,11 +536,24 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 def _has_kw(kw: str) -> bool:
                     return _re_area.search(r"\b" + _re_area.escape(kw) + r"\b", _text_lower) is not None
 
-                if any(_has_kw(kw) for kw in ["al ain", "alain", "al-ain", "аль айн"]):
+                # Typo-tolerant pattern for "Al Ain": covers "al ain",
+                # "alain", "al-ain", "al aim" (common autocorrect),
+                # "alaim", "ai ain", "aiain", etc. Allows 0-1 space/hyphen
+                # between "al" and the second word, which starts with a/e/i
+                # and ends in n/m (captures vowel and terminal-letter
+                # autocorrects).
+                _al_ain_typo = _re_area.compile(
+                    r"\ba[li][\s\-]*[aie]i[nm]\b", _re_area.IGNORECASE
+                )
+
+                if _al_ain_typo.search(_text_lower) or any(
+                    _has_kw(kw) for kw in ["al ain", "alain", "al-ain", "аль айн"]
+                ):
                     _client_area = "al_ain"
                     dialog_manager.update_client_data(user_id, "area", "al_ain")
                 elif any(_has_kw(kw) for kw in [
                     "abu dhabi", "abudhabi", "абу даби",
+                    "abudabi", "abu-dhabi", "abu-dabi",  # common typos
                     "raha", "al raha", "khalifa", "al khalifa",
                     "mussafah", "mbz", "mohammed bin zayed", "mohamed bin zayed",
                     "yas", "yas island", "saadiyat", "al reem", "reem island",
@@ -619,6 +632,33 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     )
                 except Exception as e:
                     logger.warning(f"Wappi: failed to fetch slots: {e}")
+            else:
+                # Area unknown but user might be asking about timing
+                # ("when", "available", "tomorrow", "сегодня", etc.).
+                # Without real slots the model happily invents times
+                # like "2pm, 4pm, 6pm" — caught red-handed in a live
+                # test. Inject a hard rule instead: never volunteer
+                # times before we know the area.
+                _asks_time = any(
+                    kw in _text_lower for kw in (
+                        "when", "time", "available", "slot", "schedule",
+                        "today", "tomorrow", "morning", "afternoon", "evening",
+                        "когда", "время", "свободн", "сегодня", "завтра",
+                        "утро", "день", "вечер",
+                    )
+                )
+                if _asks_time:
+                    context.extra_system_info = (
+                        "\n\n⚠️ CLIENT AREA IS STILL UNKNOWN.\n"
+                        "🚨 NEVER show or invent specific times (no '2pm', "
+                        "'4pm', '10:00', etc.) before area is confirmed.\n"
+                        "🚨 If the client asks about timing, reply first:\n"
+                        "    'Are you in Abu Dhabi or Al Ain dear? 🌹'\n"
+                        "   Once they answer, the system will provide real "
+                        "slots on the next turn.\n"
+                        "🚨 Do NOT guess the area from ambiguous words. "
+                        "Ask explicitly."
+                    )
 
         # LLM timeout — OpenAI hangs cost us background-task slots and
         # leave clients silent indefinitely. 30s is well above p99 for
@@ -641,6 +681,41 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         if not response_text or not response_text.strip():
             response_text = "Just a moment dear 🙏"
+
+        # Post-hoc area detection from the BOT's reply. The model is
+        # smarter at reading typos than our regex (e.g. user wrote
+        # "Al aim" — user-side detector missed it, but the model still
+        # replied "Al Ain noted 😊"). Trust the model's interpretation
+        # and write area into client_data so the next turn gets slot
+        # injection. Requires both a confirming verb AND the area
+        # name to avoid false positives from free narration.
+        if not context.client_data.get("area"):
+            import re as _re_posthoc
+            _resp_low = response_text.lower()
+            # Strong signals: "al ain noted", "in al ain", "you're in al ain",
+            # "abu dhabi noted", "for abu dhabi", etc.
+            _area_confirm = _re_posthoc.search(
+                r"\b(?:noted|confirmed|in|for|to|with|your area is|area:)\s*"
+                r"(?:—\s*)?"
+                r"(al\s*ain|abu\s*dhabi)\b",
+                _resp_low,
+            ) or _re_posthoc.search(
+                r"\b(al\s*ain|abu\s*dhabi)\s+noted\b", _resp_low
+            )
+            if _area_confirm:
+                area_kw = _area_confirm.group(1).replace(" ", "_")
+                if "al" in area_kw and "ain" in area_kw:
+                    _detected = "al_ain"
+                elif "abu" in area_kw and "dhabi" in area_kw:
+                    _detected = "abu_dhabi"
+                else:
+                    _detected = None
+                if _detected:
+                    logger.info(
+                        f"Wappi [{phone}]: post-hoc area detection from bot "
+                        f"reply → {_detected}"
+                    )
+                    dialog_manager.update_client_data(user_id, "area", _detected)
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
