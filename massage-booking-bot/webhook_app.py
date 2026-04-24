@@ -904,25 +904,47 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     if msg_type == "location" and latitude is not None and longitude is not None:
         user_id = f"wappi_{phone}"
         area = _area_from_coords(latitude, longitude)
-        dialog_manager.update_client_data(
-            user_id, "location", {"lat": latitude, "lng": longitude}
-        )
-        if area:
-            dialog_manager.update_client_data(user_id, "area", area)
 
-        area_label = {
-            "abu_dhabi": "Abu Dhabi",
-            "al_ain": "Al Ain",
-        }.get(area, "unknown area")
-        synthetic_text = (
-            f"[Client shared GPS location: lat={latitude:.5f}, "
-            f"lng={longitude:.5f} — detected {area_label}]"
-        )
-        logger.info(f"Wappi [{phone}] location → {area_label}")
+        if area:
+            # Valid UAE coordinates — store them, model may use in address.
+            dialog_manager.update_client_data(
+                user_id, "location", {"lat": latitude, "lng": longitude}
+            )
+            dialog_manager.update_client_data(user_id, "area", area)
+            area_label = {
+                "abu_dhabi": "Abu Dhabi",
+                "al_ain": "Al Ain",
+            }.get(area, "UAE")
+            synthetic_text = (
+                f"[Client shared GPS location in {area_label} "
+                f"(lat={latitude:.5f}, lng={longitude:.5f}). Use this as "
+                f"their address field — you still need to ask for the "
+                f"building / villa / apartment number if not obvious.]"
+            )
+        else:
+            # Coordinates outside UAE — clients testing from abroad, or
+            # an accidental pin. Do NOT store the coords as "location"
+            # (model took them and stuffed them into tool-call address,
+            # which confused admin seeing Minsk GPS in a UAE booking).
+            # Tell the model to ask for a text address instead.
+            synthetic_text = (
+                f"[Client shared a GPS location OUTSIDE the UAE "
+                f"(lat={latitude:.5f}, lng={longitude:.5f}). DO NOT use "
+                f"these coordinates as their address. Ask the client to "
+                f"type their Abu Dhabi or Al Ain address in text (e.g. "
+                f"'Khalifa City, Villa 42'). If area is still unknown, "
+                f"ask 'Are you in Abu Dhabi or Al Ain dear?' first.]"
+            )
+            logger.info(
+                f"Wappi [{phone}] non-UAE location "
+                f"({latitude:.3f}, {longitude:.3f}) — asking for text address"
+            )
+
+        logger.info(f"Wappi [{phone}] location → {area or 'non_uae'}")
         background_tasks.add_task(
             _buffer_and_process_wappi, phone, synthetic_text, sender_name
         )
-        return {"status": "location_accepted", "area": area or "unknown"}
+        return {"status": "location_accepted", "area": area or "outside_uae"}
 
     # Other non-text messages (image, audio, video, document, sticker…) —
     # we can't read them yet. Acknowledge politely and ask for text.
