@@ -402,8 +402,27 @@ async def _maybe_create_booking(
         try:
             import os as _os
             yc_service_id = await bot_module.yclients_service.find_service_id(
-                booking_call.service
+                booking_call.service,
+                duration_minutes=booking_call.duration_minutes,
             )
+            if yc_service_id is None:
+                logger.error(
+                    f"YClients: couldn't map service {booking_call.service!r} "
+                    f"({booking_call.duration_minutes}min) to any catalog entry"
+                )
+                if bot_module.notification_service:
+                    try:
+                        await bot_module.notification_service.send_booking_failed(
+                            telegram_id=telegram_id,
+                            reason=(
+                                f"Local booking created but YClients sync failed: "
+                                f"service {booking_call.service!r} "
+                                f"({booking_call.duration_minutes}min) not in catalog. "
+                                f"Admin must add the YClients record manually."
+                            ),
+                        )
+                    except Exception:
+                        pass
             yc_staff_id = booking_call.master_id or await bot_module.yclients_service.find_staff_id()
 
             fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)

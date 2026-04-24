@@ -275,30 +275,145 @@ class YClientsService:
             "offer to check another day — do NOT invent times."
         )
 
-    async def find_service_id(self, service_name: str) -> Optional[int]:
-        """Find YClients service ID by name (fuzzy match)."""
+    # Keyword synonyms: agent-side term → YClients catalog term.
+    # Keep short — just enough to bridge common model choices to catalog reality.
+    _SERVICE_SYNONYMS = {
+        "body_massage": ["lymphatic drainage"],  # "body massage" is too generic; catalog uses lymphatic drainage as the default body offer (new price list)
+        "body": ["body massage", "lymphatic drainage"],
+        "face_massage": ["lifting drainage facial massage"],
+        "facial_massage": ["lifting drainage facial massage"],
+        "face": ["facial massage"],
+        "lymphatic_drainage": ["lymphatic drainage"],
+        "deep_tissue": ["deep tissue"],
+        "postpartum": ["postpartum"],
+        "prenatal": ["prenatal"],
+        "anti_cellulite": ["anti cellulite"],
+        "maderatherapie": ["maderatherapie"],
+        "russian_manicure": ["russian gelish manicure"],
+        "russian_gelish_manicure": ["russian gelish manicure"],
+        "japanese_manicure": ["japanese mani"],
+        "pedicure": ["russian gelish pedicure", "pedicure"],
+        "combo_mani_pedi": ["combo russian gellish mani + pedi", "russian gelish manicure+pedicure"],
+        "eyelash_extensions": ["classical volume", "2d volume", "russian volume"],
+        "eyelash_lifting": ["eyelash lifting"],
+        "eyebrow_lamination": ["eyebrow lamination"],
+        "cupping": ["cupping"],
+        "guasha": ["goasha", "guasha"],
+    }
+
+    async def find_service_id(
+        self,
+        service_name: str,
+        duration_minutes: Optional[int] = None,
+    ) -> Optional[int]:
+        """Find YClients service ID by name — scored fuzzy match.
+
+        Score components per candidate:
+        + 10   all normalized keywords appear in the title
+        + 8    title matches a known synonym for this service_name
+        + 6    '(new)' tag (Alina's current price list)
+        + 4    duration_minutes matches a "<N> min" token in title
+        - 6    title is an OFFER / WINTER / CHRISTMAS / NEW YEAR promo
+               (unless user explicitly asked for one)
+        - 3    title is a (bonus) / (package) variant
+               (unless user explicitly asked for one)
+        - shortest title among ties wins (fewer extra words = closer match)
+
+        Returns None if no candidate matches all keywords — caller must
+        handle None (either ask for clarification or notify admin).
+        """
         services = await self.get_services()
-        name_lower = service_name.lower()
 
-        # Try exact match first
+        # Normalize incoming name: snake_case → spaces, lowercase, strip.
+        raw = (service_name or "").strip()
+        name_norm = raw.lower().replace("_", " ").strip()
+        keywords = [kw for kw in name_norm.split() if kw]
+
+        # Exact match — only when caller passed the raw YClients title
+        # verbatim (e.g. find_service_id("Lymphatic drainage 60 min (new)")).
+        # We deliberately do NOT match on the snake-case-normalized form
+        # (e.g. "face massage" via "face_massage") because the agent's
+        # generic snake_case names collide with short generic titles in
+        # the catalog (old "Face massage" 175 AED) and win over the
+        # intended synonym ("Lifting drainage facial massage").
         for svc in services:
-            if svc["title"].lower() == name_lower:
+            if (svc.get("title") or "").lower() == raw.lower():
                 return svc["id"]
 
-        # Try contains match
-        for svc in services:
-            title = svc["title"].lower()
-            if name_lower in title or title in name_lower:
-                return svc["id"]
+        # Build list of synonym-expanded keyword sets. If we have a
+        # curated synonym for this service_name, use ONLY those — the
+        # raw snake_case often matches unrelated generic titles
+        # (e.g. "body_massage" → "Body massage" 150 AED, while the
+        # intended offering is "Lymphatic drainage …"). Synonyms
+        # encode what's actually in the catalog.
+        synonyms = self._SERVICE_SYNONYMS.get(raw.lower().strip()) or \
+                   self._SERVICE_SYNONYMS.get(name_norm.replace(" ", "_"))
+        keyword_sets: List[List[str]] = []
+        if synonyms:
+            for syn in synonyms:
+                keyword_sets.append([kw for kw in syn.lower().split() if kw])
+        elif keywords:
+            keyword_sets.append(keywords)
 
-        # Try keyword match
-        keywords = name_lower.split()
-        for svc in services:
-            title = svc["title"].lower()
-            if all(kw in title for kw in keywords):
-                return svc["id"]
+        user_wants_offer = any(
+            w in name_norm for w in ("offer", "winter", "christmas", "new year")
+        )
+        user_wants_bonus = any(w in name_norm for w in ("bonus", "package"))
 
-        return None
+        candidates = []
+        for svc in services:
+            title = (svc.get("title") or "").lower()
+            if not title:
+                continue
+
+            # Must match at least one full keyword set.
+            matched_set = None
+            for ks in keyword_sets:
+                if ks and all(kw in title for kw in ks):
+                    matched_set = ks
+                    break
+            if matched_set is None:
+                continue
+
+            score = 10
+
+            if "(new)" in title:
+                score += 6
+
+            if duration_minutes:
+                if f"{duration_minutes} min" in title or f"{duration_minutes}min" in title:
+                    score += 4
+
+            if not user_wants_offer and any(
+                tag in title
+                for tag in ("offer:", "winter offer", "christmas offer",
+                            "new year offer", "may offer")
+            ):
+                score -= 6
+
+            if not user_wants_bonus and (
+                "(bonus)" in title or "(package)" in title
+            ):
+                score -= 3
+
+            candidates.append((score, len(title), svc))
+
+        if not candidates:
+            logger.warning(
+                f"YClients: no service match for {service_name!r} "
+                f"duration={duration_minutes}. Keyword sets tried: {keyword_sets}"
+            )
+            return None
+
+        # Highest score wins; on tie prefer shorter title (closer match).
+        candidates.sort(key=lambda x: (-x[0], x[1], x[2]["id"]))
+        best = candidates[0][2]
+        logger.info(
+            f"YClients: matched {service_name!r} → #{best['id']} "
+            f"{best['title']!r} (score={candidates[0][0]}, "
+            f"{len(candidates)} candidates)"
+        )
+        return best["id"]
 
     async def find_staff_id(self, name: str = None) -> Optional[int]:
         """Find staff ID by name. Returns first available therapist if no name given."""
