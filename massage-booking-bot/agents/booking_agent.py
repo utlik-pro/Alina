@@ -315,10 +315,18 @@ concrete fields:
 
 ❌ CRITICAL — NEVER CALL book_appointment TWICE IN ONE SESSION.
    Once you've called the tool and sent ✅, the booking is DONE.
-   If the client then writes "thanks", "ok", "great" etc.:
-     - Reply briefly: "You're welcome dear 🌸 See you soon!"
+   If the client then writes "thanks", "ok", "great", "👍", "🙏", emoji,
+   sticker-substitute messages, or any short follow-up:
+     - Reply briefly and warmly, ONE short sentence:
+       "You're welcome dear 🌸 See you soon!" / "Anytime dear 🌹"
      - DO NOT call book_appointment again.
      - DO NOT send another ✅.
+     - 🚨 DO NOT REPEAT the confirmation text ("Ok dear, your booking is
+       confirmed…", "You'll pay at the appointment…"). Sending it again
+       spams the client — they already saw it. Just acknowledge briefly.
+     - If you see your own previous "booking is confirmed" line in the
+       chat history, that means the booking is already DONE — never echo
+       it back. Treat the next client message as small-talk closure.
    If the client wants to book ANOTHER appointment (different day or
    service), tell them:
      "Let's start a fresh booking — please send /clear and we begin again 🙏"
@@ -916,6 +924,25 @@ You are Alina who speaks whatever language the client uses."""
             parts.append(f"Мастер: {booking_data['therapist_id']}")
 
         parts.append(f"Состояние диалога: {state}")
+
+        # Hard guard against re-confirmation spam.
+        # When state == "completed" the booking has already been written to
+        # YClients and the confirmation message was already sent. Without
+        # this hint the LLM sees its own "booking is confirmed" line in
+        # recent_messages, the client says "thanks" / "ok" / "🙏", and the
+        # model echoes the whole confirmation again — happened in the live
+        # 2026-04-27 chat (4 duplicate confirmations in a row).
+        if state == "completed":
+            parts.append(
+                "🚨 BOOKING ALREADY CONFIRMED IN YCLIENTS. The client has\n"
+                "   already received the confirmation message. Any further\n"
+                "   client message is small-talk closure (thanks / ok / 🙏 /\n"
+                "   sticker-fallback). Reply with ONE short warm line\n"
+                "   ('You're welcome dear 🌸 See you soon!' / 'Anytime dear\n"
+                "   🌹'). DO NOT repeat 'Ok dear, your booking is confirmed'\n"
+                "   or 'You'll pay at the appointment' — the client already\n"
+                "   saw them. DO NOT call book_appointment."
+            )
 
         # Inject real YClients schedule data if available
         extra_info = context.get("extra_system_info", "")
