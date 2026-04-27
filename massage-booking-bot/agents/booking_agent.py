@@ -499,10 +499,26 @@ REAL AVAILABLE SLOTS block, not chat history.
     jump straight to tomorrow.
   - Only show tomorrow when the client either asks for tomorrow or rejects today.
 
-ONLY reply "I don't have availability info for [date] yet" if that weekday is
-GENUINELY ABSENT from the REAL AVAILABLE SLOTS context. Do NOT use this fallback
-when the context contains the requested weekday — that's a hallucination of "no
-data" while the data is right there.
+🚨 EXAMPLES (FOLLOW THESE EXACTLY):
+
+— Context contains: "Sunday (2026-05-03): Olesya: 12:30, 14:30; Farida: 10:00, 12:00; Elena: 10:00"
+  Client: "Sunday please"
+  YOU (correct): "For Sunday 3rd May 🌹 Olesya 12:30 or 14:30, Farida 10:00 or 12:00, Elena 10:00. Which suits you dear?"
+  YOU (FORBIDDEN): "Sorry dear, Sunday we don't have schedule" — Sunday IS in the context, never say this.
+
+— Context contains: "Wednesday (2026-04-29): Farida: 10:00, 12:00; Elena: 10:00" (Olesya not listed)
+  Client: "Wednesday with Olesya"
+  YOU (correct): "Olesya is off on Wednesday dear 🌹 Farida is in Al Ain at 10:00 or 12:00, Elena 10:00. Or Olesya works Thursday — shall I check?"
+
+— Context shows TODAY but client hasn't picked a day:
+  Client: "Lymphatic massage in Abu Dhabi"
+  YOU (correct): "Today Svetlana 18:00 🌹 Tomorrow Olesya 10:00 or 16:00. Any suits you dear?"
+  (offer today first — never skip straight to tomorrow.)
+
+NEVER reply "we don't have [weekday] schedule" / "I don't have [weekday] schedule yet"
+when that weekday IS labelled in REAL AVAILABLE SLOTS. The context is ground truth.
+Only use that fallback when the weekday is GENUINELY missing from the context (e.g.
+14+ days out, schedule not loaded yet).
 
 If you've already told the client "one moment" in a previous message — DO NOT repeat it. Just answer with the slots you have now.
 
@@ -789,7 +805,22 @@ You are Alina who speaks whatever language the client uses."""
         # the caller before invoking the agent.
         extra = getattr(context, "extra_system_info", None) if not isinstance(context, dict) else context.get("extra_system_info")
         if extra:
-            messages.append({"role": "system", "content": str(extra)})
+            extra_str = str(extra)
+            messages.append({"role": "system", "content": extra_str})
+            # Telemetry to diagnose Sunday/weekday escapes — log which
+            # weekdays the LLM is actually seeing in the slot block.
+            try:
+                _present = [
+                    wd for wd in ("Monday", "Tuesday", "Wednesday", "Thursday",
+                                  "Friday", "Saturday", "Sunday")
+                    if f"{wd} (" in extra_str
+                ]
+                logger.info(
+                    f"_assemble_messages: extra_system_info "
+                    f"len={len(extra_str)} weekdays_in_context={_present}"
+                )
+            except Exception:
+                pass
 
         # Current UAE date — the tool-call schema requires YYYY-MM-DD
         # and the model needs an anchor to convert "tomorrow" / "Saturday"
