@@ -659,8 +659,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         except Exception:
                             return date_str
 
+                    # Always include the booking's chosen date if it's set —
+                    # otherwise once the client has picked Sunday and the
+                    # next message is just "Villa 23" / a GPS pin / their
+                    # name (no weekday keyword), the slot block falls back
+                    # to today+tomorrow only. The model then sees Sunday
+                    # in chat history but no Sunday data in the context
+                    # and emits "Sorry, we don't have Sunday schedule"
+                    # AFTER it has already confirmed Sunday 12:00. Real
+                    # bug from the 2026-04-27 16:09 UAE chat.
+                    chosen_date = (context.booking_data or {}).get("date")
+                    if chosen_date and chosen_date not in extra_dates \
+                            and chosen_date != today and chosen_date != tomorrow:
+                        extra_dates.insert(0, chosen_date)
+
                     extra_slots_text = ""
-                    for d in extra_dates[:1]:  # limit to 1 extra
+                    for d in extra_dates[:2]:  # chosen date + at most 1 mentioned extra
                         try:
                             slots = await bot_module.yclients_service.get_available_slots_summary(
                                 date=d, service_name=service_name)

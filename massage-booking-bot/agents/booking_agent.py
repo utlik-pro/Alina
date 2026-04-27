@@ -712,6 +712,8 @@ You are Alina who speaks whatever language the client uses."""
     _STALE_REPLY_PATTERNS = (
         "i don't have",
         "i do not have",
+        "we don't have",
+        "we do not have",
         "don't have today",
         "don't have sunday",
         "don't have monday",
@@ -724,6 +726,8 @@ You are Alina who speaks whatever language the client uses."""
         "no availability info",
         "no info for",
         "is closed",
+        "misunderstanding",
+        "maybe it was",
     )
 
     @classmethod
@@ -979,7 +983,18 @@ You are Alina who speaks whatever language the client uses."""
             parts.append(f"НЕ ПРЕДЛАГАЙ СЛОТЫ СНОВА - запроси имя клиента если ещё не запрашивал!")
 
         if booking_data.get("date"):
-            parts.append(f"Дата: {booking_data['date']}")
+            parts.append(f"✅ ДАТА УЖЕ ВЫБРАНА: {booking_data['date']}")
+            if booking_data.get("time"):
+                parts.append(
+                    "🚨 BOOKING CONTEXT: date AND time are set. The client has "
+                    "agreed on a slot. Subsequent messages from the client "
+                    "(name, GPS, villa number, address text, 'cash'/'transfer') "
+                    "are them filling in remaining details to FINALIZE this "
+                    "booking. DO NOT re-pitch other days, do NOT say 'we don't "
+                    "have Sunday schedule', do NOT offer tomorrow's slots — "
+                    "the slot is already chosen. Just collect what's missing "
+                    "(name → address → payment method) and call book_appointment."
+                )
 
         if booking_data.get("therapist_id"):
             parts.append(f"Мастер: {booking_data['therapist_id']}")
