@@ -674,15 +674,41 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     elif _client_area == "abu_dhabi":
                         area_note = "\n🚨 Client in ABU DHABI. Do NOT show Al Ain therapists."
 
+                    # Build a list of weekdays that ARE in this context so we
+                    # can name them explicitly in the guard. The LLM keeps
+                    # echoing its own previous "I don't have Sunday schedule
+                    # yet" replies from chat history; naming the available
+                    # weekdays inline forces it to compare against ground
+                    # truth instead of pattern-matching on past responses.
+                    _today_wd = _weekday_names[_dt.strptime(today, "%Y-%m-%d").weekday()]
+                    _tom_wd = _weekday_names[_dt.strptime(tomorrow, "%Y-%m-%d").weekday()]
+                    _extra_wd_list = []
+                    for d in extra_dates[:1]:
+                        try:
+                            _extra_wd_list.append(
+                                _weekday_names[_dt.strptime(d, "%Y-%m-%d").weekday()]
+                            )
+                        except Exception:
+                            pass
+                    _all_wd = ", ".join([_today_wd, _tom_wd] + _extra_wd_list)
+
                     context.extra_system_info = (
-                        f"\n\nREAL AVAILABLE SLOTS:\n"
+                        f"\n\nREAL AVAILABLE SLOTS (ground truth — overrides anything you said before):\n"
                         f"TODAY — {_label(today)}:\n{slots_today}\n\n"
                         f"TOMORROW — {_label(tomorrow)}:\n{slots_tomorrow}"
                         f"{extra_slots_text}\n\n"
-                        "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'.\n"
-                        "🚨 If the client names a weekday (Wednesday / среда / Thursday / "
-                        "четверг…), match it to the labelled date above and use THOSE slots. "
-                        "Do NOT claim 'no availability info' when that weekday IS labelled here."
+                        f"🚨 The schedule above is the GROUND TRUTH. Available weekdays in "
+                        f"this context: {_all_wd}.\n"
+                        "🚨 If the client names ANY of those weekdays (in EN or RU: Wednesday / "
+                        "среда / Thursday / четверг / Sunday / воскресенье …), MATCH it to the "
+                        "labelled block above and quote those exact slots. NEVER reply 'I don't "
+                        "have [weekday] schedule yet' / 'no availability info' for a weekday "
+                        "that is IN this context — that's a hallucination from earlier in the "
+                        "chat, ignore your past replies on this point.\n"
+                        "🚨 PRESENTATION ORDER: when the client hasn't named a specific day, "
+                        "offer TODAY's slots first. If the client doesn't want today, ask 'When "
+                        "would suit you dear?' instead of jumping straight to tomorrow.\n"
+                        "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
                         f"{area_note}"
                     )
                 except Exception as e:
