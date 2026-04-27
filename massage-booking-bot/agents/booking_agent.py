@@ -701,6 +701,40 @@ You are Alina who speaks whatever language the client uses."""
             logger.error(f"Ошибка при обработке (with_tools): {e}", exc_info=True)
             return "Sorry dear, there was a technical issue. Please try again 🙏", None
 
+    # Patterns of stale assistant replies we never want to feed back to
+    # the model. These were emitted by older builds when YClients data
+    # was missing or malformed, and once any of them is in chat history
+    # the model imitates the pattern even with the new ground-truth
+    # context in the prompt — observed live on 2026-04-27 with
+    # "Sorry dear, I don't have Sunday schedule yet" being echoed for
+    # Sunday, then today, then today's-area, regardless of REAL
+    # AVAILABLE SLOTS. Drop them before they can poison the prompt.
+    _STALE_REPLY_PATTERNS = (
+        "i don't have",
+        "i do not have",
+        "don't have today",
+        "don't have sunday",
+        "don't have monday",
+        "don't have tuesday",
+        "don't have wednesday",
+        "don't have thursday",
+        "don't have friday",
+        "don't have saturday",
+        "schedule yet",
+        "no availability info",
+        "no info for",
+        "is closed",
+    )
+
+    @classmethod
+    def _is_stale_assistant_reply(cls, content: str) -> bool:
+        """True if this assistant turn is a 'no schedule / no info' fallback
+        from a previous build that we don't want the model to imitate."""
+        if not content:
+            return False
+        low = content.lower()
+        return any(pat in low for pat in cls._STALE_REPLY_PATTERNS)
+
     def _assemble_messages(self, message: str, context: Dict[str, Any]) -> list:
         """Build the OpenAI messages list from system prompt + context + user msg.
 
@@ -711,8 +745,22 @@ You are Alina who speaks whatever language the client uses."""
         messages = [{"role": "system", "content": self.system_prompt}]
 
         recent = context.get("recent_messages", []) or []
+        skipped_stale = 0
         for m in recent:
-            messages.append({"role": m["role"], "content": m["content"]})
+            role = m.get("role")
+            content = m.get("content", "")
+            # Filter out stale assistant fallbacks so the model can't
+            # pattern-match its own past mistakes. Keep user turns in
+            # full so context (e.g. "I want Sunday") survives.
+            if role == "assistant" and self._is_stale_assistant_reply(content):
+                skipped_stale += 1
+                continue
+            messages.append({"role": role, "content": content})
+        if skipped_stale:
+            logger.info(
+                f"_assemble_messages: filtered {skipped_stale} stale "
+                f"'no-schedule' replies from history"
+            )
 
         # Dedupe: don't append current message if the last history entry
         # already is it (caller may have called add_user_message first).
