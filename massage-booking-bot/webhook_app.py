@@ -638,13 +638,33 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                                 extra_dates.append(target_date)
                             break
 
-                    # Fetch slots for specific date if mentioned
+                    # Fetch slots for specific date if mentioned.
+                    # We label each date with its weekday name so the LLM
+                    # can map the client's "Wednesday" / "среда" to the
+                    # actual ISO date — without that bridge it claims
+                    # "I don't have availability info yet" even when the
+                    # context lists "2026-04-29: <real slots>". (See bug
+                    # report 2026-04-27: client asked for Wednesday and
+                    # Thursday, bot fell back to "tomorrow" despite
+                    # having the data.)
+                    _weekday_names = [
+                        "Monday", "Tuesday", "Wednesday", "Thursday",
+                        "Friday", "Saturday", "Sunday",
+                    ]
+
+                    def _label(date_str: str) -> str:
+                        try:
+                            wd = _dt.strptime(date_str, "%Y-%m-%d").weekday()
+                            return f"{_weekday_names[wd]} ({date_str})"
+                        except Exception:
+                            return date_str
+
                     extra_slots_text = ""
                     for d in extra_dates[:1]:  # limit to 1 extra
                         try:
                             slots = await bot_module.yclients_service.get_available_slots_summary(
                                 date=d, service_name=service_name)
-                            extra_slots_text += f"\n\n{d}:\n{slots}"
+                            extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
                         except Exception:
                             pass
 
@@ -655,10 +675,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         area_note = "\n🚨 Client in ABU DHABI. Do NOT show Al Ain therapists."
 
                     context.extra_system_info = (
-                        f"\n\nREAL AVAILABLE SLOTS:\nTODAY ({today}):\n{slots_today}\n\n"
-                        f"TOMORROW ({tomorrow}):\n{slots_tomorrow}"
+                        f"\n\nREAL AVAILABLE SLOTS:\n"
+                        f"TODAY — {_label(today)}:\n{slots_today}\n\n"
+                        f"TOMORROW — {_label(tomorrow)}:\n{slots_tomorrow}"
                         f"{extra_slots_text}\n\n"
-                        "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
+                        "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'.\n"
+                        "🚨 If the client names a weekday (Wednesday / среда / Thursday / "
+                        "четверг…), match it to the labelled date above and use THOSE slots. "
+                        "Do NOT claim 'no availability info' when that weekday IS labelled here."
                         f"{area_note}"
                     )
                 except Exception as e:
