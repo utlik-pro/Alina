@@ -555,9 +555,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         dialog_manager.add_user_message(user_id, text)
 
         # Inject YClients slots if we know the area
+        logger.info(
+            f"slot_inject_check: yc_service={bot_module.yclients_service is not None} "
+            f"mock={config.MOCK_YCLIENTS} text={text[:60]!r}"
+        )
         if bot_module.yclients_service and not config.MOCK_YCLIENTS:
             _text_lower = text.lower()
             _client_area = context.client_data.get("area") or ""
+            logger.info(
+                f"slot_inject_entry: text_low={_text_lower!r} "
+                f"area_cached={_client_area!r}"
+            )
             if not _client_area:
                 import re as _re_area
                 # Short tokens like "raha", "yas", "mbz" match inside unrelated
@@ -594,6 +602,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     _client_area = "abu_dhabi"
                     dialog_manager.update_client_data(user_id, "area", "abu_dhabi")
 
+            logger.info(f"slot_inject_post_detect: area_now={_client_area!r}")
             if _client_area:
                 try:
                     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
