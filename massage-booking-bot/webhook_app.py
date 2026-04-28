@@ -610,6 +610,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
                     # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
                     extra_dates = []
+                    logger.info(
+                        f"weekday_detect: text_low={_text_lower!r} "
+                        f"today={today} tomorrow={tomorrow} "
+                        f"current_wd={_now.weekday()}"
+                    )
                     _day_keywords = {
                         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
                         "friday": 4, "saturday": 5, "sunday": 6,
@@ -636,7 +641,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                             target_date = (_now + _td(days=days_ahead)).strftime("%Y-%m-%d")
                             if target_date != today and target_date != tomorrow:
                                 extra_dates.append(target_date)
+                            logger.info(
+                                f"weekday_detect: matched kw={kw!r} → "
+                                f"weekday={weekday} days_ahead={days_ahead} "
+                                f"target={target_date} appended={target_date not in (today, tomorrow)}"
+                            )
                             break
+                    else:
+                        logger.info("weekday_detect: no weekday keyword matched")
 
                     # Fetch slots for specific date if mentioned.
                     # We label each date with its weekday name so the LLM
