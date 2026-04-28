@@ -19,6 +19,7 @@ class DialogContext:
         self.client_data: Dict[str, Any] = {
             "name": None,
             "phone": None,
+            "area": None,  # "abu_dhabi" or "al_ain" — needed for slot routing
             "location": None,
             "location_details": None,  # villa/apartment number
             "preferred_therapist": None,
@@ -119,16 +120,26 @@ class DialogManager:
             context.recent_messages = context.recent_messages[-self.max_messages_history:]
 
     def update_client_data(self, user_id: int, key: str, value: Any) -> None:
-        """Обновить данные клиента"""
-        context = self.get_or_create_context(user_id)
+        """Обновить данные клиента.
 
-        if key in context.client_data:
-            context.client_data[key] = value
-            logger.info(f"Обновлены данные клиента {user_id}: {key} = {value}")
+        Sets the key unconditionally — earlier the method silently dropped
+        any key that wasn't in the initial dict. That hid the "area" save
+        for months: webhook_app called update_client_data(uid, "area",
+        "abu_dhabi"), the if-guard found "area" missing from the seed
+        client_data, and the call was a no-op. Next turn the area was lost,
+        slot-injection skipped, and the bot replied "we don't have Sunday
+        schedule" because the prompt context never got refreshed.
+
+        We still keep the special-case below for medical notes (separate
+        list-append rather than overwrite).
+        """
+        context = self.get_or_create_context(user_id)
+        context.client_data[key] = value
+        logger.info(f"Обновлены данные клиента {user_id}: {key} = {value}")
 
         # Особая обработка для медицинских заметок
         if key == "medical_note" and value:
-            context.client_data["medical_notes"].append({
+            context.client_data.setdefault("medical_notes", []).append({
                 "note": value,
                 "timestamp": datetime.now().isoformat()
             })
