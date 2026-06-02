@@ -2,6 +2,44 @@
 
 ---
 
+## [1.4.0] — 2026-06-02 — Доведение ТЗ до 100%
+
+### Добавлено
+- **Планировщик напоминаний** (`services/scheduler.py`, `ReminderScheduler`):
+  - Подтверждение за день (FR-3.1) — окно 11:00–12:00 UAE, идемпотентно
+  - Пост-сеанс опрос (FR-4) + предложение: следующий сеанс / пакет (новым) / продление (пакетникам)
+- **Отмены и переносы** (FR-5.1, 7.2): tools `cancel_appointment` и
+  `reschedule_appointment` у агента; обработчики в webhook. По правилу
+  безопасности YClients записи правит админ вручную (бот уведомляет).
+- **Штрафная система** (`services/cancellation.py`, FR-5.2/5.3): расчёт по
+  правилам (>24ч/12-24ч бесплатно; день-в-день — предупреждение; <1ч/мастер
+  в пути — transportation charge или списание сеанса), детектор форс-мажора.
+- **Учёт пакетов** (`PackageService`): списание сеанса, детект последнего,
+  оффер продления.
+- **Лист ожидания** (`WaitingList` + `WaitingListService`, FR-7.4): авто-пинг
+  при освобождении слота.
+- **Instagram-вход** (`services/instagram_client.py` + `/webhook/instagram`):
+  квалификация DM → CTA-переход в WhatsApp (deep-link `wa.me`).
+- **Уведомления водителю** (`/admin/share-with-driver/{id}`).
+- **Приём оплаты** (`services/payment.py`): статус оплаты, реквизиты для
+  перевода, `/admin/payment/{id}/paid`; онлайн-провайдер — заглушка.
+- **Авто-миграция колонок** (`Database._ensure_columns`) — `ALTER TABLE` для
+  новых полей без ручных миграций.
+
+### Изменено
+- `Booking`: добавлены `area`, `penalty_amount`, `penalty_reason`,
+  `rescheduled_to`, `confirmation_sent_at`, `survey_sent_at`, `package_id`,
+  `payment_status`.
+- `process_message_with_tools` теперь возвращает `(text, AgentActions)` —
+  контейнер для book/cancel/reschedule (1 вызыватель обновлён).
+- System prompt: инструкции по вызову tools отмены/переноса.
+
+### Тесты
+- +25 тестов (cancellation, scheduler, instagram). **Всего 115 проходят.**
+- Починен пред-существующий `test_mock_availability` (форс mock-режима).
+
+---
+
 ## [1.3.0] — 2026-02-25 — Централизация цен + документация
 
 ### Добавлено

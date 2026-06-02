@@ -190,6 +190,122 @@ def _opt_str(v: Any) -> Optional[str]:
     return s or None
 
 
-# All tools the booking agent may call. Kept as a list so it's easy
-# to add more (e.g. reschedule_appointment, cancel_appointment) later.
-BOOKING_TOOLS: List[Dict[str, Any]] = [BOOK_APPOINTMENT_TOOL]
+CANCEL_APPOINTMENT_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "cancel_appointment",
+        "description": (
+            "Call this ONLY when the client clearly wants to CANCEL an "
+            "existing confirmed appointment (not reschedule). Always try "
+            "to capture their reason. If they only hinted at cancelling, "
+            "ask first — don't call the tool until they confirm."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["reason"],
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "The client's stated reason for cancelling, verbatim "
+                        "or paraphrased. Empty string if they gave none."
+                    ),
+                },
+                "master_en_route": {
+                    "type": ["boolean", "null"],
+                    "description": (
+                        "True if the therapist has already left / is on the "
+                        "way (admin context). Null/false otherwise."
+                    ),
+                },
+            },
+        },
+    },
+}
+
+RESCHEDULE_APPOINTMENT_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "reschedule_appointment",
+        "description": (
+            "Call this when the client wants to MOVE an existing confirmed "
+            "appointment to a new date/time (and has given the new slot). "
+            "Do NOT call while still negotiating the new time."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["new_date", "new_time"],
+            "properties": {
+                "new_date": {
+                    "type": "string",
+                    "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                    "description": "New ISO date YYYY-MM-DD in UAE local time.",
+                },
+                "new_time": {
+                    "type": "string",
+                    "pattern": r"^([01]\d|2[0-3]):[0-5]\d$",
+                    "description": "New 24h time HH:MM in UAE local time.",
+                },
+                "reason": {
+                    "type": ["string", "null"],
+                    "description": "Optional reason for the reschedule.",
+                },
+            },
+        },
+    },
+}
+
+
+@dataclass
+class CancelCall:
+    """Parsed arguments from a cancel_appointment tool call."""
+
+    reason: str = ""
+    master_en_route: bool = False
+
+    @classmethod
+    def from_tool_args(cls, args: Dict[str, Any]) -> "CancelCall":
+        return cls(
+            reason=_opt_str(args.get("reason")) or "",
+            master_en_route=bool(args.get("master_en_route") or False),
+        )
+
+
+@dataclass
+class RescheduleCall:
+    """Parsed arguments from a reschedule_appointment tool call."""
+
+    new_date: str          # YYYY-MM-DD
+    new_time: str          # HH:MM
+    reason: Optional[str] = None
+
+    @classmethod
+    def from_tool_args(cls, args: Dict[str, Any]) -> "RescheduleCall":
+        return cls(
+            new_date=str(args["new_date"]),
+            new_time=str(args["new_time"]),
+            reason=_opt_str(args.get("reason")),
+        )
+
+
+@dataclass
+class AgentActions:
+    """Container for any structured action the agent emitted this turn.
+
+    Backward-friendly: callers that only care about bookings read
+    `.booking_call`. Cancel/reschedule are additive.
+    """
+
+    booking_call: Optional[BookingCall] = None
+    cancel_call: Optional[CancelCall] = None
+    reschedule_call: Optional[RescheduleCall] = None
+
+
+# All tools the booking agent may call.
+BOOKING_TOOLS: List[Dict[str, Any]] = [
+    BOOK_APPOINTMENT_TOOL,
+    CANCEL_APPOINTMENT_TOOL,
+    RESCHEDULE_APPOINTMENT_TOOL,
+]

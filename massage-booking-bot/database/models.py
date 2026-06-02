@@ -76,14 +76,32 @@ class Booking(Base):
     vat_amount = Column(Float, nullable=True)
     total_price = Column(Float, nullable=True)
     payment_method = Column(String(50), nullable=True)  # "cash" or "transfer"
+    payment_status = Column(String(30), default="pending")  # pending | paid | refunded
 
     # Status
     status = Column(String(50), default="draft", index=True)
     # draft, confirmed, in_progress, completed, cancelled
 
+    # Service area (abu_dhabi | al_ain) — needed for day-before reminders & driver routing
+    area = Column(String(50), nullable=True)
+
     # Notes
     notes = Column(Text, nullable=True)
     cancellation_reason = Column(String(500), nullable=True)
+
+    # Penalty (FR-5.2): charged for same-day cancellations / no-shows
+    penalty_amount = Column(Float, nullable=True)
+    penalty_reason = Column(String(500), nullable=True)
+
+    # Reschedule chain (FR-5/7.2): id of the new booking this one was moved to
+    rescheduled_to = Column(Integer, nullable=True)
+
+    # Scheduler bookkeeping — prevent double-sends
+    confirmation_sent_at = Column(DateTime, nullable=True)  # day-before confirmation
+    survey_sent_at = Column(DateTime, nullable=True)        # post-session follow-up
+
+    # Package linkage (if this session is drawn from a package)
+    package_id = Column(Integer, ForeignKey("packages.id"), nullable=True)
 
     # External integration
     yclients_appointment_id = Column(String(255), nullable=True, index=True)
@@ -140,6 +158,31 @@ class DialogSession(Base):
         return f"<DialogSession(id={self.id}, telegram_id={self.telegram_id}, state={self.state})>"
 
 
+class MasterAccount(Base):
+    """Telegram account of a YClients staff member (massage therapist).
+
+    Created when a master runs /start in @crystal_lab_masters_bot and
+    matches their name against YClients staff. Used to push booking
+    notifications (client + address + Google Maps) to the right master.
+    """
+    __tablename__ = "master_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    yclients_staff_id = Column(Integer, unique=True, nullable=False, index=True)
+    staff_name = Column(String(255), nullable=False)
+    telegram_chat_id = Column(String(50), unique=True, nullable=False, index=True)
+    telegram_username = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    registered_at = Column(DateTime, default=datetime.utcnow)
+    last_notified_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<MasterAccount(id={self.id}, yclients_staff_id={self.yclients_staff_id}, "
+            f"name={self.staff_name}, chat={self.telegram_chat_id})>"
+        )
+
+
 class Package(Base):
     """Модель пакета услуг"""
     __tablename__ = "packages"
@@ -165,3 +208,29 @@ class Package(Base):
 
     def __repr__(self):
         return f"<Package(id={self.id}, type={self.package_type}, remaining={self.sessions_remaining})>"
+
+
+class WaitingList(Base):
+    """Лист ожидания (FR-7.4) — клиент хочет слот, которого сейчас нет.
+
+    Когда освобождается окно (отмена другим клиентом), первого в очереди
+    с подходящими параметрами уведомляем автоматически.
+    """
+    __tablename__ = "waiting_list"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+
+    service_name = Column(String(255), nullable=True)
+    area = Column(String(50), nullable=True)              # abu_dhabi | al_ain
+    preferred_date = Column(String(20), nullable=True)    # YYYY-MM-DD (free-form ok)
+    preferred_time = Column(String(20), nullable=True)    # HH:MM or "evening"
+
+    status = Column(String(30), default="active", index=True)  # active | notified | fulfilled | expired
+    notified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client")
+
+    def __repr__(self):
+        return f"<WaitingList(id={self.id}, client={self.client_id}, status={self.status})>"

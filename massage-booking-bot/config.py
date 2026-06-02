@@ -10,8 +10,12 @@ load_dotenv()
 class Config:
     """Класс конфигурации приложения"""
 
-    # Telegram Bot
+    # Telegram Bot (client-facing: @crystal_lab_bot)
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+    # Telegram Bot for masters/therapists (separate bot: @crystal_lab_masters_bot)
+    # When set, enables per-master booking notifications with address + Google Maps.
+    MASTERS_BOT_TOKEN: Optional[str] = os.getenv("MASTERS_BOT_TOKEN")
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -71,6 +75,21 @@ class Config:
     WAPPI_TOKEN: Optional[str] = os.getenv("WAPPI_TOKEN")
     WAPPI_PROFILE_ID: Optional[str] = os.getenv("WAPPI_PROFILE_ID")
     WAPPI_WEBHOOK_SECRET: str = os.getenv("WAPPI_WEBHOOK_SECRET", "")
+
+    # Instagram (Meta Graph API) — entry point: IG DM → qualify → WhatsApp CTA
+    INSTAGRAM_ACCESS_TOKEN: Optional[str] = os.getenv("INSTAGRAM_ACCESS_TOKEN")
+    INSTAGRAM_VERIFY_TOKEN: str = os.getenv("INSTAGRAM_VERIFY_TOKEN", "crystal_lab_ig_2026")
+    INSTAGRAM_APP_SECRET: Optional[str] = os.getenv("INSTAGRAM_APP_SECRET")
+    # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
+    WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
+
+    # Driver / logistics notifications (Telegram chat id of the driver group)
+    DRIVER_TELEGRAM_CHAT_ID: Optional[str] = os.getenv("DRIVER_TELEGRAM_CHAT_ID")
+
+    # Payments — bank details shown to clients paying by transfer
+    PAYMENT_BANK_DETAILS: Optional[str] = os.getenv("PAYMENT_BANK_DETAILS")
+    # Optional online payment link / provider (Stripe/Telr/etc.) — stub for now
+    PAYMENT_LINK_BASE: Optional[str] = os.getenv("PAYMENT_LINK_BASE")
 
     @classmethod
     def validate(cls) -> bool:

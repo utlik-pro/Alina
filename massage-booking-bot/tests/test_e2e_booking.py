@@ -239,6 +239,9 @@ class TestBookingFlowService:
     async def test_mock_availability(self, mock_services):
         client_svc, booking_svc = mock_services
         flow = BookingFlow(client_svc, booking_svc)
+        # Force mock path regardless of ambient MOCK_YCLIENTS env value
+        # (prod runs with MOCK_YCLIENTS=False; this test exercises the mock).
+        flow.mock_mode = True
 
         result = await flow.check_availability("Body massage")
         assert result["available"] is True

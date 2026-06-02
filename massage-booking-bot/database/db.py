@@ -63,6 +63,56 @@ class Database:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created successfully")
+        await self._ensure_columns()
+
+    async def _ensure_columns(self):
+        """Lightweight auto-migration: add new columns to existing tables.
+
+        SQLAlchemy's create_all() only creates *missing tables*, never new
+        columns on existing ones. When we add a field to a model we must
+        ALTER TABLE here so already-deployed databases (SQLite dev,
+        Postgres prod) pick it up without a manual migration step.
+
+        Only additive ADD COLUMN is supported — safe and idempotent.
+        """
+        from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+
+        # table -> {column: SQL type}. Keep types portable (SQLite + Postgres).
+        wanted = {
+            "bookings": {
+                "area": "VARCHAR(50)",
+                "penalty_amount": "FLOAT",
+                "penalty_reason": "VARCHAR(500)",
+                "rescheduled_to": "INTEGER",
+                "confirmation_sent_at": "TIMESTAMP",
+                "survey_sent_at": "TIMESTAMP",
+                "package_id": "INTEGER",
+                "payment_status": "VARCHAR(30)",
+            },
+        }
+
+        async with self.engine.begin() as conn:
+            existing_tables = await conn.run_sync(
+                lambda sync_conn: _sa_inspect(sync_conn).get_table_names()
+            )
+            for table, columns in wanted.items():
+                if table not in existing_tables:
+                    continue
+                existing_cols = await conn.run_sync(
+                    lambda sync_conn, t=table: {
+                        c["name"] for c in _sa_inspect(sync_conn).get_columns(t)
+                    }
+                )
+                for col, col_type in columns.items():
+                    if col in existing_cols:
+                        continue
+                    try:
+                        await conn.execute(
+                            _sa_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                        )
+                        logger.info(f"Auto-migration: added {table}.{col} ({col_type})")
+                    except Exception as e:
+                        logger.warning(f"Auto-migration skip {table}.{col}: {e}")
 
     async def drop_tables(self):
         """Drop all tables (use with caution!)"""

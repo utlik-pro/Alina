@@ -34,6 +34,9 @@ notification_service: NotificationService = None
 follow_up_service: FollowUpService = None
 yclients_service: YClientsService = None
 msg_buffer: MessageBuffer = None
+package_service = None
+waiting_list_service = None
+reminder_scheduler = None
 
 
 @router.message(CommandStart())

@@ -11,7 +11,9 @@ from prices import (
     format_price_list_for_prompt, format_special_offers_for_prompt,
     get_price, SERVICE_CATALOG, SPECIAL_OFFERS, PACKAGES,
 )
-from agents.tools import BOOKING_TOOLS, BookingCall
+from agents.tools import (
+    BOOKING_TOOLS, BookingCall, CancelCall, RescheduleCall, AgentActions,
+)
 
 
 class BookingAgent:
@@ -447,7 +449,29 @@ WORKING HOURS
 9:00 AM - 10:00 PM (last booking at 9pm)
 If client writes at night — reply in the morning.
 
-NEVER apply cancellation penalties automatically.
+═══════════════════
+CANCEL / RESCHEDULE TOOLS
+═══════════════════
+
+When a client with an existing booking wants to CANCEL:
+- First ask the reason ("May I ask the reason dear? 🌹") and always offer
+  to reschedule instead ("Would you prefer to reschedule instead?").
+- If the reason is a force-majeure (hospital, newborn, death, emergency)
+  → reassure warmly, no charge.
+- If it's the SAME DAY → gently warn: same-day cancellation may incur a
+  transportation charge (new clients) or deduct a session (package).
+- ONLY once the client confirms they still want to cancel, call the
+  `cancel_appointment` tool with their reason. Do NOT compute or state a
+  penalty amount yourself — the system handles that.
+
+When a client wants to RESCHEDULE (move to another day/time):
+- Help them pick the new slot from REAL AVAILABLE SLOTS.
+- Once a concrete new date + time is agreed, send a short confirmation
+  AND call the `reschedule_appointment` tool with new_date (YYYY-MM-DD)
+  and new_time (HH:MM 24h).
+
+NEVER apply or state cancellation penalties automatically in your text —
+the backend decides and the admin handles money/YClients.
 
 ═══════════════════
 PACKAGE CLIENTS (ПАКЕТНИКИ)
@@ -627,10 +651,12 @@ You are Alina who speaks whatever language the client uses."""
 
     async def process_message_with_tools(
         self, message: str, context: Dict[str, Any]
-    ) -> Tuple[str, Optional[BookingCall]]:
-        """Like process_message, but enables the book_appointment tool.
+    ) -> Tuple[str, AgentActions]:
+        """Like process_message, but enables booking/cancel/reschedule tools.
 
-        Returns (answer_text, booking_call_or_None).
+        Returns (answer_text, AgentActions). `AgentActions.booking_call`
+        is set when the model called book_appointment; `.cancel_call` and
+        `.reschedule_call` for the respective tools.
 
         When the model calls book_appointment the parsed BookingCall is
         returned alongside the reply text; the caller creates the YClients
@@ -682,40 +708,53 @@ You are Alina who speaks whatever language the client uses."""
                 answer = msg.content or ""
                 tool_calls = msg.tool_calls or []
 
-            # Extract book_appointment call if the model made one.
-            booking_call: Optional[BookingCall] = None
+            # Extract structured tool calls the model made.
+            actions = AgentActions()
             for tc in tool_calls:
                 fn = getattr(tc, "function", None)
                 if fn is None:
                     continue
-                if fn.name != "book_appointment":
-                    logger.warning(f"GPT-tools: ignoring unknown tool call {fn.name!r}")
-                    continue
                 try:
                     args = json.loads(fn.arguments or "{}")
-                    booking_call = BookingCall.from_tool_args(args)
-                    logger.info(
-                        f"GPT-tools: book_appointment parsed — "
-                        f"{booking_call.service} {booking_call.date} "
-                        f"{booking_call.time} {booking_call.area}"
-                    )
-                    break  # only take the first valid call
-                except (json.JSONDecodeError, KeyError, ValueError) as e:
-                    logger.error(
-                        f"GPT-tools: book_appointment args malformed: {e} "
-                        f"raw={fn.arguments!r}"
-                    )
+                except json.JSONDecodeError as e:
+                    logger.error(f"GPT-tools: {fn.name} args not JSON: {e} raw={fn.arguments!r}")
+                    continue
+
+                try:
+                    if fn.name == "book_appointment" and actions.booking_call is None:
+                        actions.booking_call = BookingCall.from_tool_args(args)
+                        logger.info(
+                            f"GPT-tools: book_appointment parsed — "
+                            f"{actions.booking_call.service} {actions.booking_call.date} "
+                            f"{actions.booking_call.time} {actions.booking_call.area}"
+                        )
+                    elif fn.name == "cancel_appointment" and actions.cancel_call is None:
+                        actions.cancel_call = CancelCall.from_tool_args(args)
+                        logger.info(
+                            f"GPT-tools: cancel_appointment parsed — "
+                            f"reason={actions.cancel_call.reason!r}"
+                        )
+                    elif fn.name == "reschedule_appointment" and actions.reschedule_call is None:
+                        actions.reschedule_call = RescheduleCall.from_tool_args(args)
+                        logger.info(
+                            f"GPT-tools: reschedule_appointment parsed — "
+                            f"{actions.reschedule_call.new_date} {actions.reschedule_call.new_time}"
+                        )
+                    else:
+                        logger.warning(f"GPT-tools: ignoring tool call {fn.name!r}")
+                except (KeyError, ValueError) as e:
+                    logger.error(f"GPT-tools: {fn.name} args malformed: {e} raw={fn.arguments!r}")
 
             # Same post-processing as process_message.
             answer = self._remove_vat_from_response(answer)
             answer = self._remove_prepayment_from_response(answer)
             answer = self._remove_checking_from_response(answer)
 
-            return answer, booking_call
+            return answer, actions
 
         except Exception as e:
             logger.error(f"Ошибка при обработке (with_tools): {e}", exc_info=True)
-            return "Sorry dear, there was a technical issue. Please try again 🙏", None
+            return "Sorry dear, there was a technical issue. Please try again 🙏", AgentActions()
 
     # Patterns of stale assistant replies we never want to feed back to
     # the model. These were emitted by older builds when YClients data

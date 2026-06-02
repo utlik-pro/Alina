@@ -57,14 +57,18 @@ _WAPPI_BUFFER_DELAY = 7.0  # seconds
 
 from config import config
 from bot import router, booking_agent
-from database import init_db, ClientService, MessageService, BookingService, DialogSessionService
+from database import (
+    init_db, ClientService, MessageService, BookingService, DialogSessionService,
+    PackageService, WaitingListService,
+)
 from dialog_context import dialog_manager
 from services.notifications import NotificationService
 from services.follow_up import FollowUpService
+from services.scheduler import ReminderScheduler
 from services.message_buffer import init_buffer, MessageBuffer
 from services.yclients_service import YClientsService
 from services.wappi_client import WappiClient, parse_incoming_message
-from agents.tools import BookingCall
+from agents.tools import BookingCall, CancelCall, RescheduleCall, AgentActions
 
 # ── Global instances ─────────────────────────────────────────────────
 bot_instance: Bot = None
@@ -99,6 +103,8 @@ async def lifespan(application: FastAPI):
     bot_module.message_service = MessageService(db)
     bot_module.booking_service = BookingService(db)
     bot_module.dialog_session_service = DialogSessionService(db)
+    bot_module.package_service = PackageService(db)
+    bot_module.waiting_list_service = WaitingListService(db)
     logger.info("✅ Database services initialized")
 
     # Notification service
@@ -149,6 +155,28 @@ async def lifespan(application: FastAPI):
     else:
         logger.info("⚠️ Wappi not configured (WAPPI_TOKEN / WAPPI_PROFILE_ID missing)")
 
+    # Reminder scheduler (FR-3.1 day-before confirmations, FR-4 post-session).
+    # Sends WhatsApp via Wappi; falls back to Telegram if Wappi is absent.
+    async def _scheduler_send(phone: str, text: str):
+        if wappi_client:
+            await wappi_client.send_message(phone, text)
+        else:
+            # Telegram fallback (dev): phone is "wappi_<n>" stripped → not a
+            # chat id, so only attempt when it's numeric.
+            try:
+                await bot_instance.send_message(chat_id=int(phone), text=text)
+            except Exception as e:
+                logger.warning(f"Scheduler Telegram fallback failed for {phone}: {e}")
+
+    bot_module.reminder_scheduler = ReminderScheduler(
+        booking_service=bot_module.booking_service,
+        send_message=_scheduler_send,
+        package_service=bot_module.package_service,
+        notification_service=bot_module.notification_service,
+        check_interval=900,
+    )
+    await bot_module.reminder_scheduler.start()
+
     # Set Telegram webhook
     import os
     base_url = config.RENDER_EXTERNAL_URL
@@ -172,6 +200,8 @@ async def lifespan(application: FastAPI):
 
     # Shutdown — do NOT delete webhook, new instance will re-set it on startup
     logger.info("Shutting down...")
+    if getattr(bot_module, "reminder_scheduler", None):
+        await bot_module.reminder_scheduler.stop()
     if bot_module.follow_up_service:
         await bot_module.follow_up_service.stop()
     if bot_module.msg_buffer:
@@ -506,6 +536,154 @@ async def _maybe_create_booking(
             logger.error(f"Wappi: failed to notify admin: {e}")
 
 
+async def _admin_text(message: str):
+    """Post a plain HTML message to the admin group (best-effort)."""
+    import bot as bot_module
+    ns = bot_module.notification_service
+    if not ns or not ns.group_chat_id:
+        return
+    try:
+        await ns.bot.send_message(chat_id=ns.group_chat_id, text=message, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Failed to post admin text: {e}")
+
+
+async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall"):
+    """Cancel the client's active booking locally + apply penalty rules.
+
+    YClients records are NOT auto-modified (safety rule) — admin is asked
+    to update YClients manually.
+    """
+    import bot as bot_module
+    from services.cancellation import calculate_penalty
+    from services.scheduler import now_uae
+
+    b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
+    if not b:
+        logger.info(f"Cancel requested but no active booking for {telegram_id}")
+        await _admin_text(
+            f"❌ <b>Запрос на отмену</b>\nКлиент <code>{telegram_id}</code> "
+            f"просит отмену, но активной брони в базе нет. Проверьте YClients."
+        )
+        return
+
+    is_package = bool(b.get("package_id"))
+    pen = calculate_penalty(
+        b["booking_date"],
+        is_package=is_package,
+        master_en_route=call.master_en_route,
+        reason=call.reason,
+        now=now_uae(),
+    )
+
+    # Record cancellation locally
+    await bot_module.booking_service.update_booking_status(
+        b["booking_id"], "cancelled", notes=f"Cancelled: {call.reason}"[:500]
+    )
+
+    penalty_note = ""
+    if pen["charge_aed"] > 0:
+        await bot_module.booking_service.apply_penalty(
+            b["booking_id"], pen["charge_aed"], pen["reason"]
+        )
+        penalty_note = f"\n💸 Штраф: {pen['charge_aed']:.0f} AED ({pen['reason']})"
+    elif pen["deduct_session"] and is_package and bot_module.package_service:
+        await bot_module.package_service.consume_session(b["package_id"])
+        penalty_note = "\n💳 Списан 1 сеанс из пакета (отмена в день визита)"
+    elif pen["force_majeure"]:
+        penalty_note = "\n🤝 Форс-мажор — без штрафа"
+    elif pen["free"]:
+        penalty_note = "\n✅ Без штрафа (заблаговременная отмена)"
+
+    when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
+    await _admin_text(
+        f"❌ <b>Отмена брони (обработать в YClients вручную)</b>\n\n"
+        f"👤 {b.get('client_name') or telegram_id}\n"
+        f"📞 {phone}\n"
+        f"🛎️ {b['service_name']} — {when}\n"
+        f"💬 Причина: {call.reason or '—'}{penalty_note}\n"
+        f"🆔 YClients: {b.get('yclients_appointment_id') or '—'}"
+    )
+
+    # Waiting list: a slot just freed up — notify first match.
+    await _notify_waiting_list(b.get("area"), b.get("booking_date"))
+
+
+async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall"):
+    """Move the client's active booking to a new date/time (local) + notify admin.
+
+    YClients is NOT auto-modified (safety rule).
+    """
+    import bot as bot_module
+    from datetime import datetime as _dt
+
+    b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
+    if not b:
+        await _admin_text(
+            f"📅 <b>Запрос на перенос</b>\nКлиент <code>{telegram_id}</code> "
+            f"просит перенос, но активной брони нет. Проверьте YClients."
+        )
+        return
+
+    try:
+        new_dt = _dt.strptime(f"{call.new_date} {call.new_time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        logger.error(f"Reschedule: bad datetime {call.new_date} {call.new_time}")
+        return
+
+    # Create the new booking, chain the old one to it.
+    new_booking = await bot_module.booking_service.create_booking(
+        telegram_id=telegram_id,
+        service_name=b["service_name"],
+        duration=b.get("duration"),
+        base_price=b.get("total_price") or 0.0,
+        booking_date=new_dt,
+        payment_method=b.get("payment_method") or "cash",
+    )
+    await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
+    await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
+
+    old_when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
+    new_when = new_dt.strftime("%d.%m.%Y %H:%M")
+    await _admin_text(
+        f"📅 <b>Перенос брони (обновить в YClients вручную)</b>\n\n"
+        f"👤 {b.get('client_name') or telegram_id}\n"
+        f"📞 {phone}\n"
+        f"🛎️ {b['service_name']}\n"
+        f"⏮️ Было: {old_when}\n"
+        f"⏭️ Стало: {new_when}\n"
+        f"🆔 YClients: {b.get('yclients_appointment_id') or '—'}"
+    )
+
+
+async def _notify_waiting_list(area, freed_date):
+    """When a slot frees up, ping the first matching waiting-list client."""
+    import bot as bot_module
+    wls = getattr(bot_module, "waiting_list_service", None)
+    if not wls:
+        return
+    date_str = freed_date.strftime("%Y-%m-%d") if freed_date else None
+    try:
+        matches = await wls.get_matches(area=area, preferred_date=date_str)
+    except Exception as e:
+        logger.error(f"Waiting-list lookup failed: {e}")
+        return
+    if not matches:
+        return
+    first = matches[0]
+    if first.get("phone") and wappi_client:
+        try:
+            await wappi_client.send_message(
+                first["phone"],
+                "Good news dear 🌹 a slot just opened up for your preferred time! "
+                "Would you like to book it? 😊",
+            )
+            await wls.mark_notified(first["id"])
+            logger.info(f"Waiting-list: notified {first['phone']}")
+        except Exception as e:
+            logger.error(f"Waiting-list notify failed: {e}")
+
+
 async def _reset_user(user_id: str, telegram_id: str):
     """Clear context, history, and client data for a user."""
     import bot as bot_module
@@ -785,15 +963,16 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # reply text and create the YClients record directly from those
         # fields — no regex parsing of the reply.
         response_text: str = ""
-        booking_call: Optional[BookingCall] = None
+        actions = AgentActions()
         try:
-            response_text, booking_call = await asyncio.wait_for(
+            response_text, actions = await asyncio.wait_for(
                 booking_agent.process_message_with_tools(text, context),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
             logger.error(f"Wappi [{phone}]: booking_agent timed out after 30s")
             response_text = "Sorry dear, one moment 🙏 Please repeat your message 🌹"
+        booking_call: Optional[BookingCall] = actions.booking_call
 
         if not response_text or not response_text.strip():
             response_text = "Just a moment dear 🙏"
@@ -857,6 +1036,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             user_id, telegram_id, phone, sender_name, context,
             response_text, booking_call,
         )
+
+        # Cancellation / reschedule actions (FR-5.1–5.3, 7.2).
+        if actions.cancel_call is not None:
+            await _handle_cancellation(telegram_id, phone, actions.cancel_call)
+        if actions.reschedule_call is not None:
+            await _handle_reschedule(telegram_id, phone, actions.reschedule_call)
 
     except Exception as e:
         logger.error(f"Wappi background processing error: {e}", exc_info=True)
@@ -1077,6 +1262,104 @@ def _area_from_coords(lat: float, lng: float) -> Optional[str]:
             best_d2 = d2
             best_area = area
     return best_area
+
+
+@app.get("/webhook/instagram")
+async def instagram_verify(request: Request):
+    """Meta webhook verification handshake (GET hub.challenge)."""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    if mode == "subscribe" and token == config.INSTAGRAM_VERIFY_TOKEN:
+        logger.info("Instagram webhook verified")
+        return Response(content=challenge or "", media_type="text/plain")
+    logger.warning("Instagram webhook verification failed")
+    return Response(content="forbidden", status_code=403)
+
+
+@app.post("/webhook/instagram")
+async def instagram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Receive Instagram DMs, qualify briefly, hand off to WhatsApp (CTA)."""
+    from services.instagram_client import (
+        parse_instagram_events, build_handoff_reply, send_instagram_message,
+    )
+    payload = await request.json()
+    events = parse_instagram_events(payload)
+    logger.info(f"Instagram webhook: {len(events)} event(s)")
+
+    for ev in events:
+        # Lightweight qualification: pass the prospect's first line as context
+        # into the WhatsApp deep link so the agent picks up where IG left off.
+        context_hint = ev["text"][:120]
+        reply = build_handoff_reply(prefill_context=context_hint)
+        background_tasks.add_task(send_instagram_message, ev["sender_id"], reply)
+
+    return {"status": "ok", "events": len(events)}
+
+
+@app.post("/admin/share-with-driver/{booking_id}")
+async def admin_share_with_driver(booking_id: int, request: Request):
+    """Push a logistics notification to the driver group for a booking
+    (FR 5.2 'share with driver'). Master/admin triggers this manually.
+    """
+    import bot as bot_module
+    if config.WEBHOOK_SECRET:
+        secret = request.headers.get("X-Admin-Secret", "")
+        if secret != config.WEBHOOK_SECRET:
+            return Response(content="forbidden", status_code=403)
+
+    if not config.DRIVER_TELEGRAM_CHAT_ID:
+        return {"status": "no_driver_configured"}
+
+    # Find the booking + client
+    from sqlalchemy import select
+    from database.models import Booking, Client
+    async with bot_module.booking_service.db.session() as session:
+        row = (await session.execute(
+            select(Booking, Client).join(Client, Booking.client_id == Client.id)
+            .where(Booking.id == booking_id)
+        )).first()
+    if not row:
+        return {"status": "booking_not_found"}
+    b, c = row
+
+    when = b.booking_date.strftime("%d.%m.%Y %H:%M") if b.booking_date else "—"
+    maps = ""
+    if c.location_latitude and c.location_longitude:
+        maps = f"\n🗺️ https://maps.google.com/?q={c.location_latitude},{c.location_longitude}"
+    text = (
+        f"🚗 <b>New transport request</b>\n\n"
+        f"📅 {when}\n"
+        f"💆 {b.service_name} ({b.duration or '?'} min)\n"
+        f"👤 {c.name or 'Client'} — {c.phone or '—'}\n"
+        f"📍 {c.location_details or '—'}{maps}"
+    )
+    try:
+        await bot_instance.send_message(
+            chat_id=config.DRIVER_TELEGRAM_CHAT_ID, text=text, parse_mode="HTML"
+        )
+        return {"status": "sent"}
+    except Exception as e:
+        logger.error(f"Driver notify failed: {e}")
+        return {"status": "error", "detail": str(e)}
+
+
+@app.post("/admin/payment/{booking_id}/paid")
+async def admin_mark_paid(booking_id: int, request: Request):
+    """Mark a booking as paid (admin reconciles a bank transfer)."""
+    import bot as bot_module
+    if config.WEBHOOK_SECRET:
+        secret = request.headers.get("X-Admin-Secret", "")
+        if secret != config.WEBHOOK_SECRET:
+            return Response(content="forbidden", status_code=403)
+    from services.payment import PaymentService
+    try:
+        await PaymentService(bot_module.booking_service).mark_paid(booking_id)
+        return {"status": "paid", "booking_id": booking_id}
+    except Exception as e:
+        logger.error(f"mark_paid failed: {e}")
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/webhook/manychat")
