@@ -148,8 +148,15 @@ class ReminderScheduler:
     # ── FR-3.1 day-before confirmations ───────────────────────────────
     async def _send_day_before(self, current: datetime):
         start_h, end_h = self.confirm_window
-        if not (start_h <= current.hour < end_h):
-            return  # only inside the 11:00–12:00 UAE window
+        in_window = start_h <= current.hour < end_h
+        # Catch-up: bookings made for tomorrow AFTER the window closed, or a
+        # Render restart/deploy that spanned the window, would otherwise never
+        # get a confirmation. Re-send (only the still-unconfirmed ones — it's
+        # idempotent via confirmation_sent_at) through the afternoon/evening,
+        # but never at night.
+        catchup = end_h <= current.hour < 21
+        if not (in_window or catchup):
+            return
 
         target_date = (current + timedelta(days=1)).date()
         due = await self.booking_service.get_due_for_confirmation(target_date)
@@ -190,6 +197,11 @@ class ReminderScheduler:
                 await self.booking_service.mark_survey_sent(b["booking_id"])
                 continue
 
+            # Claim the booking BEFORE any side effect: stamping survey_sent_at
+            # first means a transient WhatsApp failure or an overlapping tick
+            # can't double-send the survey or double-consume a package session.
+            await self.booking_service.mark_survey_sent(b["booking_id"])
+
             name = (b.get("client_name") or "dear").split(" ")[0]
             try:
                 # 1) the survey itself
@@ -198,14 +210,13 @@ class ReminderScheduler:
                     SURVEY_TEMPLATE.format(name=name, service=b["service_name"]),
                 )
 
-                # 2) the next-step offer
+                # 2) the next-step offer (consumes a package session if linked)
                 offer = await self._build_offer(b)
                 if offer:
                     await asyncio.sleep(0.4)
                     await self.send_message(phone, offer)
 
-                # 3) bookkeeping: mark survey sent + complete the booking
-                await self.booking_service.mark_survey_sent(b["booking_id"])
+                # 3) complete the booking
                 await self.booking_service.update_booking_status(
                     b["booking_id"], "completed"
                 )

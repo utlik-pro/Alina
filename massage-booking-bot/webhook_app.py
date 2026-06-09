@@ -558,6 +558,13 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall")
     from services.cancellation import calculate_penalty
     from services.scheduler import now_uae
 
+    # Two-phase guard: only cancel + apply penalty when the model explicitly
+    # marked the client's intent as confirmed. A soft/ambiguous "maybe cancel"
+    # must never charge money or free a slot.
+    if not call.confirmed:
+        logger.info(f"Cancel tool called WITHOUT confirmation for {telegram_id} — ignoring")
+        return
+
     b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
     if not b:
         logger.info(f"Cancel requested but no active booking for {telegram_id}")
@@ -615,7 +622,7 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     YClients is NOT auto-modified (safety rule).
     """
     import bot as bot_module
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timedelta as _td
 
     b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
     if not b:
@@ -631,12 +638,26 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         logger.error(f"Reschedule: bad datetime {call.new_date} {call.new_time}")
         return
 
-    # Create the new booking, chain the old one to it.
+    # Sanity window — same guard as new bookings: not in the past (1h grace),
+    # not more than 60 days out. Prevents a hallucinated/past slot becoming a
+    # confirmed row the scheduler then messages about.
+    now_uae = _dt.utcnow() + _td(hours=4)
+    if new_dt < now_uae - _td(hours=1) or new_dt > now_uae + _td(days=60):
+        logger.error(f"Reschedule: new date out of window: {new_dt.isoformat()}")
+        await _admin_text(
+            f"⚠️ <b>Перенос отклонён</b>\nКлиент <code>{telegram_id}</code>: "
+            f"новая дата вне допустимого окна ({new_dt:%d.%m.%Y %H:%M}). "
+            f"Обработайте вручную."
+        )
+        return
+
+    # Create the new booking, chain the old one to it. Use base_price (pre-VAT)
+    # so calculate_total() doesn't re-apply VAT on an already-inclusive total.
     new_booking = await bot_module.booking_service.create_booking(
         telegram_id=telegram_id,
         service_name=b["service_name"],
         duration=b.get("duration"),
-        base_price=b.get("total_price") or 0.0,
+        base_price=(b.get("base_price") if b.get("base_price") is not None else 0.0),
         booking_date=new_dt,
         payment_method=b.get("payment_method") or "cash",
     )
@@ -1281,10 +1302,30 @@ async def instagram_verify(request: Request):
 @app.post("/webhook/instagram")
 async def instagram_webhook(request: Request, background_tasks: BackgroundTasks):
     """Receive Instagram DMs, qualify briefly, hand off to WhatsApp (CTA)."""
+    import hashlib
+    import hmac
+    import json as _json
     from services.instagram_client import (
         parse_instagram_events, build_handoff_reply, send_instagram_message,
     )
-    payload = await request.json()
+
+    raw = await request.body()
+
+    # Verify Meta's X-Hub-Signature-256 (HMAC-SHA256 of the raw body) when an
+    # app secret is configured. Reject forgeries before doing any work.
+    if config.INSTAGRAM_APP_SECRET:
+        sig = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(
+            config.INSTAGRAM_APP_SECRET.encode(), raw, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            logger.warning("Instagram webhook: bad signature")
+            return Response(content="forbidden", status_code=403)
+
+    try:
+        payload = _json.loads(raw or b"{}")
+    except ValueError:
+        return Response(content="bad request", status_code=400)
     events = parse_instagram_events(payload)
     logger.info(f"Instagram webhook: {len(events)} event(s)")
 

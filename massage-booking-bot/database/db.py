@@ -91,10 +91,12 @@ class Database:
             },
         }
 
+        # 1) Read schema (one read-only transaction).
         async with self.engine.begin() as conn:
             existing_tables = await conn.run_sync(
                 lambda sync_conn: _sa_inspect(sync_conn).get_table_names()
             )
+            missing: list[tuple[str, str, str]] = []  # (table, col, type)
             for table, columns in wanted.items():
                 if table not in existing_tables:
                     continue
@@ -104,15 +106,22 @@ class Database:
                     }
                 )
                 for col, col_type in columns.items():
-                    if col in existing_cols:
-                        continue
-                    try:
-                        await conn.execute(
-                            _sa_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
-                        )
-                        logger.info(f"Auto-migration: added {table}.{col} ({col_type})")
-                    except Exception as e:
-                        logger.warning(f"Auto-migration skip {table}.{col}: {e}")
+                    if col not in existing_cols:
+                        missing.append((table, col, col_type))
+
+        # 2) Apply each ALTER in ITS OWN transaction. On Postgres a failed
+        #    statement poisons the whole transaction ("current transaction is
+        #    aborted"), so a single bad ALTER must not skip the rest. Isolating
+        #    each one keeps every other column migrating independently.
+        for table, col, col_type in missing:
+            try:
+                async with self.engine.begin() as conn:
+                    await conn.execute(
+                        _sa_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                    )
+                logger.info(f"Auto-migration: added {table}.{col} ({col_type})")
+            except Exception as e:
+                logger.warning(f"Auto-migration skip {table}.{col}: {e}")
 
     async def drop_tables(self):
         """Drop all tables (use with caution!)"""

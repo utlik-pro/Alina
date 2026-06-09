@@ -398,9 +398,16 @@ class BookingService:
             )
             return [self._booking_row_to_dict(b, c) for b, c in result.all()]
 
+    # Default session length (minutes) used to estimate a session's END
+    # time when a booking has no explicit duration.
+    DEFAULT_SESSION_MINUTES = 90
+
     async def get_due_for_survey(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Confirmed bookings whose session time has passed (within the last
-        24h) and that have not yet received a post-session survey.
+        """Confirmed bookings whose session has ENDED (within the last 24h)
+        and that have not yet received a post-session survey.
+
+        We filter on the session's end time (start + duration), not its start,
+        so the "hope you enjoyed your session" message never lands mid-massage.
         """
         now = now or datetime.utcnow()
         window_start = now - timedelta(hours=24)
@@ -410,12 +417,22 @@ class BookingService:
                 .join(Client, Booking.client_id == Client.id)
                 .where(
                     Booking.status == "confirmed",
-                    Booking.booking_date < now,
+                    Booking.booking_date < now,          # started
                     Booking.booking_date >= window_start,
                     Booking.survey_sent_at.is_(None),
                 )
             )
-            return [self._booking_row_to_dict(b, c) for b, c in result.all()]
+            rows = [self._booking_row_to_dict(b, c) for b, c in result.all()]
+
+        due = []
+        for r in rows:
+            start = r.get("booking_date")
+            if not start:
+                continue
+            mins = r.get("duration") or self.DEFAULT_SESSION_MINUTES
+            if start + timedelta(minutes=mins) <= now:   # session has ended
+                due.append(r)
+        return due
 
     async def mark_confirmation_sent(self, booking_id: int) -> None:
         async with self.db.session() as session:
@@ -443,7 +460,15 @@ class BookingService:
             logger.info(f"Penalty {amount} AED applied to booking {booking_id}: {reason}")
 
     async def get_latest_active_booking(self, telegram_id: str) -> Optional[Dict[str, Any]]:
-        """Most recent confirmed, future (or today) booking for a client."""
+        """The client's SOONEST upcoming confirmed booking.
+
+        Cancel/reschedule should act on the next appointment, not the
+        furthest-future one, and never on an already-finished session. We
+        allow a 2h grace after start (so a client can cancel a booking that
+        just began) but exclude long-past rows.
+        """
+        uae_now = datetime.utcnow() + timedelta(hours=4)
+        lower_bound = uae_now - timedelta(hours=2)
         async with self.db.session() as session:
             client = (await session.execute(
                 select(Client).where(Client.telegram_id == telegram_id)
@@ -455,8 +480,9 @@ class BookingService:
                 .where(
                     Booking.client_id == client.id,
                     Booking.status == "confirmed",
+                    Booking.booking_date >= lower_bound,
                 )
-                .order_by(desc(Booking.booking_date))
+                .order_by(Booking.booking_date.asc())  # soonest first
                 .limit(1)
             )
             b = result.scalar_one_or_none()
@@ -489,6 +515,7 @@ class BookingService:
             "booking_date": b.booking_date,
             "therapist_name": b.therapist_name,
             "area": b.area,
+            "base_price": b.base_price,
             "total_price": b.total_price,
             "payment_method": b.payment_method,
             "location_details": c.location_details,

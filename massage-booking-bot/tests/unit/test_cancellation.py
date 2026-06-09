@@ -32,6 +32,16 @@ class TestForceMajeure:
     def test_ignores(self, text):
         assert is_force_majeure(text) is False
 
+    @pytest.mark.parametrize("text", [
+        "food delivery is late",       # 'delivery' must not trigger
+        "I booked by accident",        # 'accident' bare must not trigger
+        "it's labor day holiday",      # 'labor' bare must not trigger
+        "my coffee drip machine broke",  # 'drip' bare must not trigger
+        "the battery in my car died",  # 'died' without subject must not trigger
+    ])
+    def test_no_false_positive_on_common_phrasing(self, text):
+        assert is_force_majeure(text) is False
+
 
 class TestPenalty:
     def test_more_than_24h_free(self):

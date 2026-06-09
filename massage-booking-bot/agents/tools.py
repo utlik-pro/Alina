@@ -203,13 +203,23 @@ CANCEL_APPOINTMENT_TOOL: Dict[str, Any] = {
         "parameters": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["reason"],
+            "required": ["reason", "confirmed"],
             "properties": {
                 "reason": {
                     "type": "string",
                     "description": (
                         "The client's stated reason for cancelling, verbatim "
                         "or paraphrased. Empty string if they gave none."
+                    ),
+                },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Set true ONLY when the client has EXPLICITLY confirmed "
+                        "they want to cancel (e.g. answered 'yes, cancel' after "
+                        "you offered to reschedule). Set false if they merely "
+                        "hinted, asked about cancelling, or are undecided — in "
+                        "that case the booking is NOT cancelled."
                     ),
                 },
                 "master_en_route": {
@@ -263,12 +273,14 @@ class CancelCall:
     """Parsed arguments from a cancel_appointment tool call."""
 
     reason: str = ""
+    confirmed: bool = False
     master_en_route: bool = False
 
     @classmethod
     def from_tool_args(cls, args: Dict[str, Any]) -> "CancelCall":
         return cls(
             reason=_opt_str(args.get("reason")) or "",
+            confirmed=bool(args.get("confirmed") or False),
             master_en_route=bool(args.get("master_en_route") or False),
         )
 

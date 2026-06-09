@@ -9,36 +9,57 @@ the stated reason is a force-majeure (always free).
 from __future__ import annotations
 
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 # Transportation charge for same-day / master-en-route cancellations.
 # Configurable — Crystal Lab can tune via env without a code change.
 TRANSPORTATION_PENALTY_AED: float = float(os.getenv("TRANSPORTATION_PENALTY_AED", "50"))
 
-# Force-majeure keywords (EN + common variants). A cancellation citing any
-# of these is never charged (FR-5.3).
-FORCE_MAJEURE_KEYWORDS = (
-    "hospital", "emergency", "iv drip", "drip", "icu",
-    "newborn", "new born", "gave birth", "labour", "labor", "delivery",
-    "death", "passed away", "funeral", "died",
-    "accident", "ambulance", "surgery emergency", "urgent surgery",
-    "капельниц", "больниц", "скорая", "роды", "родила", "смерт", "похорон",
-    "авари", "несчастн",
-)
+# UAE is UTC+4 (no DST). Booking datetimes are stored as naive UAE-local,
+# so penalty math must compare against UAE-local "now".
+_UAE_OFFSET = timedelta(hours=4)
+
+
+def _uae_now() -> datetime:
+    return datetime.utcnow() + _UAE_OFFSET
+
+
+# Force-majeure patterns (FR-5.3). Word-boundary / phrase matched — NOT bare
+# substring — so common phrasing ("food delivery is late", "booked by
+# accident", "labor day") doesn't trigger a free cancellation and skip the
+# <1h hard-penalty band. A cancellation citing any of these is never charged.
+_FORCE_MAJEURE_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in (
+        r"\bhospital(?:i[sz]ed|i[sz]ation)?\b",
+        r"\bemergency\b",
+        r"\bI\.?C\.?U\.?\b",
+        r"\bIV\s*drip\b",
+        r"\bambulance\b",
+        r"\bnewborn\b", r"\bnew\s*born\b", r"\bgave\s+birth\b",
+        r"\b(?:in|into|going\s+into)\s+lab(?:ou)?r\b",
+        r"\bpassed\s+away\b", r"\bfuneral\b", r"\bbereavement\b",
+        r"\b(?:a\s+)?death\s+(?:in|of)\b", r"\b(?:she|he|they|mother|father|son|daughter)\s+died\b",
+        r"\bcar\s+accident\b", r"\bhad\s+an\s+accident\b", r"\bserious\s+accident\b",
+        r"\b(?:urgent|emergency)\s+surgery\b",
+        # Russian stems
+        r"больниц", r"скорая\s*помощь", r"капельниц", r"\bроды\b", r"родила",
+        r"смерт", r"похорон", r"\bавари", r"несчастн(?:ый|ого)\s+случ",
+    )
+]
 
 
 def is_force_majeure(text: str) -> bool:
-    """True if the cancellation reason looks like a force-majeure event."""
+    """True if the cancellation reason looks like a genuine force-majeure event."""
     if not text:
         return False
-    low = text.lower()
-    return any(kw in low for kw in FORCE_MAJEURE_KEYWORDS)
+    return any(p.search(text) for p in _FORCE_MAJEURE_PATTERNS)
 
 
 def hours_until(booking_date: datetime, now: Optional[datetime] = None) -> float:
     """Hours from now until the booking (negative if already passed)."""
-    now = now or datetime.utcnow()
+    now = now or _uae_now()
     return (booking_date - now).total_seconds() / 3600.0
 
 
@@ -68,6 +89,7 @@ def calculate_penalty(
       <1h / en route  → package→deduct session, new→transportation charge
     Force-majeure (FR-5.3) overrides everything → free.
     """
+    now = now or _uae_now()
     result = {
         "free": False,
         "force_majeure": False,

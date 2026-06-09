@@ -123,6 +123,54 @@ async def test_post_session_survey_and_completion(db):
 
 
 @pytest.mark.asyncio
+async def test_survey_not_sent_mid_session(db):
+    """A session still in progress must NOT get a 'hope you enjoyed' survey."""
+    clients = ClientService(db)
+    bookings = BookingService(db)
+    sink = _Sink()
+
+    tid = "wappi_+971500000009"
+    await clients.get_or_create_client(tid)
+    await clients.update_client(tid, name="Nadia", phone="+971500000009")
+
+    current = datetime(2026, 6, 2, 18, 0)
+    started = current - timedelta(minutes=30)  # 30 min ago, 90-min session → still running
+    b = await bookings.create_booking(
+        telegram_id=tid, service_name="Body massage", duration=90,
+        base_price=480.0, booking_date=started, payment_method="cash",
+    )
+    await bookings.update_booking_status(b.id, "confirmed")
+
+    sched = ReminderScheduler(booking_service=bookings, send_message=sink)
+    await sched.run_once(current=current)
+    assert sink.sent == []  # session not over yet
+
+
+@pytest.mark.asyncio
+async def test_day_before_afternoon_catchup(db):
+    """A tomorrow booking still unconfirmed in the afternoon gets a catch-up."""
+    clients = ClientService(db)
+    bookings = BookingService(db)
+    sink = _Sink()
+
+    tid = "wappi_+971500000010"
+    await clients.get_or_create_client(tid)
+    await clients.update_client(tid, phone="+971500000010")
+
+    current = datetime(2026, 6, 2, 14, 0)  # 14:00 — past the 11–12 window
+    tomorrow = (current + timedelta(days=1)).replace(hour=10, minute=0)
+    b = await bookings.create_booking(
+        telegram_id=tid, service_name="Body massage", duration=60,
+        base_price=350.0, booking_date=tomorrow, payment_method="cash",
+    )
+    await bookings.update_booking_status(b.id, "confirmed")
+
+    sched = ReminderScheduler(booking_service=bookings, send_message=sink)
+    await sched.run_once(current=current)
+    assert len(sink.sent) == 1  # caught up in the afternoon
+
+
+@pytest.mark.asyncio
 async def test_post_session_package_last_session_offers_renewal(db):
     clients = ClientService(db)
     bookings = BookingService(db)
