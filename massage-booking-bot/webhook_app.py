@@ -511,6 +511,7 @@ async def _maybe_create_booking(
                         + (f"Address: {booking_call.address}." if booking_call.address else "")
                     ),
                     is_test=_is_test,
+                    duration_minutes=booking_call.duration_minutes,
                 )
                 if yc_result:
                     logger.info(
@@ -724,9 +725,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         user_id = f"wappi_{phone}"
         telegram_id = user_id
 
-        # Check for reset commands
-        _cmd = text.strip().lower()
-        if _cmd in ("/clear", "/reset", "/start", "reset", "очистить", "сброс", "clear"):
+        # Check for reset commands. NB: include "/clean" + bare variants —
+        # the team kept typing "/clean" (not "/clear"), it wasn't recognised,
+        # so history never cleared between test runs (reported 28.04).
+        _cmd = text.strip().lower().rstrip("!. ")
+        if _cmd in (
+            "/clear", "/clean", "/reset", "/start", "/new",
+            "reset", "clear", "clean", "restart", "new chat",
+            "очистить", "сброс", "сбросить", "очисти", "начать заново",
+        ):
             await _reset_user(user_id, telegram_id)
             if wappi_client:
                 await wappi_client.send_message(

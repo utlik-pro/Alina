@@ -7,6 +7,7 @@ CRITICAL SAFETY RULE:
     ⚠️ Test bookings must be marked with [TEST] comment.
 """
 
+import re
 import time
 import aiohttp
 from datetime import datetime, timedelta
@@ -14,6 +15,45 @@ from typing import Optional, List, Dict, Any
 from loguru import logger
 
 from config import config
+
+
+# Russian → English transliteration for the real Crystal Lab staff. The
+# YClients name field often carries area + handover notes ("Людмила/с 20.06
+# Махабат", "Элиза Al Ain", "Маша с 23.06"), so we extract the leading clean
+# name token and transliterate it for English-speaking UAE clients.
+STAFF_NAMES_RU_EN = {
+    "Элиза": "Eliza",
+    "Фарида": "Farida",
+    "Наталья": "Natalia",
+    "Наталия": "Natalia",
+    "Татьяна": "Tatyana",
+    "Марина": "Marina",
+    "Людмила": "Lyudmila",
+    "Махабат": "Makhabat",
+    "Макхабат": "Makhabat",
+    "Алеся": "Olesya",
+    "Олеся": "Olesya",
+    "Елена": "Elena",
+    "Маша": "Masha",
+    "Мария": "Maria",
+    "Светлана": "Svetlana",
+    "Сафина": "Safina",
+    "Ольга": "Olga",
+}
+
+
+def _display_first_name(staff_name: str) -> str:
+    """Extract a clean, English first name from a messy YClients staff label.
+
+    Handles embedded area/handover noise: "Людмила/с 20.06 Махабат" → "Lyudmila",
+    "Элиза Al Ain" → "Eliza", "Фарида Абу Даби" → "Farida".
+    """
+    if not staff_name:
+        return "Therapist"
+    # First run of letters (Cyrillic or Latin), dropping "/с", dates, digits.
+    m = re.match(r"[A-Za-zА-Яа-яЁё]+", staff_name.strip())
+    token = m.group(0) if m else staff_name.split()[0]
+    return STAFF_NAMES_RU_EN.get(token, token)
 
 
 class _Cache:
@@ -235,17 +275,18 @@ class YClientsService:
             # Use records-based slot calculation (accounts for travel time)
             time_strs = await self.get_real_available_slots(staff["id"], date, service_duration=60)
             if time_strs:
-                time_strs = time_strs[:5]  # Limit to 5 best slots
+                # Offer up to 5 slots SPREAD across the day (morning → evening)
+                # rather than the first 5 (which were always morning and hid
+                # the "после 6 всё свободно" evening availability).
+                if len(time_strs) > 5:
+                    step = (len(time_strs) - 1) / 4.0  # 5 picks incl. first & last
+                    idxs = sorted({round(i * step) for i in range(5)})
+                    time_strs = [time_strs[i] for i in idxs]
 
                 if time_strs:
-                    # Build display name — transliterate Russian to English
-                    NAMES_RU_EN = {
-                        "Макхабат": "Makhabat", "Алеся": "Olesya", "Елена": "Elena",
-                        "Маша": "Masha", "Светлана": "Svetlana", "Марина": "Marina",
-                        "Сафина": "Safina",
-                    }
-                    first_name_raw = staff_name.split()[0]
-                    first_name = NAMES_RU_EN.get(first_name_raw, first_name_raw)
+                    # Build display name — transliterate Russian to English so
+                    # English-speaking UAE clients never see Cyrillic.
+                    first_name = _display_first_name(staff_name)
                     if "Al Ain" in staff_name:
                         display_name = first_name + " (Al Ain)"
                     elif is_nail_tech:
@@ -556,106 +597,90 @@ class YClientsService:
         return []
 
     async def get_real_available_slots(self, staff_id: int, date: str, service_duration: int = 60) -> List[str]:
-        """Calculate truly available slots based on existing records + travel buffer.
+        """Truly available slots = YClients' own bookable times, minus a
+        60-min travel buffer around existing home visits.
 
-        Logic:
-        - Get all existing bookings for the day
-        - For each booking: end_time = start + duration + 60 min buffer (travel)
-        - Available slot = gap of at least (service_duration) between buffered bookings
-        - Start from 10:00, end at 21:00
-        - Only :00 and :30 slots
+        Why this shape:
+        - `book_times` is YClients' GROUND TRUTH — it already respects each
+          master's real working hours (e.g. evening-only), day-offs, and
+          existing bookings. We must NOT recompute a hardcoded 10:00–21:00
+          grid (the old bug: it invented morning slots for evening-only
+          masters and dropped genuine evening availability — "после 6 всё
+          свободно" never showed).
+        - The ONE thing book_times doesn't know is our outbound travel time
+          between two home visits, so we additionally drop any native slot
+          that lands within 60 min of an existing booking.
+        - For today we drop past times (+30 min lead).
         """
         from datetime import timezone
         uae_tz = timezone(timedelta(hours=4))
         now_uae = datetime.now(uae_tz)
         is_today = date == now_uae.strftime("%Y-%m-%d")
 
-        # First check if staff works this day (book_times = 0 means day off)
+        # Native bookable times (already working-hours & booking aware).
         book_times = await self.get_available_times(staff_id, date)
         if not book_times:
-            return []  # Day off — no slots
+            return []  # Day off / fully booked — no slots
 
+        # Existing visits → raw (start, end) minute intervals for travel-gap.
         records = await self.get_records(staff_id, date)
         if records is None:
-            # YClients records API failed (auth, network, 5xx). Returning
-            # a slot grid with 0 bookings subtracted would produce fake
-            # availability — worse than saying nothing. Refuse to guess.
             logger.error(
                 f"YClients: records API unavailable for staff {staff_id} "
-                f"on {date} — refusing to generate slots (would be fake)"
+                f"on {date} — slots may not account for travel buffer"
             )
-            return []
+            records = []
 
-        # Parse booking blocks: [(start_min, end_min_with_buffer), ...]
-        blocks = []
+        raw_blocks = []
         for rec in records:
-            dt_str = rec.get("datetime", "")
-            length = rec.get("seance_length", 3600)  # seconds
-
             try:
-                dt = datetime.fromisoformat(dt_str)
+                dt = datetime.fromisoformat(rec.get("datetime", ""))
                 start_min = dt.hour * 60 + dt.minute
-                duration_min = length // 60
-                # Block = 60 min before arrival + session + 60 min travel after
-                block_start = start_min - 60  # 60 min travel TO client
-                block_end = start_min + duration_min + 60  # session + 60 min travel AFTER
-                blocks.append((block_start, block_end))
-            except (ValueError, AttributeError):
+                dur_min = int(rec.get("seance_length", 3600)) // 60
+                raw_blocks.append((start_min, start_min + dur_min))
+            except (ValueError, AttributeError, TypeError):
                 continue
 
-        blocks.sort()
+        TRAVEL = 60  # minutes between two home visits
 
-        # Find free slots between blocks
-        WORK_START = 10 * 60  # 10:00
-        WORK_END = 21 * 60    # 21:00 (last booking)
+        def _conflicts(slot_min: int) -> bool:
+            """True if a new session at slot_min can't fit around existing
+            visits with TRAVEL minutes on each side."""
+            ns, ne = slot_min, slot_min + service_duration
+            for rs, re_ in raw_blocks:
+                if ns < re_ + TRAVEL and rs < ne + TRAVEL:
+                    return True
+            return False
 
-        available = []
-        cursor = WORK_START
+        # Parse native slot times → minutes.
+        candidates = []
+        for t in book_times:
+            ts = (t.get("time") or "").strip()
+            try:
+                hh, mm = ts.split(":")
+                candidates.append(int(hh) * 60 + int(mm))
+            except (ValueError, AttributeError):
+                continue
+        candidates = sorted(set(candidates))
 
-        # Skip past times for today
-        if is_today:
-            current_min = now_uae.hour * 60 + now_uae.minute + 30  # +30 min minimum
-            cursor = max(cursor, current_min)
+        min_today = now_uae.hour * 60 + now_uae.minute + 30  # +30 min lead
 
-        for block_start, block_end in blocks:
-            # Check gap before this block
-            while cursor + service_duration <= block_start and cursor < WORK_END:
-                # Round to :00 or :30
-                h, m = divmod(cursor, 60)
-                if m < 15:
-                    slot_min = h * 60
-                elif m < 45:
-                    slot_min = h * 60 + 30
-                else:
-                    slot_min = (h + 1) * 60
+        # Greedily keep valid slots, spaced by at least one service length so
+        # the offered set spreads across the day (morning → evening) instead
+        # of clustering in the first hour.
+        chosen = []
+        last = -10 ** 9
+        for m in candidates:
+            if is_today and m < min_today:
+                continue
+            if _conflicts(m):
+                continue
+            if m - last < service_duration:
+                continue
+            chosen.append(m)
+            last = m
 
-                if slot_min >= cursor and slot_min + service_duration <= block_start and slot_min < WORK_END:
-                    sh, sm = divmod(slot_min, 60)
-                    available.append(f"{sh}:{sm:02d}")
-                    cursor = slot_min + service_duration + 60  # Next slot after this + buffer
-                else:
-                    cursor += 30
-            # Skip past this block
-            cursor = max(cursor, block_end)
-
-        # Check gap after last block
-        while cursor < WORK_END:
-            h, m = divmod(cursor, 60)
-            if m < 15:
-                slot_min = h * 60
-            elif m < 45:
-                slot_min = h * 60 + 30
-            else:
-                slot_min = (h + 1) * 60
-
-            if slot_min >= cursor and slot_min + service_duration <= WORK_END + 60:
-                sh, sm = divmod(slot_min, 60)
-                available.append(f"{sh}:{sm:02d}")
-                cursor = slot_min + service_duration + 60
-            else:
-                cursor += 30
-
-        return available
+        return [f"{m // 60}:{m % 60:02d}" for m in chosen]
 
     # ─── CREATE OPERATIONS (NEW RECORDS ONLY) ───────────────
 
@@ -670,6 +695,7 @@ class YClientsService:
         client_email: str = "",
         comment: str = "",
         is_test: bool = True,
+        duration_minutes: int = 60,
     ) -> Optional[Dict]:
         """Create a NEW booking in YClients.
 
@@ -696,11 +722,20 @@ class YClientsService:
         # Build services array
         services = [{"id": sid} for sid in service_ids]
 
+        # Seance length must match the real service duration — a 90-min
+        # massage written as 60 min overlaps the next slot in the calendar.
+        seance_length = max(int(duration_minutes or 60), 15) * 60
+
         payload = {
             "staff_id": staff_id,
             "services": services,
-            "datetime": f"{date}T{time}:00+03:00",  # YClients uses Europe/Minsk (UTC+3)
-            "seance_length": 3600,  # Default 60 min in seconds
+            # NOTE: the YClients account is configured in UTC+3 and the salon
+            # enters Abu-Dhabi wall-clock times against it, so existing records
+            # read back as "<UAE local>T..+03:00". We send the same convention
+            # (client's UAE wall-clock + +03:00) so our record lands at the
+            # exact hour the admin sees. Verified against live records.
+            "datetime": f"{date}T{time}:00+03:00",
+            "seance_length": seance_length,
             "save_if_busy": False,
             "comment": comment,
             "client": {},
