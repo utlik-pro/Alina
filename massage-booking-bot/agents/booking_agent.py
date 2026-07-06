@@ -1,12 +1,18 @@
 """AI Агент для бронирования массажа - основан на реальных WhatsApp диалогах"""
 
 import json
+import re
 from typing import Dict, Any, Optional, Tuple
 from openai import AsyncOpenAI
 from loguru import logger
 from datetime import datetime
 
 from config import config
+
+# A concrete clock time (10:00, 9:30, 14.00) or "9am" / "2 pm". Used to tell a
+# real slot-bearing reply from a pure "no schedule" fallback.
+_STALE_TIME_RE = re.compile(r"\b([01]?\d|2[0-3])[:.][0-5]\d\b")
+_STALE_AMPM_RE = re.compile(r"\b\d{1,2}\s?(am|pm)\b")
 from prices import (
     format_price_list_for_prompt, format_special_offers_for_prompt,
     get_price, SERVICE_CATALOG, SPECIAL_OFFERS, PACKAGES,
@@ -796,12 +802,26 @@ You are Alina who speaks whatever language the client uses."""
 
     @classmethod
     def _is_stale_assistant_reply(cls, content: str) -> bool:
-        """True if this assistant turn is a 'no schedule / no info' fallback
-        from a previous build that we don't want the model to imitate."""
+        """True if this assistant turn is a PURE 'no schedule / no info'
+        fallback we don't want the model to imitate.
+
+        Critically, a turn that ALSO offers a concrete slot is legitimate and
+        must be KEPT — e.g. "Saturday we don't have, but Sunday 10:00 is free".
+        The old version dropped the whole turn on the "we don't have" match,
+        erasing the offered slot and making the bot forget it proposed one.
+        So: drop only when a stale phrase appears AND there is NO concrete
+        time in the message.
+        """
         if not content:
             return False
         low = content.lower()
-        return any(pat in low for pat in cls._STALE_REPLY_PATTERNS)
+        if not any(pat in low for pat in cls._STALE_REPLY_PATTERNS):
+            return False
+        # Concrete time present (HH:MM, H:MM, or "9am"/"2 pm") → it's a real
+        # slot-bearing reply, not a pure fallback. Keep it.
+        if _STALE_TIME_RE.search(content) or _STALE_AMPM_RE.search(low):
+            return False
+        return True
 
     def _assemble_messages(self, message: str, context: Dict[str, Any]) -> list:
         """Build the OpenAI messages list from system prompt + context + user msg.

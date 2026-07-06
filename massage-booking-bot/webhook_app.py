@@ -53,7 +53,26 @@ def _dedup_seen(message_id: str, now_ts: float) -> bool:
 # Wappi message buffering: phone → {"messages": [text,...], "timer": Task, "sender_name": str}
 # Per PRD 4.1 rule 6: wait 7s to collect multi-part messages before responding
 _wappi_buffer: dict[str, dict] = {}
-_WAPPI_BUFFER_DELAY = 7.0  # seconds
+# ТЗ FR-1.4.1: wait 20s of silence after the client's LAST message, then
+# process all collected messages together (Arab clients send 3-5 messages
+# over 10-30s). Was hardcoded 7s — below spec. Env-tunable without a deploy.
+import os as _os_buf
+_WAPPI_BUFFER_DELAY = float(_os_buf.getenv("WAPPI_BUFFER_DELAY", "20"))  # seconds
+
+# Per-phone processing locks. A turn can take up to ~30s (LLM + slots); if a
+# new message arrives and flushes while the previous turn is still running,
+# two _process_wappi_message coroutines would mutate the SAME in-memory
+# dialog context and both send replies (duplicate / interleaved answers —
+# the "сначала записал, глючит" report). The lock serialises turns per phone.
+_wappi_locks: "dict[str, asyncio.Lock]" = {}
+
+
+def _phone_lock(phone: str) -> "asyncio.Lock":
+    lock = _wappi_locks.get(phone)
+    if lock is None:
+        lock = asyncio.Lock()
+        _wappi_locks[phone] = lock
+    return lock
 
 # Reset/clear commands (WhatsApp + Telegram). The team kept typing "/clean"
 # (not "/clear"); both + bare/RU variants are accepted.
@@ -309,7 +328,14 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
                 return
             combined = "\n".join(buf["messages"])
             logger.info(f"Wappi buffer [{phone}]: flushing {len(buf['messages'])} messages")
-            await _process_wappi_message(phone, combined, buf["sender_name"])
+            # Serialise per phone: if the previous batch is still being
+            # processed (LLM can take up to 30s), wait for it instead of
+            # running a second processing concurrently on the same context.
+            # The message-collection (buffer) above is UNCHANGED — this only
+            # prevents overlapping processings from corrupting state / sending
+            # duplicate replies.
+            async with _phone_lock(phone):
+                await _process_wappi_message(phone, combined, buf["sender_name"])
         except asyncio.CancelledError:
             pass  # new message arrived, will be handled by new timer
         except Exception as e:
