@@ -70,6 +70,27 @@ def _is_reset_command(text: str) -> bool:
         return False
     return text.strip().lower().rstrip("!. ") in _RESET_COMMANDS
 
+
+_NAILS_KW = ("manicure", "pedicure", "mani ", "mani+", "pedi", "nail", "gelish",
+             "маникюр", "педикюр", "ногт")
+_MASSAGE_KW = ("massage", "body", "lymphatic", "cupping", "deep tissue",
+               "facial", "face", "prenatal", "postpartum", "массаж", "лицо")
+
+
+def _detect_service_category(text: str) -> Optional[str]:
+    """Rough service category from a message: 'nails' | 'massage' | None.
+
+    Used to persist context.booking_data['service_type'] on the Wappi path so
+    slot injection shows the RIGHT specialists (a manicure client was being
+    shown massage-therapist availability because service_type was never set).
+    """
+    t = (text or "").lower()
+    if any(k in t for k in _NAILS_KW):
+        return "nails"
+    if any(k in t for k in _MASSAGE_KW):
+        return "massage"
+    return None
+
 from config import config
 from bot import router, booking_agent
 from database import (
@@ -326,11 +347,17 @@ async def _maybe_create_booking(
     uae_tz = _tz(timedelta(hours=4))
     now_uae = datetime.now(uae_tz).replace(tzinfo=None)
 
-    # Detect phantom confirmation: ✅ + "booked" but no tool call.
+    # Detect phantom confirmation: ✅ + a confirmation cue but no tool call.
+    # Broadened beyond "booked" — the model also confirms with "all set",
+    # "confirmed", "scheduled", "see you", which previously escaped both the
+    # creation AND the admin alert (silent false confirmation to the client).
     text_low = response_text.lower()
     has_confirm_marker = (
         "✅" in response_text
-        and _re.search(r"\bbooked\b", text_low) is not None
+        and _re.search(
+            r"\b(?:booked|confirmed|all set|scheduled|see you|you'?re all set)\b",
+            text_low,
+        ) is not None
     )
     if has_confirm_marker:
         # Filter out negated forms ("not yet booked", "will be booked"…)
@@ -363,16 +390,16 @@ async def _maybe_create_booking(
                     pass
         return
 
-    # Anti-duplicate guard: the session is already marked "completed"
-    # (a booking was created earlier in this conversation). The model
-    # sometimes re-calls book_appointment when the client writes a
-    # follow-up like "thanks" — creating a second identical DB row
-    # and a second YClients record. Refuse politely.
-    if getattr(context, "state", None) == "completed":
+    # Anti-duplicate guard: suppress ONLY an EXACT repeat of the booking we
+    # just created (the model re-calls the tool when the client writes
+    # "thanks"/emoji). A DIFFERENT service/date/time is a legitimate SECOND
+    # booking (another day, "book my sister too") and must go through — the
+    # old guard blocked ALL bookings once state=='completed', so the client
+    # was stuck until /clear ("booked once then glitches").
+    _new_sig = (booking_call.service, booking_call.date, booking_call.time)
+    if getattr(context, "last_booking_sig", None) == _new_sig:
         logger.warning(
-            f"Wappi: suppressing duplicate book_appointment call — "
-            f"state already 'completed'. new_call={booking_call.service} "
-            f"{booking_call.date} {booking_call.time}"
+            f"Wappi: suppressing exact-duplicate book_appointment {_new_sig}"
         )
         return
 
@@ -448,6 +475,9 @@ async def _maybe_create_booking(
         )
         await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
         dialog_manager.update_state(user_id, "completed")
+        # Remember this exact booking so a re-call on "thanks" is suppressed,
+        # but a different service/date/time is allowed as a 2nd booking.
+        context.last_booking_sig = _new_sig
         logger.info(
             f"✅ Wappi booking {booking.id} saved "
             f"({booking_call.service} {booking_call.date} {booking_call.time} "
@@ -789,6 +819,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if getattr(bot_module, "follow_up_service", None):
             bot_module.follow_up_service.reset_follow_up(user_id)
 
+        # Persist the service category so slot injection routes to the right
+        # specialists on THIS and later turns (nails clients were shown
+        # massage therapists because service_type stayed None on the Wappi path).
+        # Last mention wins, so a client who switches massage↔nails is re-routed.
+        _svc_cat = _detect_service_category(text)
+        if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
+            dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
+
         # Inject YClients slots if we know the area
         logger.info(
             f"slot_inject_check: yc_service={bot_module.yclients_service is not None} "
@@ -885,6 +923,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                             target_date = (_now + _td(days=days_ahead)).strftime("%Y-%m-%d")
                             if target_date != today and target_date != tomorrow:
                                 extra_dates.append(target_date)
+                                # Persist the chosen day so a later turn with no
+                                # weekday word (villa/name/GPS/"cash") keeps
+                                # injecting THIS day's slots — fixes the
+                                # "loses Sunday then says no schedule" dead-end.
+                                dialog_manager.update_booking_data(
+                                    user_id, "date", target_date
+                                )
                             logger.info(
                                 f"weekday_detect: matched kw={kw!r} → "
                                 f"weekday={weekday} days_ahead={days_ahead} "
