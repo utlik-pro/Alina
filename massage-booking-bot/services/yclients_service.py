@@ -31,6 +31,8 @@ STAFF_NAMES_RU_EN = {
     "Людмила": "Lyudmila",
     "Махабат": "Makhabat",
     "Макхабат": "Makhabat",
+    "Екатерина": "Ekaterina",
+    "Катя": "Ekaterina",
     "Алеся": "Olesya",
     "Олеся": "Olesya",
     "Елена": "Elena",
@@ -324,18 +326,38 @@ class YClientsService:
         "face_massage": ["lifting drainage facial massage"],
         "facial_massage": ["lifting drainage facial massage"],
         "face": ["facial massage"],
+        # Body + Face combo — catalog title is "Face + body 110 min (new)"
+        "body_face_combo": ["face + body"],
+        "combo_body_face": ["face + body"],
+        "face_body_combo": ["face + body"],
         "lymphatic_drainage": ["lymphatic drainage"],
         "deep_tissue": ["deep tissue"],
         "postpartum": ["postpartum"],
+        "postpartum_massage": ["postpartum"],
         "prenatal": ["prenatal"],
+        "prenatal_massage": ["prenatal"],
         "anti_cellulite": ["anti cellulite"],
         "maderatherapie": ["maderatherapie"],
         "russian_manicure": ["russian gelish manicure"],
         "russian_gelish_manicure": ["russian gelish manicure"],
         "japanese_manicure": ["japanese mani"],
-        "pedicure": ["russian gelish pedicure", "pedicure"],
+        # Bare "pedicure" must NOT fall back to "Men's pedicure" (won on
+        # shortness) — default to the women's standalone gelish pedicure.
+        # Catalog title: "Gellish Russian pedicure with machine (smart disc)".
+        # Default any bare "pedicure" to the women's Russian pedicure, never
+        # "Men's pedicure" (which used to win on title shortness).
+        "pedicure": ["russian pedicure"],
+        "russian_pedicure": ["russian pedicure"],
+        "russian_gelish_pedicure": ["gellish russian pedicure"],
         "combo_mani_pedi": ["combo russian gellish mani + pedi", "russian gelish manicure+pedicure"],
         "eyelash_extensions": ["classical volume", "2d volume", "russian volume"],
+        "eyelash_extension": ["classical volume", "2d volume", "russian volume"],
+        # "classic/classical" eyelashes → the "Classical volume" catalog title
+        "classic_eyelash_extension": ["classical volume"],
+        "classical_eyelash_extension": ["classical volume"],
+        "lash_ext_classic": ["classical volume"],
+        "classic_volume": ["classical volume"],
+        "classical_volume": ["classical volume"],
         "eyelash_lifting": ["eyelash lifting"],
         "eyebrow_lamination": ["eyebrow lamination"],
         "cupping": ["cupping"],
@@ -400,6 +422,10 @@ class YClientsService:
             w in name_norm for w in ("offer", "winter", "christmas", "new year")
         )
         user_wants_bonus = any(w in name_norm for w in ("bonus", "package"))
+        user_wants_combo = any(
+            w in name_norm for w in ("combo", "+", "mani pedi", "mani and pedi",
+                                     "manicure pedicure", "and pedi", "both")
+        )
 
         candidates = []
         for svc in services:
@@ -436,6 +462,19 @@ class YClientsService:
                 "(bonus)" in title or "(package)" in title
             ):
                 score -= 3
+
+            # Combo/multi-service titles ("… manicure + pedicure", "mani + pedi")
+            # must not win a single-service query — "pedicure" was resolving to
+            # "Russian gellish manicure+pedicure" because "pedicure" is a
+            # substring of the combo title. Penalise combos unless the client
+            # explicitly asked for one.
+            is_combo_title = (
+                "+" in title
+                or ("mani" in title and "pedi" in title)
+                or ("manicure" in title and "pedicure" in title)
+            )
+            if is_combo_title and not user_wants_combo:
+                score -= 5
 
             candidates.append((score, len(title), svc))
 
