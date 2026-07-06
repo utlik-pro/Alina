@@ -1185,8 +1185,30 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if actions.reschedule_call is not None:
             await _handle_reschedule(telegram_id, phone, actions.reschedule_call)
 
+        # Persist a structured turn log for future debugging / bug analysis.
+        try:
+            from services.turn_logger import log_turn
+            _action = ("book_appointment" if booking_call else
+                       "cancel" if actions.cancel_call else
+                       "reschedule" if actions.reschedule_call else None)
+            log_turn(
+                phone, text,
+                area=context.client_data.get("area"),
+                service=context.booking_data.get("service_type"),
+                had_slots=bool(getattr(context, "extra_system_info", "")),
+                reply=response_text,
+                action=_action,
+            )
+        except Exception:
+            pass
+
     except Exception as e:
         logger.error(f"Wappi background processing error: {e}", exc_info=True)
+        try:
+            from services.turn_logger import log_turn
+            log_turn(phone, text, error=str(e)[:300])
+        except Exception:
+            pass
         if wappi_client:
             try:
                 await wappi_client.send_message(
@@ -1545,6 +1567,21 @@ async def admin_mark_paid(booking_id: int, request: Request):
     except Exception as e:
         logger.error(f"mark_paid failed: {e}")
         return {"status": "error", "detail": str(e)}
+
+
+@app.get("/admin/logs")
+async def admin_logs(request: Request):
+    """Return recent structured turn logs (for debugging / bug analysis)."""
+    if config.WEBHOOK_SECRET:
+        secret = request.headers.get("X-Admin-Secret", "")
+        if secret != config.WEBHOOK_SECRET:
+            return Response(content="forbidden", status_code=403)
+    from services.turn_logger import read_recent, LOG_PATH
+    try:
+        n = int(request.query_params.get("n", "50"))
+    except ValueError:
+        n = 50
+    return {"path": LOG_PATH, "count": None, "logs": read_recent(min(max(n, 1), 500))}
 
 
 @app.post("/webhook/manychat")
