@@ -886,9 +886,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
                     service_name = context.booking_data.get("service_type") or ""
                     slots_today = await bot_module.yclients_service.get_available_slots_summary(
-                        date=today, service_name=service_name)
+                        date=today, service_name=service_name, area=_client_area)
                     slots_tomorrow = await bot_module.yclients_service.get_available_slots_summary(
-                        date=tomorrow, service_name=service_name)
+                        date=tomorrow, service_name=service_name, area=_client_area)
 
                     # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
                     extra_dates = []
@@ -978,7 +978,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     for d in extra_dates[:2]:  # chosen date + at most 1 mentioned extra
                         try:
                             slots = await bot_module.yclients_service.get_available_slots_summary(
-                                date=d, service_name=service_name)
+                                date=d, service_name=service_name, area=_client_area)
                             extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
                         except Exception:
                             pass

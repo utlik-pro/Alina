@@ -213,12 +213,14 @@ class YClientsService:
             return data["data"]
         return []
 
-    async def get_available_slots_summary(self, date: str = None, service_name: str = None, service_category: str = None, service_id: int = None) -> str:
+    async def get_available_slots_summary(self, date: str = None, service_name: str = None, service_category: str = None, service_id: int = None, area: str = None) -> str:
         """Get human-readable available slots for GPT context.
 
         Filters by:
         - Current time (no past slots for today)
         - Staff specialization (massage therapists for massage, nail techs for nails)
+        - Area (abu_dhabi / al_ain) — an Al-Ain client must NOT be shown Abu
+          Dhabi therapists (they can't drive to another emirate) and vice-versa
         - Minimum 60 min between offered slots
 
         Returns a formatted string like:
@@ -252,6 +254,14 @@ class YClientsService:
 
             # Skip admin/waiting list
             if "АДМИНИСТРАТОР" in staff_name.upper() or "ЛИСТ ОЖИДАНИЯ" in staff_name.upper():
+                continue
+
+            # Filter by AREA — an Al-Ain client sees only Al-Ain therapists and
+            # an Abu-Dhabi client never sees Al-Ain ones (a 90-min drive away).
+            _is_al_ain_staff = "al ain" in staff_name.lower()
+            if area == "al_ain" and not _is_al_ain_staff:
+                continue
+            if area == "abu_dhabi" and _is_al_ain_staff:
                 continue
 
             # Filter by specialization
