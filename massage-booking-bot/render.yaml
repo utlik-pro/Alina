@@ -30,3 +30,24 @@ services:
         sync: false
       - key: MOCK_YCLIENTS
         sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      # WhatsApp via Wappi.pro — REQUIRED for the bot to SEND replies.
+      # Without these the server receives messages but wappi_client is None
+      # and every reply is silently dropped. Set values in the Render
+      # dashboard (Environment tab) — they are secrets, not stored in git.
+      - key: WAPPI_TOKEN
+        sync: false
+      - key: WAPPI_PROFILE_ID
+        sync: false
+      - key: WAPPI_WEBHOOK_SECRET
+        sync: false
+      # Optional integrations (scaffolded) — set only when going live.
+      - key: INSTAGRAM_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_CTA_NUMBER
+        sync: false
+      - key: DRIVER_TELEGRAM_CHAT_ID
+        sync: false
+      - key: PAYMENT_BANK_DETAILS
+        sync: false

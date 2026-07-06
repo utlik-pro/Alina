@@ -163,8 +163,45 @@ def _print(result):
         print(f"\n📋 admin: {result['admin_events']}")
 
 
+async def live_drive(phone, messages, delay=14):
+    """LIVE mode: drive a real conversation and SEND real WhatsApp replies via
+    Wappi to `phone`. YClients WRITE is still stubbed (no real record). The
+    client's messages are injected locally (they won't appear in WhatsApp),
+    but the agent's REPLIES are real and visible to the recipient.
+    """
+    webhook_app, bot_module, _fake, db = await setup()
+    from services.wappi_client import WappiClient
+    from dialog_context import dialog_manager
+    webhook_app.wappi_client = WappiClient()   # REAL sends
+    dialog_manager.clear_context(f"wappi_{phone}")
+
+    for msg in messages:
+        print(f"\n[client→agent] {msg!r}")
+        try:
+            await webhook_app._process_wappi_message(phone, msg, "Dmitry Test")
+            print("  ✅ agent replied (sent to WhatsApp)")
+        except Exception as e:
+            print(f"  ‼️ {e}")
+        await asyncio.sleep(delay)
+
+    await db.close()
+    try:
+        await webhook_app.wappi_client.close()
+        await bot_module.yclients_service.close()
+    except Exception:
+        pass
+
+
 async def main():
     args = sys.argv[1:]
+    if args and args[0] == "--live":
+        # scripts/pipeline_harness.py --live <phone> <scenario|msg1;msg2;...>
+        phone = args[1]
+        spec = args[2] if len(args) > 2 else "massage_abu_dhabi"
+        msgs = SCENARIOS.get(spec) or spec.split(";")
+        await live_drive(phone, msgs)
+        return
+
     json_out = None
     if args and args[0] == "--json":
         json_out = args[1]; args = args[2:]
