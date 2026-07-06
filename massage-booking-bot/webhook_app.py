@@ -900,10 +900,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     tomorrow = (_now + _td(days=1)).strftime("%Y-%m-%d")
 
                     service_name = context.booking_data.get("service_type") or ""
-                    slots_today = await bot_module.yclients_service.get_available_slots_summary(
-                        date=today, service_name=service_name, area=_client_area)
-                    slots_tomorrow = await bot_module.yclients_service.get_available_slots_summary(
-                        date=tomorrow, service_name=service_name, area=_client_area)
+                    # Fetch today + tomorrow concurrently (was sequential).
+                    slots_today, slots_tomorrow = await asyncio.gather(
+                        bot_module.yclients_service.get_available_slots_summary(
+                            date=today, service_name=service_name, area=_client_area),
+                        bot_module.yclients_service.get_available_slots_summary(
+                            date=tomorrow, service_name=service_name, area=_client_area),
+                    )
 
                     # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
                     extra_dates = []

@@ -247,75 +247,69 @@ class YClientsService:
         if not staff_list:
             return "No available slots for this date"
 
-        slots_info = []
+        # 1) Filter candidates (admin/area/specialization) — pure, no API.
+        candidates = []
         for staff in staff_list:
             staff_name = (staff.get("name", "") or "")
             spec = (staff.get("specialization", "") or "").lower()
-
-            # Skip admin/waiting list
             if "АДМИНИСТРАТОР" in staff_name.upper() or "ЛИСТ ОЖИДАНИЯ" in staff_name.upper():
                 continue
-
-            # Filter by AREA — an Al-Ain client sees only Al-Ain therapists and
-            # an Abu-Dhabi client never sees Al-Ain ones (a 90-min drive away).
+            # Area: Al-Ain client sees only Al-Ain therapists; Abu-Dhabi never
+            # sees Al-Ain ones (a 90-min drive away).
             _is_al_ain_staff = "al ain" in staff_name.lower()
             if area == "al_ain" and not _is_al_ain_staff:
                 continue
             if area == "abu_dhabi" and _is_al_ain_staff:
                 continue
-
-            # Filter by specialization
             is_nail_tech = "маникюр" in spec or "nail" in spec.lower()
-            is_massage_therapist = "массажист" in spec or "massage" in spec.lower()
-
             if is_nails and not is_nail_tech:
                 continue
             if not is_nails and is_nail_tech:
                 continue
+            candidates.append((staff, is_nail_tech))
 
-            # Find service_id for accurate slot duration
-            svc_id = service_id
-            if not svc_id and service_name:
-                svc_id = await self.find_service_id(service_name)
-            # Default: use body massage 60min for massage, Russian mani for nails
-            if not svc_id:
-                if is_nail_tech:
-                    svc_id = await self.find_service_id("Russian gelish manicure")
-                else:
-                    svc_id = await self.find_service_id("Lymphatic drainage 60 min (new)")
+        # 2) Fetch every candidate's slots IN PARALLEL. This loop used to run
+        #    sequentially (~9 masters × 2+ YClients calls each), which pushed a
+        #    single turn past the 30s agent timeout on prod ("Sorry dear, one
+        #    moment, please repeat"). asyncio.gather collapses it to ~one round
+        #    trip. (The old per-staff find_service_id calls were also removed —
+        #    the result was never used; get_real_available_slots uses a fixed
+        #    60-min duration.)
+        import asyncio as _asyncio
+        slot_lists = await _asyncio.gather(
+            *[self.get_real_available_slots(s["id"], date, 60) for s, _ in candidates],
+            return_exceptions=True,
+        )
 
-            # Use records-based slot calculation (accounts for travel time)
-            time_strs = await self.get_real_available_slots(staff["id"], date, service_duration=60)
-            if time_strs:
-                # Offer up to 5 slots SPREAD across the day (morning → evening)
-                # rather than the first 5 (which were always morning and hid
-                # the "после 6 всё свободно" evening availability).
-                if len(time_strs) > 5:
-                    step = (len(time_strs) - 1) / 4.0  # 5 picks incl. first & last
-                    idxs = sorted({round(i * step) for i in range(5)})
-                    time_strs = [time_strs[i] for i in idxs]
+        slots_info = []
+        for (staff, is_nail_tech), time_strs in zip(candidates, slot_lists):
+            if isinstance(time_strs, Exception) or not time_strs:
+                continue
+            staff_name = (staff.get("name", "") or "")
+            # Offer up to 5 slots SPREAD across the day (morning → evening).
+            if len(time_strs) > 5:
+                step = (len(time_strs) - 1) / 4.0
+                idxs = sorted({round(i * step) for i in range(5)})
+                time_strs = [time_strs[i] for i in idxs]
 
-                if time_strs:
-                    # Build display name — transliterate Russian to English so
-                    # English-speaking UAE clients never see Cyrillic.
-                    first_name = _display_first_name(staff_name)
-                    if "Al Ain" in staff_name:
-                        display_name = first_name + " (Al Ain)"
-                    elif is_nail_tech:
-                        display_name = first_name + " (nails)"
-                    else:
-                        display_name = first_name
+            # Display name — transliterate Russian to English.
+            first_name = _display_first_name(staff_name)
+            if "Al Ain" in staff_name:
+                display_name = first_name + " (Al Ain)"
+            elif is_nail_tech:
+                display_name = first_name + " (nails)"
+            else:
+                display_name = first_name
 
-                    # Check for duplicate first names — add spec to both
-                    existing_names = [s.split(":")[0] for s in slots_info]
-                    if display_name in existing_names:
-                        # Rename the existing one too
-                        for idx, s in enumerate(slots_info):
-                            if s.startswith(display_name + ":"):
-                                slots_info[idx] = s.replace(display_name + ":", display_name + " (massage):")
-                        display_name = display_name + " (nails)" if is_nail_tech else display_name + " (massage)"
+            # Disambiguate duplicate first names.
+            existing_names = [s.split(":")[0] for s in slots_info]
+            if display_name in existing_names:
+                for idx, s in enumerate(slots_info):
+                    if s.startswith(display_name + ":"):
+                        slots_info[idx] = s.replace(display_name + ":", display_name + " (massage):")
+                display_name = display_name + " (nails)" if is_nail_tech else display_name + " (massage)"
 
-                    slots_info.append(f"{display_name}: {', '.join(time_strs)}")
+            slots_info.append(f"{display_name}: {', '.join(time_strs)}")
 
         if slots_info:
             return f"Available on {date}:\n" + "\n".join(slots_info)
