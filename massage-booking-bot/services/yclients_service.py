@@ -552,26 +552,57 @@ class YClientsService:
             # to both languages. Reverse of NAMES_RU_EN from
             # get_available_slots_summary.
             EN_TO_RU = {
-                "makhabat": "макхабат",
+                "makhabat": "махабат",   # catalog spelling is "Махабат"
                 "olesya":   "алеся",
                 "elena":    "елена",
                 "masha":    "маша",
+                "maria":    "мария",
                 "svetlana": "светлана",
                 "marina":   "марина",
                 "safina":   "сафина",
+                "eliza":    "элиза",     # Al Ain's sole master — was missing → Al-Ain sync failed
+                "farida":   "фарида",    # main Abu Dhabi master — was missing → sync failed
+                "natalia":  "наталья",
+                "natalya":  "наталья",
+                "lyudmila": "людмила",
+                "tatyana":  "татьяна",
+                "ekaterina": "екатерина",
+                "olga":     "ольга",
             }
             needle = name.lower().strip()
             aliases = {needle}
             # If English → add Russian form, and vice-versa.
             if needle in EN_TO_RU:
                 aliases.add(EN_TO_RU[needle])
+            # Also add a couple of common spelling variants.
+            if needle == "makhabat":
+                aliases.add("макхабат")
             for en, ru in EN_TO_RU.items():
                 if needle == ru:
                     aliases.add(en)
             for s in pool:
-                staff_name = (s.get("name", "") or "").lower()
-                if any(a in staff_name or staff_name.startswith(a) for a in aliases):
+                raw_name = s.get("name", "") or ""
+                staff_name = raw_name.lower()
+                # Also compare against the transliterated first name (single
+                # source of truth STAFF_NAMES_RU_EN) so matching survives
+                # roster renames without touching EN_TO_RU. e.g. catalog
+                # "Людмила Дубай" → display "lyudmila" matches agent "Lyudmila".
+                disp = _display_first_name(raw_name).lower()
+                if any(a in staff_name or staff_name.startswith(a) for a in aliases) \
+                        or needle == disp or needle in disp.split():
                     return s["id"]
+
+            # Name didn't match, but if the area filter left exactly ONE real
+            # candidate (e.g. Al Ain = only "Элиза Al Ain"), that IS who the
+            # client gets — return it instead of None (None skips the YClients
+            # sync entirely, so the appointment never reaches the calendar).
+            if len(pool) == 1:
+                logger.info(
+                    f"YClients.find_staff_id: name {name!r} unmatched but only "
+                    f"one master in area={area!r} → using {pool[0].get('name')!r}"
+                )
+                return pool[0]["id"]
+
             logger.warning(
                 f"YClients.find_staff_id: name {name!r} (aliases={aliases}) "
                 f"not found in area={area!r} pool (size={len(pool)})"

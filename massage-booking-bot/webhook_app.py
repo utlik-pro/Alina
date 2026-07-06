@@ -55,6 +55,21 @@ def _dedup_seen(message_id: str, now_ts: float) -> bool:
 _wappi_buffer: dict[str, dict] = {}
 _WAPPI_BUFFER_DELAY = 7.0  # seconds
 
+# Reset/clear commands (WhatsApp + Telegram). The team kept typing "/clean"
+# (not "/clear"); both + bare/RU variants are accepted.
+_RESET_COMMANDS = frozenset({
+    "/clear", "/clean", "/reset", "/start", "/new",
+    "reset", "clear", "clean", "restart", "new chat",
+    "очистить", "сброс", "сбросить", "очисти", "начать заново",
+})
+
+
+def _is_reset_command(text: str) -> bool:
+    """True if a raw message is a reset command (tolerant of trailing !./space)."""
+    if not text:
+        return False
+    return text.strip().lower().rstrip("!. ") in _RESET_COMMANDS
+
 from config import config
 from bot import router, booking_agent
 from database import (
@@ -114,15 +129,30 @@ async def lifespan(application: FastAPI):
         )
         logger.info(f"✅ Notifications enabled for group {config.ADMIN_GROUP_CHAT_ID}")
 
-    # Follow-up service
+    # Follow-up service. Contexts are keyed "wappi_<phone>" for WhatsApp and
+    # a numeric chat_id for Telegram — route each to the right channel.
+    # (Previously every follow-up did int(user_id), which raised ValueError
+    # on "wappi_..." and silently dropped ALL WhatsApp nudges → the client's
+    # "offers tomorrow then goes silent" complaint.)
     async def _send_follow_up(user_id: str, text: str):
         try:
+            if str(user_id).startswith("wappi_"):
+                phone = str(user_id)[len("wappi_"):]
+                if wappi_client:
+                    await wappi_client.send_message(phone, text)
+                else:
+                    logger.error(f"Follow-up: no wappi_client for {user_id}")
+                return
             await bot_instance.send_message(chat_id=int(user_id), text=text)
         except Exception as e:
             logger.error(f"Failed to send follow-up to {user_id}: {e}")
 
     async def _send_photo(user_id: str, photo_path: str, caption: str):
         try:
+            if str(user_id).startswith("wappi_"):
+                # Wappi client sends text only — deliver the caption.
+                await _send_follow_up(user_id, caption)
+                return
             from aiogram.types import FSInputFile
             photo = FSInputFile(photo_path)
             await bot_instance.send_photo(chat_id=int(user_id), photo=photo, caption=caption)
@@ -725,15 +755,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         user_id = f"wappi_{phone}"
         telegram_id = user_id
 
-        # Check for reset commands. NB: include "/clean" + bare variants —
-        # the team kept typing "/clean" (not "/clear"), it wasn't recognised,
-        # so history never cleared between test runs (reported 28.04).
-        _cmd = text.strip().lower().rstrip("!. ")
-        if _cmd in (
-            "/clear", "/clean", "/reset", "/start", "/new",
-            "reset", "clear", "clean", "restart", "new chat",
-            "очистить", "сброс", "сбросить", "очисти", "начать заново",
-        ):
+        # Check for reset commands (also handled pre-buffer in the webhook so a
+        # reset sent right after another message still fires).
+        if _is_reset_command(text):
             await _reset_user(user_id, telegram_id)
             if wappi_client:
                 await wappi_client.send_message(
@@ -759,6 +783,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
+
+        # Client replied — reset the follow-up counter so nudges restart from
+        # the beginning next time they go quiet (was Telegram-only before).
+        if getattr(bot_module, "follow_up_service", None):
+            bot_module.follow_up_service.reset_follow_up(user_id)
 
         # Inject YClients slots if we know the area
         logger.info(
@@ -1015,16 +1044,26 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if not context.client_data.get("area"):
             import re as _re_posthoc
             _resp_low = response_text.lower()
-            # Strong signals: "al ain noted", "in al ain", "you're in al ain",
-            # "abu dhabi noted", "for abu dhabi", etc.
-            _area_confirm = _re_posthoc.search(
-                r"\b(?:noted|confirmed|in|for|to|with|your area is|area:)\s*"
-                r"(?:—\s*)?"
-                r"(al\s*ain|abu\s*dhabi)\b",
-                _resp_low,
-            ) or _re_posthoc.search(
-                r"\b(al\s*ain|abu\s*dhabi)\s+noted\b", _resp_low
-            )
+            _mentions_both = ("al ain" in _resp_low or "al-ain" in _resp_low) and \
+                             "abu dhabi" in _resp_low
+            # CRITICAL: the bot's OWN disambiguation question "Are you in Abu
+            # Dhabi or Al Ain dear?" contains "in abu dhabi" and both city
+            # names — the old regex fired on it and LOCKED the wrong area
+            # before the client even answered. Skip when the reply names both
+            # cities or is itself a question.
+            if _mentions_both or "?" in response_text:
+                _area_confirm = None
+            else:
+                # Only STRONG confirmation signals (dropped weak prepositions
+                # in/for/to/with that matched free narration).
+                _area_confirm = _re_posthoc.search(
+                    r"\b(?:noted|confirmed|your area is|area:|you're in|you are in|great,?\s*)\s*"
+                    r"(?:—\s*)?"
+                    r"(al\s*ain|abu\s*dhabi)\b",
+                    _resp_low,
+                ) or _re_posthoc.search(
+                    r"\b(al\s*ain|abu\s*dhabi)\s+(?:noted|confirmed|it is)\b", _resp_low
+                )
             if _area_confirm:
                 area_kw = _area_confirm.group(1).replace(" ", "_")
                 if "al" in area_kw and "ain" in area_kw:
@@ -1045,6 +1084,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         if wappi_client:
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
+            # Guard against a reply that is only the separator/whitespace —
+            # response_text.strip() is non-empty (so the earlier empty-fallback
+            # was skipped) but parts is [], and the client would get nothing.
+            if not parts:
+                parts = ["Just a moment dear 🙏"]
             # Small delay between parts: Wappi + WhatsApp can reorder
             # near-simultaneous sends, which breaks narrative flow (parts
             # arriving out of order, or admin/marketing inserts falling
@@ -1055,6 +1099,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 if i > 0:
                     await asyncio.sleep(0.4)
                 await wappi_client.send_message(phone, part)
+        elif not wappi_client:
+            # No Wappi client at message time (creds missing/rotated) — the
+            # client gets NO reply. Make the failure loud instead of silent.
+            logger.error(
+                f"Wappi [{phone}]: NO wappi_client — reply NOT delivered. "
+                f"Check WAPPI_TOKEN/WAPPI_PROFILE_ID."
+            )
 
         # Post-booking: create DB + YClients record if the agent called
         # the book_appointment tool. If it sent a ✅ confirmation WITHOUT
@@ -1256,9 +1307,32 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
             )
         return {"status": "non_text"}
 
+    # Reset command — handle BEFORE buffering. Otherwise a "/clear" arriving
+    # within 7s of a prior message gets joined ("book sunday\n/clear") and the
+    # exact-match reset check never fires (reported "не очищает историю").
+    if _is_reset_command(text):
+        user_id = f"wappi_{phone}"
+        # Drop any pending buffered fragments so they don't process post-reset.
+        _wappi_buffer.pop(phone, None)
+        background_tasks.add_task(_reset_and_greet, phone, user_id)
+        return {"status": "reset"}
+
     # Schedule buffered processing (7s wait to combine multi-part messages per PRD 4.1.6)
     background_tasks.add_task(_buffer_and_process_wappi, phone, text, sender_name)
     return {"status": "accepted"}
+
+
+async def _reset_and_greet(phone: str, user_id: str):
+    """Reset a user's state and send the fresh-start greeting (WhatsApp)."""
+    try:
+        await _reset_user(user_id, user_id)
+        if wappi_client:
+            await wappi_client.send_message(
+                phone,
+                "✅ Memory cleared dear 🌹 Let's start fresh! What services are you interested in?"
+            )
+    except Exception as e:
+        logger.error(f"Reset-and-greet failed for {phone}: {e}")
 
 
 # ── Coordinate → area classifier ─────────────────────────────────────
