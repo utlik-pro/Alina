@@ -176,49 +176,6 @@ class WappiClient:
             timeout=20,
         )
 
-    async def send_image(self, recipient: str, image_path: str, caption: str = "") -> Optional[Dict[str, Any]]:
-        """Send an image (with optional caption) to a WhatsApp recipient.
-
-        Args:
-            recipient: Phone number in international format (digits only).
-            image_path: Local path to the image file (jpg/png).
-            caption: Optional text under the image.
-        """
-        if not self.token or not self.profile_id:
-            logger.error("Wappi: token or profile_id not configured")
-            return None
-        try:
-            with open(image_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-        except Exception as e:
-            logger.error(f"Wappi send_image: can't read {image_path}: {e}")
-            return None
-
-        recipient = "".join(ch for ch in recipient if ch.isdigit())
-        url = f"{self.BASE_URL}/api/sync/message/img/send"
-        params = {"profile_id": self.profile_id}
-        payload = {
-            "recipient": recipient,
-            "b64_file": b64,
-            "file_name": os.path.basename(image_path),
-        }
-        if caption:
-            payload["caption"] = caption
-        session = await self._get_session()
-        try:
-            async with session.post(
-                url, params=params, headers=self._headers, json=payload, timeout=30
-            ) as resp:
-                data = await resp.json()
-                if resp.status == 200:
-                    logger.info(f"Wappi: sent image to {recipient}: {os.path.basename(image_path)}")
-                    return data
-                logger.error(f"Wappi send_image failed ({resp.status}): {data}")
-                return data
-        except Exception as e:
-            logger.error(f"Wappi send_image exception: {e}")
-            return None
-
     async def set_webhook(self, webhook_url: str, auth: str = "") -> bool:
         """Configure Wappi to send events to our webhook URL.
 

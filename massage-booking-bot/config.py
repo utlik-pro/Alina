@@ -75,6 +75,9 @@ class Config:
     WAPPI_TOKEN: Optional[str] = os.getenv("WAPPI_TOKEN")
     WAPPI_PROFILE_ID: Optional[str] = os.getenv("WAPPI_PROFILE_ID")
     WAPPI_WEBHOOK_SECRET: str = os.getenv("WAPPI_WEBHOOK_SECRET", "")
+    # Attach promo/offer photos to WhatsApp replies. OFF by default (prod)
+    # so the current test round stays text-only; flip to true when ready.
+    WAPPI_SEND_PROMO_PHOTOS: bool = os.getenv("WAPPI_SEND_PROMO_PHOTOS", "false").lower() == "true"
 
     # Instagram (Meta Graph API) — entry point: IG DM → qualify → WhatsApp CTA
     INSTAGRAM_ACCESS_TOKEN: Optional[str] = os.getenv("INSTAGRAM_ACCESS_TOKEN")

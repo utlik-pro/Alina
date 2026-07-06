@@ -1203,9 +1203,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # so a client discussing the same service over several turns isn't
             # spammed with the same picture. Best-effort — never block/break
             # the text reply if the image send fails.
+            # Gated behind WAPPI_SEND_PROMO_PHOTOS (OFF on prod for now).
             try:
                 from services.promo_photos import get_promo_photo
-                photo_path = get_promo_photo(text, response_text)
+                photo_path = (
+                    get_promo_photo(text, response_text)
+                    if config.WAPPI_SEND_PROMO_PHOTOS else None
+                )
                 if photo_path:
                     sent = _wappi_sent_promos.setdefault(phone, set())
                     if photo_path not in sent:
