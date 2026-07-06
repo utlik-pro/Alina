@@ -620,13 +620,28 @@ async def _maybe_create_booking(
         except Exception as e:
             logger.error(f"❌ YClients booking error from WhatsApp: {e}")
 
-    # Notify admin
+    # Notify admin + auto-share the trip with the driver/logistics group.
+    try:
+        fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
+    except Exception as e:
+        logger.error(f"Wappi: couldn't load client for post-booking notifications: {e}")
+        return
+
     if bot_module.notification_service:
         try:
-            fresh_client = await bot_module.client_service.get_or_create_client(telegram_id)
             await bot_module.notification_service.send_booking_confirmed(fresh_client, booking)
         except Exception as e:
             logger.error(f"Wappi: failed to notify admin: {e}")
+
+    # Auto-share with driver on booking creation (FR 5.2). No-op until
+    # DRIVER_TELEGRAM_CHAT_ID is configured, so safe to always call.
+    # Best-effort — a driver-send failure must never break the flow.
+    try:
+        driver_status = await _notify_driver(booking, fresh_client)
+        if driver_status == "sent":
+            logger.info(f"🚗 Driver auto-notified for booking {booking.id}")
+    except Exception as e:
+        logger.error(f"Wappi: driver auto-notify failed: {e}")
 
 
 async def _admin_text(message: str):
@@ -639,6 +654,42 @@ async def _admin_text(message: str):
         await ns.bot.send_message(chat_id=ns.group_chat_id, text=message, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Failed to post admin text: {e}")
+
+
+def _driver_request_text(booking, client) -> str:
+    """Build the driver/logistics transport-request message for a booking."""
+    when = booking.booking_date.strftime("%d.%m.%Y %H:%M") if booking.booking_date else "—"
+    maps = ""
+    if client.location_latitude and client.location_longitude:
+        maps = f"\n🗺️ https://maps.google.com/?q={client.location_latitude},{client.location_longitude}"
+    return (
+        f"🚗 <b>New transport request</b>\n\n"
+        f"📅 {when}\n"
+        f"💆 {booking.service_name} ({booking.duration or '?'} min)\n"
+        f"👤 {client.name or 'Client'} — {client.phone or '—'}\n"
+        f"📍 {client.location_details or '—'}{maps}"
+    )
+
+
+async def _notify_driver(booking, client) -> str:
+    """Send a transport request to the driver group (FR 5.2 'share with driver').
+
+    Returns 'sent' | 'no_driver_configured' | 'error'. No-op when
+    DRIVER_TELEGRAM_CHAT_ID is unset, so it's safe to call automatically on
+    every booking before the driver group is provisioned.
+    """
+    if not config.DRIVER_TELEGRAM_CHAT_ID:
+        return "no_driver_configured"
+    try:
+        await bot_instance.send_message(
+            chat_id=config.DRIVER_TELEGRAM_CHAT_ID,
+            text=_driver_request_text(booking, client),
+            parse_mode="HTML",
+        )
+        return "sent"
+    except Exception as e:
+        logger.error(f"Driver notify failed: {e}")
+        return "error"
 
 
 async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall"):
@@ -903,6 +954,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 ):
                     _explicit_area = "al_ain"
                 elif any(_has_kw(kw) for kw in [
+                    "dubai", "dxb",
+                    # Russian nominative + inflected cases ("я в Дубае",
+                    # "из Дубая", "по Дубаю") — \b matches Cyrillic in Python re.
+                    "дубай", "дубае", "дубая", "дубаи", "дубаем", "дубаю",
+                    "dubai marina", "jbr", "deira", "bur dubai",
+                    "business bay", "palm jumeirah", "downtown dubai",
+                ]):
+                    _explicit_area = "dubai"
+                elif any(_has_kw(kw) for kw in [
                     "abu dhabi", "abudhabi", "абу даби",
                     "abudabi", "abu-dhabi", "abu-dabi",  # common typos
                     "raha", "al raha", "khalifa", "al khalifa",
@@ -1039,8 +1099,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     area_note = ""
                     if _client_area == "al_ain":
                         area_note = "\n🚨 Client in AL AIN. Show ONLY Al Ain therapists."
+                    elif _client_area == "dubai":
+                        area_note = "\n🚨 Client in DUBAI. Show ONLY Dubai therapists."
                     elif _client_area == "abu_dhabi":
-                        area_note = "\n🚨 Client in ABU DHABI. Do NOT show Al Ain therapists."
+                        area_note = "\n🚨 Client in ABU DHABI. Show ONLY Abu Dhabi therapists (no Al Ain / Dubai masters)."
 
                     # Build a list of weekdays that ARE in this context so we
                     # can name them explicitly in the guard. The LLM keeps
@@ -1102,7 +1164,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "🚨 NEVER show or invent specific times (no '2pm', "
                         "'4pm', '10:00', etc.) before area is confirmed.\n"
                         "🚨 If the client asks about timing, reply first:\n"
-                        "    'Are you in Abu Dhabi or Al Ain dear? 🌹'\n"
+                        "    'Are you in Abu Dhabi, Al Ain or Dubai dear? 🌹'\n"
                         "   Once they answer, the system will provide real "
                         "slots on the next turn.\n"
                         "🚨 Do NOT guess the area from ambiguous words. "
@@ -1142,14 +1204,18 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if not context.client_data.get("area"):
             import re as _re_posthoc
             _resp_low = response_text.lower()
-            _mentions_both = ("al ain" in _resp_low or "al-ain" in _resp_low) and \
-                             "abu dhabi" in _resp_low
-            # CRITICAL: the bot's OWN disambiguation question "Are you in Abu
-            # Dhabi or Al Ain dear?" contains "in abu dhabi" and both city
-            # names — the old regex fired on it and LOCKED the wrong area
-            # before the client even answered. Skip when the reply names both
-            # cities or is itself a question.
-            if _mentions_both or "?" in response_text:
+            # Count how many of the THREE served cities the reply names. The
+            # bot's own disambiguation question ("Are you in Abu Dhabi, Al Ain
+            # or Dubai dear?") lists ≥2 — locking any single area off it would
+            # pick the wrong emirate before the client even answers.
+            _city_mentions = sum([
+                ("al ain" in _resp_low or "al-ain" in _resp_low),
+                "abu dhabi" in _resp_low,
+                "dubai" in _resp_low,
+            ])
+            # CRITICAL: skip area-lock when the reply names 2+ cities (it's an
+            # options list, not a confirmation) or is itself a question.
+            if _city_mentions >= 2 or "?" in response_text:
                 _area_confirm = None
             else:
                 # Only STRONG confirmation signals (dropped weak prepositions
@@ -1157,10 +1223,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 _area_confirm = _re_posthoc.search(
                     r"\b(?:noted|confirmed|your area is|area:|you're in|you are in|great,?\s*)\s*"
                     r"(?:—\s*)?"
-                    r"(al\s*ain|abu\s*dhabi)\b",
+                    r"(al\s*ain|abu\s*dhabi|dubai)\b",
                     _resp_low,
                 ) or _re_posthoc.search(
-                    r"\b(al\s*ain|abu\s*dhabi)\s+(?:noted|confirmed|it is)\b", _resp_low
+                    r"\b(al\s*ain|abu\s*dhabi|dubai)\s+(?:noted|confirmed|it is)\b", _resp_low
                 )
             if _area_confirm:
                 area_kw = _area_confirm.group(1).replace(" ", "_")
@@ -1168,6 +1234,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     _detected = "al_ain"
                 elif "abu" in area_kw and "dhabi" in area_kw:
                     _detected = "abu_dhabi"
+                elif "dubai" in area_kw:
+                    _detected = "dubai"
                 else:
                     _detected = None
                 if _detected:
@@ -1404,6 +1472,7 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
             area_label = {
                 "abu_dhabi": "Abu Dhabi",
                 "al_ain": "Al Ain",
+                "dubai": "Dubai",
             }.get(area, "UAE")
             synthetic_text = (
                 f"[Client shared GPS location in {area_label} "
@@ -1421,9 +1490,9 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
                 f"[Client shared a GPS location OUTSIDE the UAE "
                 f"(lat={latitude:.5f}, lng={longitude:.5f}). DO NOT use "
                 f"these coordinates as their address. Ask the client to "
-                f"type their Abu Dhabi or Al Ain address in text (e.g. "
+                f"type their Abu Dhabi / Al Ain / Dubai address in text (e.g. "
                 f"'Khalifa City, Villa 42'). If area is still unknown, "
-                f"ask 'Are you in Abu Dhabi or Al Ain dear?' first.]"
+                f"ask 'Are you in Abu Dhabi, Al Ain or Dubai dear?' first.]"
             )
             logger.info(
                 f"Wappi [{phone}] non-UAE location "
@@ -1477,31 +1546,39 @@ async def _reset_and_greet(phone: str, user_id: str):
 
 
 # ── Coordinate → area classifier ─────────────────────────────────────
-# Crystal Lab serves Abu Dhabi + Al Ain only. Pick the nearer of the two
-# city centers, but only if within ~0.6° (~66 km). Anything farther
-# (Dubai, Sharjah, outside UAE) returns None — the agent will ask the
-# client to confirm the area in text.
+# Crystal Lab serves Abu Dhabi, Al Ain and Dubai. Classify a GPS pin to the
+# nearest served city center, but only within that center's radius — anything
+# farther (outside UAE, or an emirate we don't serve) returns None and the
+# agent asks the client to confirm their area in text.
+#
+# Per-center radius matters: Abu Dhabi and Al Ain sit alone, so a generous
+# 0.6° (~66 km) safely captures their outskirts. Dubai does NOT — it's fused
+# into the northern-emirates cluster (Sharjah center is only ~0.21° away,
+# Ajman ~0.27°), so a wide radius would silently swallow those UNSERVED
+# emirates. Dubai therefore gets a tight 0.19° (~21 km): enough for urban
+# Dubai (Marina ≈0.18°, JBR ≈0.18°, Deira ≈0.09°) but short of Sharjah/Ajman.
+# A far-flung Dubai pin just falls to None and the client confirms in text.
 _AREA_CENTERS = {
-    "abu_dhabi": (24.47, 54.37),   # Abu Dhabi city
-    "al_ain":    (24.21, 55.75),   # Al Ain city
+    "abu_dhabi": (24.47, 54.37, 0.6),    # Abu Dhabi city
+    "al_ain":    (24.21, 55.75, 0.6),    # Al Ain city
+    "dubai":     (25.20, 55.27, 0.19),   # Dubai city (tight — excludes Sharjah/Ajman)
 }
-_AREA_RADIUS_DEG = 0.6  # ~66 km; covers outskirts, excludes Dubai
 
 
 def _area_from_coords(lat: float, lng: float) -> Optional[str]:
-    """Return 'abu_dhabi' | 'al_ain' | None for a GPS coordinate.
+    """Return 'abu_dhabi' | 'al_ain' | 'dubai' | None for a GPS coordinate.
 
     None means "unknown / outside service area" — the agent should ask
     the client to confirm their area in text rather than assume.
     """
     best_area: Optional[str] = None
-    best_d2 = _AREA_RADIUS_DEG * _AREA_RADIUS_DEG
-    for area, (clat, clng) in _AREA_CENTERS.items():
-        # Squared Euclidean distance in degrees. Good enough at UAE
-        # latitudes for a binary classifier with a 0.6° threshold —
-        # no need for haversine.
+    best_d2: Optional[float] = None
+    for area, (clat, clng, radius) in _AREA_CENTERS.items():
+        # Squared Euclidean distance in degrees. Good enough at UAE latitudes
+        # for this classifier — no need for haversine. Each center only claims
+        # a pin within its own radius; nearest wins if several would.
         d2 = (lat - clat) ** 2 + (lng - clng) ** 2
-        if d2 < best_d2:
+        if d2 <= radius * radius and (best_d2 is None or d2 < best_d2):
             best_d2 = d2
             best_area = area
     return best_area
@@ -1563,8 +1640,11 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
 
 @app.post("/admin/share-with-driver/{booking_id}")
 async def admin_share_with_driver(booking_id: int, request: Request):
-    """Push a logistics notification to the driver group for a booking
-    (FR 5.2 'share with driver'). Master/admin triggers this manually.
+    """(Re)send a logistics notification to the driver group for a booking
+    (FR 5.2 'share with driver').
+
+    This also fires automatically when a booking is created; the endpoint
+    lets an admin resend or push a booking made outside the agent.
     """
     import bot as bot_module
     if config.WEBHOOK_SECRET:
@@ -1587,25 +1667,8 @@ async def admin_share_with_driver(booking_id: int, request: Request):
         return {"status": "booking_not_found"}
     b, c = row
 
-    when = b.booking_date.strftime("%d.%m.%Y %H:%M") if b.booking_date else "—"
-    maps = ""
-    if c.location_latitude and c.location_longitude:
-        maps = f"\n🗺️ https://maps.google.com/?q={c.location_latitude},{c.location_longitude}"
-    text = (
-        f"🚗 <b>New transport request</b>\n\n"
-        f"📅 {when}\n"
-        f"💆 {b.service_name} ({b.duration or '?'} min)\n"
-        f"👤 {c.name or 'Client'} — {c.phone or '—'}\n"
-        f"📍 {c.location_details or '—'}{maps}"
-    )
-    try:
-        await bot_instance.send_message(
-            chat_id=config.DRIVER_TELEGRAM_CHAT_ID, text=text, parse_mode="HTML"
-        )
-        return {"status": "sent"}
-    except Exception as e:
-        logger.error(f"Driver notify failed: {e}")
-        return {"status": "error", "detail": str(e)}
+    status = await _notify_driver(b, c)
+    return {"status": status, "booking_id": booking_id}
 
 
 @app.post("/admin/payment/{booking_id}/paid")

@@ -64,7 +64,7 @@ BOOK_APPOINTMENT_TOOL: Dict[str, Any] = {
                 },
                 "area": {
                     "type": "string",
-                    "enum": ["abu_dhabi", "al_ain"],
+                    "enum": ["abu_dhabi", "al_ain", "dubai"],
                     "description": "Service area the therapist works in.",
                 },
                 "master_id": {
@@ -144,7 +144,7 @@ class BookingCall:
     duration_minutes: int
     date: str              # YYYY-MM-DD
     time: str              # HH:MM
-    area: str              # abu_dhabi | al_ain
+    area: str              # abu_dhabi | al_ain | dubai
     payment_method: str    # cash | bank_transfer
     client_name: str
     base_price_aed: float

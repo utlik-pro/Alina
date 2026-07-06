@@ -58,6 +58,27 @@ def _display_first_name(staff_name: str) -> str:
     return STAFF_NAMES_RU_EN.get(token, token)
 
 
+def _staff_area(staff_name: str) -> str:
+    """Classify a therapist's service area from the tag in their YClients name.
+
+    The salon encodes the emirate directly in the master's display name, e.g.
+    "Элиза Al Ain" → Al Ain, "Людмила Дубай" → Dubai. Untagged masters
+    (e.g. "Наталья") work the home base — Abu Dhabi.
+
+    Each master serves exactly ONE emirate: a client is only ever shown /
+    booked with masters from their own area, because cross-emirate drives
+    (Abu Dhabi ↔ Al Ain ↔ Dubai) aren't offered.
+
+    Returns one of: "al_ain", "dubai", "abu_dhabi".
+    """
+    n = (staff_name or "").lower()
+    if "al ain" in n or "al-ain" in n or "alain" in n:
+        return "al_ain"
+    if "дубай" in n or "dubai" in n:
+        return "dubai"
+    return "abu_dhabi"
+
+
 class _Cache:
     """Simple TTL cache for API responses."""
 
@@ -219,8 +240,9 @@ class YClientsService:
         Filters by:
         - Current time (no past slots for today)
         - Staff specialization (massage therapists for massage, nail techs for nails)
-        - Area (abu_dhabi / al_ain) — an Al-Ain client must NOT be shown Abu
-          Dhabi therapists (they can't drive to another emirate) and vice-versa
+        - Area (abu_dhabi / al_ain / dubai) — each master serves one emirate
+          only; a client is never shown masters from another emirate (no
+          cross-emirate drives)
         - Minimum 60 min between offered slots
 
         Returns a formatted string like:
@@ -254,12 +276,11 @@ class YClientsService:
             spec = (staff.get("specialization", "") or "").lower()
             if "АДМИНИСТРАТОР" in staff_name.upper() or "ЛИСТ ОЖИДАНИЯ" in staff_name.upper():
                 continue
-            # Area: Al-Ain client sees only Al-Ain therapists; Abu-Dhabi never
-            # sees Al-Ain ones (a 90-min drive away).
-            _is_al_ain_staff = "al ain" in staff_name.lower()
-            if area == "al_ain" and not _is_al_ain_staff:
-                continue
-            if area == "abu_dhabi" and _is_al_ain_staff:
+            # Area: each master serves exactly one emirate (tagged in the
+            # YClients name — "Al Ain" / "Дубай"; untagged = Abu Dhabi). A
+            # client only sees masters from their own area — cross-emirate
+            # drives (a 90-min haul) aren't offered.
+            if area and _staff_area(staff_name) != area:
                 continue
             is_nail_tech = "маникюр" in spec or "nail" in spec.lower()
             if is_nails and not is_nail_tech:
@@ -298,8 +319,11 @@ class YClientsService:
 
             # Display name — transliterate Russian to English.
             first_name = _display_first_name(staff_name)
-            if "Al Ain" in staff_name:
+            _area_tag = _staff_area(staff_name)
+            if _area_tag == "al_ain":
                 display_name = first_name + " (Al Ain)"
+            elif _area_tag == "dubai":
+                display_name = first_name + " (Dubai)"
             elif is_nail_tech:
                 display_name = first_name + " (nails)"
             else:
@@ -513,13 +537,11 @@ class YClientsService:
         Args:
             name: therapist first name (English or Russian). Matched
                 by substring, case-insensitive.
-            area: "abu_dhabi" | "al_ain" | None. When set, filters out
-                therapists based on the "Al Ain" marker in their name:
-                  - abu_dhabi → exclude "Al Ain" therapists (they work
-                    in a different emirate; sending them to Abu Dhabi
-                    costs a 90-minute drive each way).
-                  - al_ain → only "Al Ain" therapists.
-                  - None → no area filter.
+            area: "abu_dhabi" | "al_ain" | "dubai" | None. When set, keeps
+                only therapists whose YClients name tags them to that emirate
+                ("Al Ain" / "Дубай"; untagged = Abu Dhabi). Each master serves
+                exactly one emirate — a booking is never routed across emirates
+                (that would cost a 90-minute drive each way). None → no filter.
 
         When both name and area are set, area is the hard filter; name
         is matched within the area-filtered pool.
@@ -533,19 +555,16 @@ class YClientsService:
         if not staff:
             return None
 
-        def _is_al_ain(s: Dict) -> bool:
-            return "al ain" in (s.get("name", "") or "").lower()
-
         def _is_admin(s: Dict) -> bool:
             n = (s.get("name", "") or "").upper()
             return "АДМИНИСТРАТОР" in n or "ЛИСТ ОЖИДАНИЯ" in n
 
-        # Apply area filter first.
+        # Apply area filter first. Each master serves exactly one emirate,
+        # tagged in their YClients name; a booking is only routed to a master
+        # from the client's own area (never across emirates).
         pool = [s for s in staff if not _is_admin(s)]
-        if area == "al_ain":
-            pool = [s for s in pool if _is_al_ain(s)]
-        elif area == "abu_dhabi":
-            pool = [s for s in pool if not _is_al_ain(s)]
+        if area in ("al_ain", "abu_dhabi", "dubai"):
+            pool = [s for s in pool if _staff_area(s.get("name", "")) == area]
 
         if not pool:
             logger.warning(
