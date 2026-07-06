@@ -839,7 +839,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 f"slot_inject_entry: text_low={_text_lower!r} "
                 f"area_cached={_client_area!r}"
             )
-            if not _client_area:
+            # Detect an EXPLICIT area mention in THIS message. This runs even
+            # when an area is already cached, so a client can CHANGE area
+            # mid-session ("actually I'm in Abu Dhabi" must override a cached
+            # al_ain — was stuck before, showing the wrong emirate's masters).
+            if True:
                 import re as _re_area
                 # Short tokens like "raha", "yas", "mbz" match inside unrelated
                 # words if we just check substring containment (e.g. "raha"
@@ -858,11 +862,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     r"\ba[li][\s\-]*[aie]i[nm]\b", _re_area.IGNORECASE
                 )
 
+                _explicit_area = None
                 if _al_ain_typo.search(_text_lower) or any(
                     _has_kw(kw) for kw in ["al ain", "alain", "al-ain", "аль айн"]
                 ):
-                    _client_area = "al_ain"
-                    dialog_manager.update_client_data(user_id, "area", "al_ain")
+                    _explicit_area = "al_ain"
                 elif any(_has_kw(kw) for kw in [
                     "abu dhabi", "abudhabi", "абу даби",
                     "abudabi", "abu-dhabi", "abu-dabi",  # common typos
@@ -872,8 +876,19 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     "corniche", "tourist club", "al bateen", "bateen",
                     "shahama", "baniyas", "shamkha", "al wathba", "wathba",
                 ]):
-                    _client_area = "abu_dhabi"
-                    dialog_manager.update_client_data(user_id, "area", "abu_dhabi")
+                    _explicit_area = "abu_dhabi"
+
+                # Explicit mention wins over any cached value.
+                if _explicit_area and _explicit_area != _client_area:
+                    logger.info(
+                        f"area switch: {_client_area!r} → {_explicit_area!r} "
+                        f"(explicit mention in message)"
+                    )
+                    _client_area = _explicit_area
+                    dialog_manager.update_client_data(user_id, "area", _explicit_area)
+                elif _explicit_area and not _client_area:
+                    _client_area = _explicit_area
+                    dialog_manager.update_client_data(user_id, "area", _explicit_area)
 
             logger.info(f"slot_inject_post_detect: area_now={_client_area!r}")
             if _client_area:
