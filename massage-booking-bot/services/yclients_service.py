@@ -286,10 +286,14 @@ class YClientsService:
             if isinstance(time_strs, Exception) or not time_strs:
                 continue
             staff_name = (staff.get("name", "") or "")
-            # Offer up to 5 slots SPREAD across the day (morning → evening).
-            if len(time_strs) > 5:
-                step = (len(time_strs) - 1) / 4.0
-                idxs = sorted({round(i * step) for i in range(5)})
+            # Show ALL free slots (ground truth) so the agent can confirm a
+            # specific requested time ("17:00?") instead of rejecting it. The
+            # prompt still tells the agent to OFFER only 2-3 to the client — but
+            # it needs the full list to validate. Cap at 12 to avoid extreme
+            # walls on a fully-empty day (keeps the whole day's range).
+            if len(time_strs) > 12:
+                step = (len(time_strs) - 1) / 11.0
+                idxs = sorted({round(i * step) for i in range(12)})
                 time_strs = [time_strs[i] for i in idxs]
 
             # Display name — transliterate Russian to English.
@@ -738,21 +742,24 @@ class YClientsService:
         candidates = sorted(set(candidates))
 
         min_today = now_uae.hour * 60 + now_uae.minute + 30  # +30 min lead
+        # Business rule (ТЗ / client): the salon does NOT book before 10:00 —
+        # never offer 9:00/9:30 even if YClients lists them.
+        WORK_START = 10 * 60
 
-        # Greedily keep valid slots, spaced by at least one service length so
-        # the offered set spreads across the day (morning → evening) instead
-        # of clustering in the first hour.
+        # Keep EVERY genuinely-free slot (10:00+, past-time filtered for today,
+        # travel-buffer clear of existing visits). We deliberately do NOT thin
+        # the list here: the agent needs the full set so that when a client
+        # asks for a specific time ("17:00?") it can confirm a real free slot
+        # instead of wrongly rejecting it because a display-sample dropped it.
         chosen = []
-        last = -10 ** 9
         for m in candidates:
+            if m < WORK_START:
+                continue
             if is_today and m < min_today:
                 continue
             if _conflicts(m):
                 continue
-            if m - last < service_duration:
-                continue
             chosen.append(m)
-            last = m
 
         return [f"{m // 60}:{m % 60:02d}" for m in chosen]
 

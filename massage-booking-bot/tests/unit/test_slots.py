@@ -42,7 +42,8 @@ async def test_evening_slots_preserved(yc, monkeypatch):
     monkeypatch.setattr(yc, "get_records", records)
     slots = await yc.get_real_available_slots(1, "2030-01-06", 60)
     assert "18:00" in slots  # "после 6 всё свободно" must show
-    assert "9:00" in slots
+    assert "9:00" not in slots  # business rule: no bookings before 10:00
+    assert "10:00" in slots
 
 
 @pytest.mark.asyncio
@@ -59,13 +60,30 @@ async def test_travel_buffer_excludes_slots_near_booking(yc, monkeypatch):
     assert "13:00" not in slots
     assert "12:00" not in slots
     assert "14:00" not in slots
-    # Far-enough slots survive.
-    assert "9:00" in slots
+    # Far-enough slots survive (10:00 floor applies — no 9:00).
+    assert "9:00" not in slots
+    assert "10:00" in slots
     assert "16:00" in slots
 
 
 @pytest.mark.asyncio
-async def test_spread_not_clustered(yc, monkeypatch):
+async def test_no_thinning_keeps_adjacent_free_slots(yc, monkeypatch):
+    """A client asking for a specific time (e.g. 16:30 then 17:00) must find it:
+    we no longer thin the list, so adjacent 30-min free slots are all kept."""
+    async def times(*a, **k):
+        return _bt("10:00", "16:00", "16:30", "17:00", "17:30")
+    async def records(*a, **k):
+        return []
+    monkeypatch.setattr(yc, "get_available_times", times)
+    monkeypatch.setattr(yc, "get_records", records)
+    slots = await yc.get_real_available_slots(1, "2030-01-06", 60)
+    # 17:00 must NOT be dropped just because 16:30 is also free (the "17:00 not
+    # available" bug from live testing).
+    assert "16:30" in slots and "17:00" in slots
+
+
+@pytest.mark.asyncio
+async def test_floor_excludes_before_10(yc, monkeypatch):
     async def times(*a, **k):
         return _bt(*[f"{h}:00" for h in range(9, 22)])  # 9:00–21:00 hourly
     async def records(*a, **k):
@@ -73,8 +91,6 @@ async def test_spread_not_clustered(yc, monkeypatch):
     monkeypatch.setattr(yc, "get_available_times", times)
     monkeypatch.setattr(yc, "get_records", records)
     slots = await yc.get_real_available_slots(1, "2030-01-06", 60)
-    # With a 60-min spread we keep the hourly grid; the last slot must reach
-    # into the evening (not clustered in the morning).
-    assert slots[0] == "9:00"
+    assert slots[0] == "10:00"          # no 9:00
     last_hour = int(slots[-1].split(":")[0])
-    assert last_hour >= 18
+    assert last_hour >= 18              # full day range kept (no thinning)
