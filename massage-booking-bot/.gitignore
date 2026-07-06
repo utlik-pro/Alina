@@ -38,3 +38,4 @@ test_*.txt
 # Bot runtime
 bot.log
 nohup.out
+.report_secret
