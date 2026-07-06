@@ -6,6 +6,8 @@ Unofficial WhatsApp API via QR code binding. Used for:
 """
 
 import asyncio
+import base64
+import os
 
 import aiohttp
 from typing import Optional, Dict, Any
@@ -45,6 +47,69 @@ class WappiClient:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _normalize_recipient(recipient: str) -> str:
+        """Reduce a recipient to bare digits Wappi expects.
+
+        Strips @c.us/@g.us suffixes, '+', and any whitespace (incl. internal,
+        e.g. "+971 50 123 4567" → "971501234567").
+        """
+        recipient = recipient.replace("@c.us", "").replace("@g.us", "").replace("+", "")
+        return "".join(recipient.split())
+
+    async def _post_with_retry(
+        self,
+        url: str,
+        params: dict,
+        payload: dict,
+        log_label: str,
+        timeout: float = 10,
+    ) -> Optional[Dict[str, Any]]:
+        """POST to Wappi with retry on 5xx/network errors (4xx is not retried).
+
+        Shared by send_message / send_image so both get identical retry,
+        backoff and error-classification behaviour.
+        """
+        session = await self._get_session()
+        last_exc: Optional[Exception] = None
+        last_data: Optional[Dict[str, Any]] = None
+        for attempt in range(1, _SEND_MAX_ATTEMPTS + 1):
+            try:
+                async with session.post(
+                    url, params=params, headers=self._headers, json=payload, timeout=timeout
+                ) as resp:
+                    data = await resp.json()
+                    last_data = data
+                    if resp.status == 200:
+                        logger.info(f"Wappi: {log_label} ok")
+                        return data
+                    # 4xx (auth/invalid recipient) — no point retrying.
+                    if 400 <= resp.status < 500:
+                        logger.error(f"Wappi {log_label} failed ({resp.status}) — no retry: {data}")
+                        return data
+                    logger.warning(
+                        f"Wappi {log_label} attempt {attempt}/{_SEND_MAX_ATTEMPTS} "
+                        f"failed ({resp.status}): {data}"
+                    )
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_exc = e
+                logger.warning(
+                    f"Wappi {log_label} attempt {attempt}/{_SEND_MAX_ATTEMPTS} exception: {e}"
+                )
+            except Exception as e:
+                # Unexpected — log full trace and don't retry.
+                logger.error(f"Wappi {log_label} unexpected exception: {e}", exc_info=True)
+                return None
+
+            if attempt < _SEND_MAX_ATTEMPTS:
+                await asyncio.sleep(_SEND_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
+
+        logger.error(
+            f"Wappi {log_label} exhausted {_SEND_MAX_ATTEMPTS} attempts: "
+            f"last_exc={last_exc}, last_data={last_data}"
+        )
+        return last_data
+
     async def send_message(self, recipient: str, body: str) -> Optional[Dict[str, Any]]:
         """Send a text message to a WhatsApp recipient.
 
@@ -56,52 +121,103 @@ class WappiClient:
             logger.error("Wappi: token or profile_id not configured")
             return None
 
-        # Normalize recipient — strip @c.us suffix if present
-        recipient = recipient.replace("@c.us", "").replace("+", "").strip()
-
+        recipient = self._normalize_recipient(recipient)
         url = f"{self.BASE_URL}/api/sync/message/send"
         params = {"profile_id": self.profile_id}
         payload = {"body": body, "recipient": recipient}
 
-        session = await self._get_session()
-        last_exc: Optional[Exception] = None
-        last_data: Optional[Dict[str, Any]] = None
-        for attempt in range(1, _SEND_MAX_ATTEMPTS + 1):
-            try:
-                async with session.post(
-                    url, params=params, headers=self._headers, json=payload, timeout=10
-                ) as resp:
-                    data = await resp.json()
-                    last_data = data
-                    if resp.status == 200:
-                        logger.info(f"Wappi: sent to {recipient}: {body[:50]}...")
-                        return data
-                    # 4xx (auth/invalid recipient) — no point retrying.
-                    if 400 <= resp.status < 500:
-                        logger.error(f"Wappi send failed ({resp.status}) — no retry: {data}")
-                        return data
-                    logger.warning(
-                        f"Wappi send attempt {attempt}/{_SEND_MAX_ATTEMPTS} "
-                        f"failed ({resp.status}): {data}"
-                    )
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                last_exc = e
-                logger.warning(
-                    f"Wappi send attempt {attempt}/{_SEND_MAX_ATTEMPTS} exception: {e}"
-                )
-            except Exception as e:
-                # Unexpected — log full trace and don't retry.
-                logger.error(f"Wappi send unexpected exception: {e}", exc_info=True)
-                return None
-
-            if attempt < _SEND_MAX_ATTEMPTS:
-                await asyncio.sleep(_SEND_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
-
-        logger.error(
-            f"Wappi send exhausted {_SEND_MAX_ATTEMPTS} attempts "
-            f"to {recipient}: last_exc={last_exc}, last_data={last_data}"
+        return await self._post_with_retry(
+            url, params, payload, log_label=f"send text to {recipient}: {body[:50]}"
         )
-        return last_data
+
+    async def send_image(
+        self, recipient: str, image_path: str, caption: str = ""
+    ) -> Optional[Dict[str, Any]]:
+        """Send an image to a WhatsApp recipient.
+
+        The Wappi image endpoint takes the file as a raw base64 string
+        (no ``data:`` prefix). See wappi.pro/api-documentation.
+
+        Args:
+            recipient: Phone number in international format (e.g. "971501234567")
+            image_path: Local filesystem path to the image file
+            caption: Optional caption shown under the image
+        """
+        if not self.token or not self.profile_id:
+            logger.error("Wappi: token or profile_id not configured")
+            return None
+
+        if not os.path.exists(image_path):
+            logger.error(f"Wappi send_image: file not found: {image_path}")
+            return None
+
+        try:
+            with open(image_path, "rb") as f:
+                b64_file = base64.b64encode(f.read()).decode("ascii")
+        except OSError as e:
+            logger.error(f"Wappi send_image: cannot read {image_path}: {e}")
+            return None
+
+        recipient = self._normalize_recipient(recipient)
+        url = f"{self.BASE_URL}/api/sync/message/img/send"
+        params = {"profile_id": self.profile_id}
+        payload = {
+            "recipient": recipient,
+            "b64_file": b64_file,
+            "file_name": os.path.basename(image_path),
+        }
+        if caption:
+            payload["caption"] = caption
+
+        # Base64 of a photo is ~100 KB — allow a longer timeout than text.
+        return await self._post_with_retry(
+            url, params, payload,
+            log_label=f"send image {os.path.basename(image_path)} to {recipient}",
+            timeout=20,
+        )
+
+    async def send_image(self, recipient: str, image_path: str, caption: str = "") -> Optional[Dict[str, Any]]:
+        """Send an image (with optional caption) to a WhatsApp recipient.
+
+        Args:
+            recipient: Phone number in international format (digits only).
+            image_path: Local path to the image file (jpg/png).
+            caption: Optional text under the image.
+        """
+        if not self.token or not self.profile_id:
+            logger.error("Wappi: token or profile_id not configured")
+            return None
+        try:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+        except Exception as e:
+            logger.error(f"Wappi send_image: can't read {image_path}: {e}")
+            return None
+
+        recipient = "".join(ch for ch in recipient if ch.isdigit())
+        url = f"{self.BASE_URL}/api/sync/message/img/send"
+        params = {"profile_id": self.profile_id}
+        payload = {
+            "recipient": recipient,
+            "b64_file": b64,
+            "file_name": os.path.basename(image_path),
+        }
+        if caption:
+            payload["caption"] = caption
+        session = await self._get_session()
+        try:
+            async with session.post(
+                url, params=params, headers=self._headers, json=payload, timeout=30
+            ) as resp:
+                data = await resp.json()
+                if resp.status == 200:
+                    logger.info(f"Wappi: sent image to {recipient}: {os.path.basename(image_path)}")
+                    return data
+                logger.error(f"Wappi send_image failed ({resp.status}): {data}")
+                return data
+        except Exception as e:
+            logger.error(f"Wappi send_image exception: {e}")
+            return None
 
     async def set_webhook(self, webhook_url: str, auth: str = "") -> bool:
         """Configure Wappi to send events to our webhook URL.

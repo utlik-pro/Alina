@@ -66,6 +66,12 @@ _WAPPI_BUFFER_DELAY = float(_os_buf.getenv("WAPPI_BUFFER_DELAY", "20"))  # secon
 # the "сначала записал, глючит" report). The lock serialises turns per phone.
 _wappi_locks: "dict[str, asyncio.Lock]" = {}
 
+# Promo photos already sent to a phone (this process lifetime). get_promo_photo
+# fires on every turn where the service/offer keywords match, so without this a
+# client discussing "body massage" across several turns would receive the same
+# image each time. Cleared on reset so re-testing sends the photo again.
+_wappi_sent_promos: "dict[str, set[str]]" = {}
+
 
 def _phone_lock(phone: str) -> "asyncio.Lock":
     lock = _wappi_locks.get(phone)
@@ -799,6 +805,9 @@ async def _reset_user(user_id: str, telegram_id: str):
     deleted = await bot_module.message_service.clear_history(telegram_id)
     await bot_module.client_service.reset_client(telegram_id)
     await bot_module.dialog_session_service.end_session(telegram_id)
+    # Forget promo photos sent to this phone so a fresh session re-sends them.
+    if str(user_id).startswith("wappi_"):
+        _wappi_sent_promos.pop(str(user_id)[len("wappi_"):], None)
     logger.info(f"Reset user {user_id}: deleted {deleted} messages")
     return deleted
 
@@ -1188,6 +1197,23 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 if i > 0:
                     await asyncio.sleep(0.4)
                 await wappi_client.send_message(phone, part)
+
+            # Promo photo: attach a relevant offer/service image (cupping,
+            # manicure, body/face massage, book-a-friend). Sent once per phone
+            # so a client discussing the same service over several turns isn't
+            # spammed with the same picture. Best-effort — never block/break
+            # the text reply if the image send fails.
+            try:
+                from services.promo_photos import get_promo_photo
+                photo_path = get_promo_photo(text, response_text)
+                if photo_path:
+                    sent = _wappi_sent_promos.setdefault(phone, set())
+                    if photo_path not in sent:
+                        await asyncio.sleep(0.4)
+                        await wappi_client.send_image(phone, photo_path)
+                        sent.add(photo_path)
+            except Exception as e:
+                logger.warning(f"Wappi [{phone}]: promo photo send failed: {e}")
         elif not wappi_client:
             # No Wappi client at message time (creds missing/rotated) — the
             # client gets NO reply. Make the failure loud instead of silent.
