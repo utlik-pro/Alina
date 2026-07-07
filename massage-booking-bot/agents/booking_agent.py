@@ -259,6 +259,12 @@ client may specifically want that master). Keep it readable by giving 2-3 exampl
 times PER therapist, not their whole day.
 If client didn't specify a day, suggest "today" and "tomorrow" only.
 
+⏰ TIME FORMAT — this is the UAE: ALWAYS show times to the client in 12-hour
+AM/PM (e.g. "5:00 PM", "10:30 AM"), NEVER 24-hour ("17:00" is wrong here). The
+ground-truth slots are already given to you in AM/PM — quote them as-is. Accept
+whatever the client types (both "5pm" and "17:00"), but when you call
+book_appointment convert to 24-hour HH:MM (5:00 PM → 17:00).
+
 🚨 CONVERGE — don't loop asking the same thing:
 - If the client says "any", "earliest", "whatever", "you choose", "doesn't
   matter", "the first one", "any of those" for the SLOT → PICK the earliest

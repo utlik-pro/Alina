@@ -25,6 +25,7 @@ import json
 import os
 import re
 import sys
+import time
 
 import requests
 
@@ -46,6 +47,11 @@ EXCLUDE_IDS = {1379584180, 8061713882}
 # Safety cap so a first run against a big backlog doesn't fire hundreds of
 # model calls at once. Older untriaged items get picked up on later runs.
 _MAX_PER_RUN = 20
+
+# Only triage RECENT messages. This is the hard guard against ever blasting a
+# months-old backlog (e.g. a fresh flag reset, or a lost race with the cron):
+# anything older than this window is left alone regardless of its triaged flag.
+_TRIAGE_MAX_AGE_HOURS = 48
 
 _CATEGORY_ROUTE = {
     "bug": "доработка",
@@ -199,11 +205,13 @@ def triage(feedback: dict, dry: bool = False) -> int:
         print("[triage] OPENAI_API_KEY missing — skipping triage")
         return 0
 
+    cutoff = time.time() - _TRIAGE_MAX_AGE_HOURS * 3600
     pending = [
         it for it in feedback.get("items", [])
         if it.get("status") == "new"
         and not it.get("triaged")
         and it.get("from_id") not in EXCLUDE_IDS
+        and int(it.get("date", 0)) >= cutoff
     ]
     if not pending:
         return 0

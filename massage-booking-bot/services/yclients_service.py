@@ -79,6 +79,23 @@ def _staff_area(staff_name: str) -> str:
     return "abu_dhabi"
 
 
+def _to_ampm(hhmm: str) -> str:
+    """Format a 24-hour "H:MM" slot as 12-hour AM/PM for the client.
+
+    UAE clients read time as AM/PM, not 24-hour ("17:00" reads as wrong/odd).
+    "17:00" → "5:00 PM", "9:30" → "9:30 AM", "0:00" → "12:00 AM". Booking stays
+    24-hour internally; this is display-only. Unparseable input passes through.
+    """
+    try:
+        h_str, m_str = hhmm.split(":")
+        h, m = int(h_str), int(m_str)
+    except (ValueError, AttributeError):
+        return hhmm
+    suffix = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {suffix}"
+
+
 class _Cache:
     """Simple TTL cache for API responses."""
 
@@ -337,7 +354,7 @@ class YClientsService:
                         slots_info[idx] = s.replace(display_name + ":", display_name + " (massage):")
                 display_name = display_name + " (nails)" if is_nail_tech else display_name + " (massage)"
 
-            slots_info.append(f"{display_name}: {', '.join(time_strs)}")
+            slots_info.append(f"{display_name}: {', '.join(_to_ampm(t) for t in time_strs)}")
 
         if slots_info:
             return f"Available on {date}:\n" + "\n".join(slots_info)
