@@ -15,6 +15,12 @@ import sys
 import requests
 from datetime import datetime
 
+# Allow `from services import ...` even when launched as `services/feedback_monitor.py`
+# (launchd runs it that way, so the project root isn't on sys.path by default).
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 # Config
 BOT_TOKEN = "8294238787:AAGyCIaaL41nSHrsuy4ONUr4emylTtJvVj8"
 CHAT_ID = -5059625262
@@ -93,14 +99,11 @@ def get_new_messages(last_date: int) -> list:
 
 
 def run():
-    """Main monitoring loop iteration."""
+    """Main monitoring loop iteration: collect new messages, then triage them."""
     feedback = load_feedback()
     last_date = feedback.get("last_check_date", 0)
 
     new_msgs = get_new_messages(last_date)
-
-    if not new_msgs:
-        return 0
 
     # Deduplicate by date+from_id
     existing_keys = {(item["date"], item.get("from_id")) for item in feedback["items"]}
@@ -114,10 +117,20 @@ def run():
             added += 1
 
     if added > 0:
-        # Update last check date
         feedback["last_check_date"] = max(m["date"] for m in new_msgs)
-        save_feedback(feedback)
         print(f"[{datetime.now().strftime('%H:%M')}] Added {added} new feedback items (total: {len(feedback['items'])})")
+
+    # Triage untriaged 'new' items (including any just collected) and DM Dmitry
+    # a grouped digest. Isolated so a triage failure never blocks collection.
+    triaged = 0
+    try:
+        from services import feedback_triage
+        triaged = feedback_triage.triage(feedback, dry=False)
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M')}] triage error (collection unaffected): {e}")
+
+    if added or triaged:
+        save_feedback(feedback)
 
     return added
 
