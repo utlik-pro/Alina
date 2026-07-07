@@ -660,6 +660,41 @@ class YClientsService:
         # No name — return first from filtered pool.
         return pool[0]["id"]
 
+    async def staff_area_of(self, staff_id: int) -> Optional[str]:
+        """Emirate a specific staff_id serves (from their YClients name tag),
+        or None if no staff with that id exists. Used to reject a booking whose
+        model-supplied master_id belongs to a different emirate than the
+        client's area (a cross-emirate misroute)."""
+        try:
+            sid = int(staff_id)
+        except (TypeError, ValueError):
+            return None
+        for s in (await self.get_staff() or []):
+            if s.get("id") == sid:
+                return _staff_area(s.get("name", ""))
+        return None
+
+    async def is_slot_available(self, area: str, date: str, hhmm: str, duration: int = 60) -> bool:
+        """True if `hhmm` (24h 'H:MM') is a genuinely free slot for ANY master
+        in `area` on `date` for a `duration`-min session. Coarse guard used by
+        reschedule so we never confirm an occupied/off-day/travel-conflicting
+        slot. Fails OPEN semantics are the caller's responsibility."""
+        try:
+            h, m = hhmm.split(":")
+            want = f"{int(h)}:{int(m):02d}"
+        except (ValueError, AttributeError):
+            return True  # can't parse — don't block
+        for s in (await self.get_staff() or []):
+            nm = s.get("name", "") or ""
+            if "АДМИНИСТРАТОР" in nm.upper() or "ЛИСТ ОЖИДАНИЯ" in nm.upper():
+                continue
+            if area and _staff_area(nm) != area:
+                continue
+            slots = await self.get_real_available_slots(s["id"], date, int(duration or 60))
+            if want in slots:
+                return True
+        return False
+
     async def find_client_by_phone(self, phone: str) -> Optional[Dict]:
         """Search for a client in YClients by phone number. Returns first match or None.
 

@@ -73,6 +73,12 @@ _wappi_locks: "dict[str, asyncio.Lock]" = {}
 # image each time. Cleared on reset so re-testing sends the photo again.
 _wappi_sent_promos: "dict[str, set[str]]" = {}
 
+# Per-phone reset epoch. A /clear bumps it; a buffer flush that was scheduled
+# before the reset (and already popped its fragments, so the reset's buffer-pop
+# can't catch it) compares the epoch after taking the lock and DROPS itself,
+# so a pre-reset fragment never processes against the freshly-wiped context.
+_wappi_reset_epoch: "dict[str, int]" = {}
+
 
 def _phone_lock(phone: str) -> "asyncio.Lock":
     lock = _wappi_locks.get(phone)
@@ -351,6 +357,9 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
     """
     entry = _wappi_buffer.setdefault(phone, {"messages": [], "timer": None, "sender_name": sender_name})
     entry["messages"].append(text)
+    # Stamp the reset epoch at buffer time so the flush can tell if a /clear
+    # landed in between and this fragment is now stale.
+    entry["epoch"] = _wappi_reset_epoch.get(phone, 0)
     if sender_name and not entry.get("sender_name"):
         entry["sender_name"] = sender_name
 
@@ -373,6 +382,12 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
             # prevents overlapping processings from corrupting state / sending
             # duplicate replies.
             async with _phone_lock(phone):
+                # A /clear may have fired after we popped the buffer but before
+                # we got the lock — drop these now-stale fragments instead of
+                # replying against the wiped context.
+                if buf.get("epoch", 0) != _wappi_reset_epoch.get(phone, 0):
+                    logger.info(f"Wappi buffer [{phone}]: dropped stale pre-reset fragments")
+                    return
                 await _process_wappi_message(phone, combined, buf["sender_name"])
         except asyncio.CancelledError:
             pass  # new message arrived, will be handled by new timer
@@ -585,6 +600,19 @@ async def _maybe_create_booking(
             # Al-Ain therapist to an Abu-Dhabi client (or vice versa)
             # means a 90-minute misrouted drive and a missed appointment.
             yc_staff_id = booking_call.master_id
+            # Never trust a master_id blindly: the model can hallucinate an
+            # integer that happens to be a real therapist in ANOTHER emirate.
+            # If the supplied id doesn't serve the client's area, drop it and
+            # re-resolve within the area — a cross-emirate booking is a 90-min
+            # wrong-city drive / missed appointment.
+            if yc_staff_id and booking_call.area:
+                _mid_area = await bot_module.yclients_service.staff_area_of(yc_staff_id)
+                if _mid_area is not None and _mid_area != booking_call.area:
+                    logger.warning(
+                        f"book: master_id {yc_staff_id} serves {_mid_area!r}, not "
+                        f"client area {booking_call.area!r} — re-resolving by area"
+                    )
+                    yc_staff_id = None
             if not yc_staff_id:
                 yc_staff_id = await bot_module.yclients_service.find_staff_id(
                     name=booking_call.master_name,
@@ -724,7 +752,7 @@ async def _notify_driver(booking, client) -> str:
         return "error"
 
 
-async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall"):
+async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall", context=None):
     """Cancel the client's active booking locally + apply penalty rules.
 
     YClients records are NOT auto-modified (safety rule) — admin is asked
@@ -739,6 +767,24 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall")
     # must never charge money or free a slot.
     if not call.confirmed:
         logger.info(f"Cancel tool called WITHOUT confirmation for {telegram_id} — ignoring")
+        return
+
+    # Disambiguate: with >1 upcoming booking, a bare "cancel" would silently hit
+    # the SOONEST one, which may not be the one the client means. Don't guess —
+    # route to admin and let the client name which appointment.
+    if await bot_module.booking_service.count_active_bookings(telegram_id) > 1:
+        logger.info(f"Cancel: {telegram_id} has multiple active bookings — not auto-cancelling")
+        await _admin_text(
+            f"❓ <b>Отмена — уточнить какую</b>\nКлиент <code>{telegram_id}</code> "
+            f"({phone}) просит отмену, но у него НЕСКОЛЬКО активных броней. "
+            f"Ничего не отменял — уточните у клиента и обработайте вручную."
+        )
+        if wappi_client:
+            await wappi_client.send_message(
+                phone,
+                "You have more than one upcoming appointment dear 🌹 "
+                "Which one would you like to cancel — the date and service please?"
+            )
         return
 
     b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
@@ -792,13 +838,30 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall")
     await _notify_waiting_list(b.get("area"), b.get("booking_date"))
 
 
-async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall"):
+async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall", context=None):
     """Move the client's active booking to a new date/time (local) + notify admin.
 
     YClients is NOT auto-modified (safety rule).
     """
     import bot as bot_module
     from datetime import datetime as _dt, timedelta as _td
+
+    # Disambiguate: with >1 upcoming booking a bare "reschedule" would hit the
+    # soonest one, maybe the wrong one. Don't guess — ask the client.
+    if await bot_module.booking_service.count_active_bookings(telegram_id) > 1:
+        logger.info(f"Reschedule: {telegram_id} has multiple active bookings — not auto-moving")
+        await _admin_text(
+            f"❓ <b>Перенос — уточнить какой</b>\nКлиент <code>{telegram_id}</code> "
+            f"({phone}) просит перенос, но у него НЕСКОЛЬКО активных броней. "
+            f"Ничего не переносил — уточните у клиента."
+        )
+        if wappi_client:
+            await wappi_client.send_message(
+                phone,
+                "You have more than one upcoming appointment dear 🌹 "
+                "Which one shall I move — the date and service please?"
+            )
+        return
 
     b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
     if not b:
@@ -827,8 +890,40 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         )
         return
 
-    # Create the new booking, chain the old one to it. Use base_price (pre-VAT)
-    # so calculate_total() doesn't re-apply VAT on an already-inclusive total.
+    # Re-validate availability with the SAME rigor as a new booking — otherwise
+    # we'd confirm an occupied/off-day/travel-conflicting slot and the day-before
+    # scheduler would message the client about a slot no master can serve. We can
+    # only check when we know the client's area; skip the check if unknown.
+    _area = context.client_data.get("area") if context else None
+    if _area:
+        _dur = int(b.get("duration") or 60)
+        _hhmm = f"{new_dt.hour}:{new_dt.minute:02d}"
+        try:
+            _free = await bot_module.yclients_service.is_slot_available(
+                _area, call.new_date, _hhmm, _dur)
+        except Exception as e:
+            logger.warning(f"Reschedule availability check failed ({e}) — allowing")
+            _free = True
+        if not _free:
+            logger.info(f"Reschedule: {new_dt.isoformat()} not free in {_area} — offering alternatives")
+            await _admin_text(
+                f"⚠️ <b>Перенос — слот занят</b>\nКлиент <code>{telegram_id}</code> "
+                f"({phone}) просил перенос на {new_dt:%d.%m.%Y %H:%M} ({_area}), "
+                f"но это время НЕ свободно. Ничего не переносил — предложите другое."
+            )
+            if wappi_client:
+                await wappi_client.send_message(
+                    phone,
+                    f"Sorry dear, {_to_ampm(_hhmm)} on that day isn't free 🙏 "
+                    "Could you pick another time? I'll send you what's available 🌹"
+                )
+            return
+
+    # Create the new booking (draft), chain the old one to it, THEN confirm the
+    # new one. This order means a mid-way failure never leaves TWO 'confirmed'
+    # rows (worst case: old='rescheduled' + new='draft', which the confirmation
+    # scheduler ignores). Use base_price (pre-VAT) so calculate_total() doesn't
+    # re-apply VAT on an already-inclusive total.
     new_booking = await bot_module.booking_service.create_booking(
         telegram_id=telegram_id,
         service_name=b["service_name"],
@@ -837,8 +932,8 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         booking_date=new_dt,
         payment_method=b.get("payment_method") or "cash",
     )
-    await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
     await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
+    await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
 
     old_when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
     new_when = new_dt.strftime("%d.%m.%Y %H:%M")
@@ -944,6 +1039,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         _svc_cat = _detect_service_category(text)
         if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
             dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
+            # A category switch invalidates any previously-stated duration: a
+            # 90-min massage length must not keep over-filtering slots for a
+            # later manicure. Clear it — it re-defaults to 60 and is re-detected
+            # from THIS/next message if the client names a new length.
+            if context.booking_data.get("service_duration"):
+                dialog_manager.update_booking_data(user_id, "service_duration", None)
 
         # Inject YClients slots if we know the area
         logger.info(
@@ -1349,9 +1450,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Cancellation / reschedule actions (FR-5.1–5.3, 7.2).
         if actions.cancel_call is not None:
-            await _handle_cancellation(telegram_id, phone, actions.cancel_call)
+            await _handle_cancellation(telegram_id, phone, actions.cancel_call, context)
         if actions.reschedule_call is not None:
-            await _handle_reschedule(telegram_id, phone, actions.reschedule_call)
+            await _handle_reschedule(telegram_id, phone, actions.reschedule_call, context)
 
         # Persist a structured turn log for future debugging / bug analysis.
         try:
@@ -1566,8 +1667,12 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
     # exact-match reset check never fires (reported "не очищает историю").
     if _is_reset_command(text):
         user_id = f"wappi_{phone}"
-        # Drop any pending buffered fragments so they don't process post-reset.
+        # Drop any pending buffered fragments so they don't process post-reset,
+        # and bump the reset epoch so a flush that ALREADY popped its fragments
+        # (and is blocked on the lock) drops itself instead of running against
+        # the wiped context.
         _wappi_buffer.pop(phone, None)
+        _wappi_reset_epoch[phone] = _wappi_reset_epoch.get(phone, 0) + 1
         background_tasks.add_task(_reset_and_greet, phone, user_id)
         return {"status": "reset"}
 
@@ -1579,7 +1684,10 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
 async def _reset_and_greet(phone: str, user_id: str):
     """Reset a user's state and send the fresh-start greeting (WhatsApp)."""
     try:
-        await _reset_user(user_id, user_id)
+        # Serialise with any in-flight turn for this phone so the wipe can't
+        # race a concurrent _process_wappi_message mutating the same context.
+        async with _phone_lock(phone):
+            await _reset_user(user_id, user_id)
         if wappi_client:
             await wappi_client.send_message(
                 phone,

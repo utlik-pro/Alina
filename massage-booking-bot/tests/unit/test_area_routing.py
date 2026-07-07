@@ -145,3 +145,27 @@ def test_gps_area_classifier(label, lat, lng, expected):
 def test_detect_duration_minutes(text, expected):
     from webhook_app import _detect_duration_minutes
     assert _detect_duration_minutes(text.lower()) == expected
+
+
+# ── staff_area_of (cross-emirate master_id guard) ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_staff_area_of(yc):
+    assert await yc.staff_area_of(5305116) == "dubai"       # Lyudmila
+    assert await yc.staff_area_of(3698466) == "abu_dhabi"   # Tatyana
+    assert await yc.staff_area_of(3712102) == "al_ain"      # Eliza
+    assert await yc.staff_area_of(999999) is None           # no such staff
+    assert await yc.staff_area_of("not-an-int") is None
+
+
+# ── is_slot_available (reschedule re-validation) ──────────────────────────
+
+@pytest.mark.asyncio
+async def test_is_slot_available(yc):
+    # Fixture's get_real_available_slots returns 10:00/12:00/14:00 for everyone.
+    assert await yc.is_slot_available("abu_dhabi", "2030-01-06", "14:00", 60) is True
+    assert await yc.is_slot_available("dubai", "2030-01-06", "12:00", 60) is True
+    # A time no master offers is not available.
+    assert await yc.is_slot_available("abu_dhabi", "2030-01-06", "9:00", 60) is False
+    # "09:00" normalises to "9:00" for comparison.
+    assert await yc.is_slot_available("abu_dhabi", "2030-01-06", "10:00", 60) is True
