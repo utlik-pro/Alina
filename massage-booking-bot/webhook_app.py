@@ -154,6 +154,49 @@ def _detect_duration_minutes(text_lower: str) -> Optional[int]:
     return None
 
 
+def _booking_has_location_and_name(booking_call, client_data: dict) -> tuple:
+    """(_has_location, _has_name) for a booking, checking dialog context + the
+    tool's own address/name. Shared by the reply-wording override and the hard
+    gate so they agree."""
+    cd = client_data or {}
+    has_loc = bool(
+        cd.get("location")
+        or (cd.get("location_details") or "").strip()
+        or (getattr(booking_call, "address", None) or "").strip()
+    )
+    nm = (getattr(booking_call, "client_name", None) or cd.get("name") or "").strip()
+    has_name = bool(nm) and nm.lower() not in ("client", "whatsapp client")
+    return has_loc, has_name
+
+
+def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict) -> str:
+    """Override the model's reply where its wording must be guaranteed:
+
+    1) Reschedule — the move is applied by the team, not instantly. Never let
+       the model tell the client it's "confirmed/done".
+    2) A booking the model is about to attempt WITHOUT a location/name — the
+       hard gate will block the record, so replace a false "confirmed" with the
+       ask for the missing info (single client-facing reply).
+    Otherwise the model's reply is returned unchanged.
+    """
+    if actions is not None and getattr(actions, "reschedule_call", None) is not None:
+        rc = actions.reschedule_call
+        newt = _to_ampm(rc.new_time) if getattr(rc, "new_time", None) else "the new time"
+        return (f"Noted dear 🌹 I've passed your reschedule to {newt} to the team — "
+                f"we'll confirm it shortly 🙏")
+    if booking_call is not None:
+        has_loc, has_name = _booking_has_location_and_name(booking_call, client_data)
+        if not (has_loc and has_name):
+            if not has_loc and not has_name:
+                return ("Almost done dear 🌹 may I have your name, and please share your "
+                        "location 📍 so the therapist can reach you?")
+            if not has_loc:
+                return ("Almost done dear 🌹 please share your location 📍 (or type your "
+                        "address) so the therapist can reach you 🙏")
+            return "Almost done dear 🌹 may I have your name for the booking?"
+    return response_text
+
+
 def _detect_service_duration(text_lower: str) -> Optional[int]:
     """Default session length (minutes) for a recognised nail service, per the
     client's price list, used when the client hasn't stated an explicit
@@ -193,7 +236,7 @@ from services.notifications import NotificationService
 from services.follow_up import FollowUpService
 from services.scheduler import ReminderScheduler
 from services.message_buffer import init_buffer, MessageBuffer
-from services.yclients_service import YClientsService
+from services.yclients_service import YClientsService, _to_ampm
 from services.wappi_client import WappiClient, parse_incoming_message
 from agents.tools import BookingCall, CancelCall, RescheduleCall, AgentActions
 
@@ -569,33 +612,18 @@ async def _maybe_create_booking(
     # binding. If either is missing, DON'T create the record; ask the client for
     # what's missing and alert the admin. (The confirmation reply was already
     # sent, so we send a corrective follow-up.)
-    _cd = context.client_data or {}
-    _has_location = bool(
-        _cd.get("location")
-        or (_cd.get("location_details") or "").strip()
-        or (booking_call.address or "").strip()
+    _has_location, _has_name = _booking_has_location_and_name(
+        booking_call, context.client_data
     )
-    _name = (booking_call.client_name or _cd.get("name") or "").strip()
-    _has_name = bool(_name) and _name.lower() not in ("client", "whatsapp client")
     if not (_has_location and _has_name):
         _missing = ([] if _has_name else ["name"]) + ([] if _has_location else ["location"])
         logger.warning(
             f"Wappi: booking BLOCKED for {telegram_id} — missing {_missing}. "
             f"No record created."
         )
-        if wappi_client:
-            if not _has_location and not _has_name:
-                _ask = ("Before I book you in dear 🌹 may I have your name, and please "
-                        "share your location 📍 so the therapist can reach you?")
-            elif not _has_location:
-                _ask = ("One moment dear 🌹 please share your location 📍 (or type your "
-                        "address) so the therapist can reach you — then you're booked?")
-            else:
-                _ask = "One moment dear 🌹 may I have your name for the booking?"
-            try:
-                await wappi_client.send_message(phone, _ask)
-            except Exception:
-                pass
+        # NOTE: the client is asked for the missing info by the wording-override
+        # in _process_wappi_message (single reply) — we don't send a duplicate
+        # here. This gate is the binding RECORD block + admin alert.
         if bot_module.notification_service:
             try:
                 await bot_module.notification_service.send_booking_failed(
@@ -1470,6 +1498,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         f"reply → {_detected}"
                     )
                     dialog_manager.update_client_data(user_id, "area", _detected)
+
+        # Guarantee honest client-facing wording at the CODE level — the LLM is
+        # not reliable about it (it says "confirmed" on a reschedule, or before
+        # it has a location/name). See _enforce_reply_wording.
+        response_text = _enforce_reply_wording(
+            response_text, actions, booking_call, context.client_data
+        )
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
