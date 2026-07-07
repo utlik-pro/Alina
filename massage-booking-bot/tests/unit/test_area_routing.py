@@ -147,6 +147,28 @@ def test_detect_duration_minutes(text, expected):
     assert _detect_duration_minutes(text.lower()) == expected
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("russian gel manicure", 120),
+    ("русский гель-маникюр", 120),
+    ("russian gel pedicure", 120),
+    ("combo russian mani + pedi", 180),
+    ("комбо маникюр педикюр", 180),
+    ("japanese manicure", 90),
+    ("японский педикюр", 90),
+    ("combo japanese mani pedi", 150),
+    ("russian classic manicure only cleaning", 60),
+    ("русский маникюр чистка", 60),
+    ("nail extension soft gel", 180),
+    ("наращивание hard gel", 180),
+    # Not a nail service → let explicit-minute detection / default 60 handle it.
+    ("body massage", None),
+    ("i want a massage", None),
+])
+def test_detect_service_duration(text, expected):
+    from webhook_app import _detect_service_duration
+    assert _detect_service_duration(text.lower()) == expected
+
+
 # ── staff_area_of (cross-emirate master_id guard) ─────────────────────────
 
 @pytest.mark.asyncio

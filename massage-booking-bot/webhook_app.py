@@ -154,6 +154,34 @@ def _detect_duration_minutes(text_lower: str) -> Optional[int]:
     return None
 
 
+def _detect_service_duration(text_lower: str) -> Optional[int]:
+    """Default session length (minutes) for a recognised nail service, per the
+    client's price list, used when the client hasn't stated an explicit
+    duration. The length is a property of the service, so slots must fit it (a
+    2h gel manicure must never be offered a 1h slot). None if not recognised.
+    """
+    t = text_lower
+    _mani = "mani" in t or "маникюр" in t or "маник" in t
+    _pedi = "pedi" in t or "педикюр" in t or "педик" in t
+    _japan = "japan" in t or "япон" in t
+    # Combos first (longest): both mani+pedi, or the word "combo".
+    if "combo" in t or "комбо" in t or (_mani and _pedi):
+        return 150 if _japan else 180
+    # Nail extensions.
+    if "наращ" in t or "extension" in t or "soft gel" in t or "hard gel" in t:
+        return 180
+    # Japanese single mani or pedi.
+    if _japan and (_mani or _pedi):
+        return 90
+    # Basic russian (cleaning / classic) mani or pedi = 1h.
+    if ("classic" in t or "cleaning" in t or "чистк" in t) and (_mani or _pedi):
+        return 60
+    # Russian GEL mani or pedi = 2h.
+    if ("gelish" in t or "гель" in t or "гел " in t or (" gel" in t)) and (_mani or _pedi):
+        return 120
+    return None
+
+
 from config import config
 from bot import router, booking_agent
 from database import (
@@ -534,6 +562,52 @@ async def _maybe_create_booking(
                 pass
         return
 
+    # ── HARD GATE: never create a booking without a location AND a name ─────
+    # The prompt gathers these (STEP 4.5 location, STEP 5 name) but the LLM can
+    # jump straight to book_appointment ("не подтвердил, локацию не запросил, в
+    # программу записал"). Prompt guidance is advisory — this code gate is
+    # binding. If either is missing, DON'T create the record; ask the client for
+    # what's missing and alert the admin. (The confirmation reply was already
+    # sent, so we send a corrective follow-up.)
+    _cd = context.client_data or {}
+    _has_location = bool(
+        _cd.get("location")
+        or (_cd.get("location_details") or "").strip()
+        or (booking_call.address or "").strip()
+    )
+    _name = (booking_call.client_name or _cd.get("name") or "").strip()
+    _has_name = bool(_name) and _name.lower() not in ("client", "whatsapp client")
+    if not (_has_location and _has_name):
+        _missing = ([] if _has_name else ["name"]) + ([] if _has_location else ["location"])
+        logger.warning(
+            f"Wappi: booking BLOCKED for {telegram_id} — missing {_missing}. "
+            f"No record created."
+        )
+        if wappi_client:
+            if not _has_location and not _has_name:
+                _ask = ("Before I book you in dear 🌹 may I have your name, and please "
+                        "share your location 📍 so the therapist can reach you?")
+            elif not _has_location:
+                _ask = ("One moment dear 🌹 please share your location 📍 (or type your "
+                        "address) so the therapist can reach you — then you're booked?")
+            else:
+                _ask = "One moment dear 🌹 may I have your name for the booking?"
+            try:
+                await wappi_client.send_message(phone, _ask)
+            except Exception:
+                pass
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=(f"Agent tried to book WITHOUT {', '.join(_missing)} — "
+                            f"asked the client, no record created. "
+                            f"{booking_call.service} {booking_call.date} {booking_call.time}"),
+                )
+            except Exception:
+                pass
+        return
+
     # Save in local DB
     try:
         client = await bot_module.client_service.get_or_create_client(telegram_id)
@@ -542,6 +616,12 @@ async def _maybe_create_booking(
         if booking_call.client_name and not client.name:
             await bot_module.client_service.update_client(
                 telegram_id, name=booking_call.client_name
+            )
+        # Persist the text address so the driver / admin / reminder messages
+        # show where to go (they read client.location_details).
+        if booking_call.address and not (client.location_details or "").strip():
+            await bot_module.client_service.update_client(
+                telegram_id, location_details=booking_call.address
             )
 
         booking = await bot_module.booking_service.create_booking(
@@ -1118,10 +1198,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     _client_area = _explicit_area
                     dialog_manager.update_client_data(user_id, "area", _explicit_area)
 
-            # Capture an explicit session length ("90 минут", "1.5 hours") on
-            # ANY message — even before the area is known — and persist it, so
-            # when slots are shown we only offer times the WHOLE session fits.
-            _dur_detected = _detect_duration_minutes(_text_lower)
+            # Capture the session length on ANY message (even before area is
+            # known) and persist it, so slots only offer times the WHOLE session
+            # fits. An explicitly-stated length ("90 минут") wins; otherwise the
+            # recognised service's own length (a gel manicure is 2h, a combo 3h).
+            _dur_detected = _detect_duration_minutes(_text_lower) or _detect_service_duration(_text_lower)
             if _dur_detected and _dur_detected != context.booking_data.get("service_duration"):
                 dialog_manager.update_booking_data(user_id, "service_duration", _dur_detected)
                 logger.info(f"duration_detect: {_dur_detected} min (from message)")
@@ -1614,6 +1695,19 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
                 user_id, "location", {"lat": latitude, "lng": longitude}
             )
             dialog_manager.update_client_data(user_id, "area", area)
+            # Persist to the DB client record too — the driver notification and
+            # admin/booking messages read client.location_latitude/longitude, so
+            # without this the therapist gets NO map pin even though the client
+            # shared GPS.
+            try:
+                import bot as _bot_gps
+                await _bot_gps.client_service.update_client(
+                    f"wappi_{phone}",
+                    location_latitude=latitude,
+                    location_longitude=longitude,
+                )
+            except Exception as _e:
+                logger.warning(f"Wappi: couldn't persist GPS to client record: {_e}")
             area_label = {
                 "abu_dhabi": "Abu Dhabi",
                 "al_ain": "Al Ain",
