@@ -251,7 +251,7 @@ class YClientsService:
             return data["data"]
         return []
 
-    async def get_available_slots_summary(self, date: str = None, service_name: str = None, service_category: str = None, service_id: int = None, area: str = None) -> str:
+    async def get_available_slots_summary(self, date: str = None, service_name: str = None, service_category: str = None, service_id: int = None, area: str = None, service_duration: int = None) -> str:
         """Get human-readable available slots for GPT context.
 
         Filters by:
@@ -260,11 +260,16 @@ class YClientsService:
         - Area (abu_dhabi / al_ain / dubai) — each master serves one emirate
           only; a client is never shown masters from another emirate (no
           cross-emirate drives)
-        - Minimum 60 min between offered slots
+        - Service duration — a slot is only offered if the FULL session fits
+          before the next visit (a 90-min service needs a 90-min gap, not 60).
+          Defaults to 60 min when the client hasn't stated a duration yet.
 
         Returns a formatted string like:
         "Tomorrow: Svetlana 10am, 12pm, 4pm | Marina 2pm, 7pm"
         """
+        # How long the actual session runs. If the client asked for a 90-min
+        # massage we must not offer a slot that only has 60 min free.
+        slot_duration = int(service_duration) if service_duration else 60
         # Use UAE timezone (UTC+4) — Crystal Lab is in Abu Dhabi/Al Ain
         from datetime import timezone
         uae_tz = timezone(timedelta(hours=4))
@@ -310,12 +315,11 @@ class YClientsService:
         #    sequentially (~9 masters × 2+ YClients calls each), which pushed a
         #    single turn past the 30s agent timeout on prod ("Sorry dear, one
         #    moment, please repeat"). asyncio.gather collapses it to ~one round
-        #    trip. (The old per-staff find_service_id calls were also removed —
-        #    the result was never used; get_real_available_slots uses a fixed
-        #    60-min duration.)
+        #    trip. Every master gets the SAME slot_duration (a service's length
+        #    is the same whoever performs it), so we resolve it once above.
         import asyncio as _asyncio
         slot_lists = await _asyncio.gather(
-            *[self.get_real_available_slots(s["id"], date, 60) for s, _ in candidates],
+            *[self.get_real_available_slots(s["id"], date, slot_duration) for s, _ in candidates],
             return_exceptions=True,
         )
 

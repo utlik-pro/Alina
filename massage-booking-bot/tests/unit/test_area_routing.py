@@ -125,3 +125,23 @@ async def test_find_staff_admin_never_returned(yc):
 def test_gps_area_classifier(label, lat, lng, expected):
     from webhook_app import _area_from_coords
     assert _area_from_coords(lat, lng) == expected, label
+
+
+# ── Duration parser (client-stated session length) ────────────────────────
+
+@pytest.mark.parametrize("text,expected", [
+    ("массаж тела 90 минут", 90),
+    ("body massage 90 min", 90),
+    ("1.5 hours please", 90),
+    ("полтора часа", 90),
+    ("2 hour massage", 120),
+    ("60min", 60),
+    ("полчаса", 30),
+    # Must NOT mistake a price or a clock time for a duration.
+    ("90 aed cash", None),
+    ("запись на 17:00", None),
+    ("маникюр", None),
+])
+def test_detect_duration_minutes(text, expected):
+    from webhook_app import _detect_duration_minutes
+    assert _detect_duration_minutes(text.lower()) == expected

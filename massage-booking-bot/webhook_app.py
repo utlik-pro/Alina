@@ -7,6 +7,7 @@ Handles:
 """
 
 import asyncio
+import re
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
@@ -115,6 +116,37 @@ def _detect_service_category(text: str) -> Optional[str]:
     if any(k in t for k in _MASSAGE_KW):
         return "massage"
     return None
+
+
+# Pull an explicit session length from a client message ("90 min", "90 минут",
+# "1.5 hours", "полтора часа") so slot filtering can require the WHOLE session
+# to fit, not a default 60 min. Requires a unit word so a bare "90" (price) or
+# "17:00" (a time) is never mistaken for a duration. Returns minutes or None.
+_DURATION_MIN_RE = re.compile(
+    r"\b(\d{2,3})\s*(?:min\b|mins\b|minutes?|минут\w*|мин\b)", re.IGNORECASE
+)
+_DURATION_HR_RE = re.compile(
+    r"\b(\d(?:[.,]\d)?)\s*(?:hours?\b|hrs?\b|час\w*)", re.IGNORECASE
+)
+
+
+def _detect_duration_minutes(text_lower: str) -> Optional[int]:
+    m = _DURATION_MIN_RE.search(text_lower)
+    if m:
+        v = int(m.group(1))
+        if 30 <= v <= 240:
+            return v
+    if "полтора час" in text_lower:
+        return 90
+    if "полчаса" in text_lower:
+        return 30
+    m = _DURATION_HR_RE.search(text_lower)
+    if m:
+        mins = int(round(float(m.group(1).replace(",", ".")) * 60))
+        if 30 <= mins <= 240:
+            return mins
+    return None
+
 
 from config import config
 from bot import router, booking_agent
@@ -985,6 +1017,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     _client_area = _explicit_area
                     dialog_manager.update_client_data(user_id, "area", _explicit_area)
 
+            # Capture an explicit session length ("90 минут", "1.5 hours") on
+            # ANY message — even before the area is known — and persist it, so
+            # when slots are shown we only offer times the WHOLE session fits.
+            _dur_detected = _detect_duration_minutes(_text_lower)
+            if _dur_detected and _dur_detected != context.booking_data.get("service_duration"):
+                dialog_manager.update_booking_data(user_id, "service_duration", _dur_detected)
+                logger.info(f"duration_detect: {_dur_detected} min (from message)")
+
             logger.info(f"slot_inject_post_detect: area_now={_client_area!r}")
             if _client_area:
                 try:
@@ -995,12 +1035,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     tomorrow = (_now + _td(days=1)).strftime("%Y-%m-%d")
 
                     service_name = context.booking_data.get("service_type") or ""
+                    _service_duration = context.booking_data.get("service_duration")
                     # Fetch today + tomorrow concurrently (was sequential).
                     slots_today, slots_tomorrow = await asyncio.gather(
                         bot_module.yclients_service.get_available_slots_summary(
-                            date=today, service_name=service_name, area=_client_area),
+                            date=today, service_name=service_name, area=_client_area,
+                            service_duration=_service_duration),
                         bot_module.yclients_service.get_available_slots_summary(
-                            date=tomorrow, service_name=service_name, area=_client_area),
+                            date=tomorrow, service_name=service_name, area=_client_area,
+                            service_duration=_service_duration),
                     )
 
                     # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
@@ -1091,7 +1134,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     for d in extra_dates[:2]:  # chosen date + at most 1 mentioned extra
                         try:
                             slots = await bot_module.yclients_service.get_available_slots_summary(
-                                date=d, service_name=service_name, area=_client_area)
+                                date=d, service_name=service_name, area=_client_area,
+                                service_duration=_service_duration)
                             extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
                         except Exception:
                             pass
