@@ -471,7 +471,7 @@ If EVERYTHING is collected → confirm booking immediately.
 WORKING HOURS
 ═══════════════════
 
-9:00 AM - 10:00 PM (last booking at 9pm)
+10:00 AM - 10:00 PM (last booking at 9:00 PM — NEVER offer a slot after 9:00 PM).
 If client writes at night — reply in the morning.
 
 ═══════════════════

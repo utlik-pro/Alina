@@ -817,9 +817,13 @@ class YClientsService:
         candidates = sorted(set(candidates))
 
         min_today = now_uae.hour * 60 + now_uae.minute + 30  # +30 min lead
-        # Business rule (ТЗ / client): the salon does NOT book before 10:00 —
-        # never offer 9:00/9:30 even if YClients lists them.
-        WORK_START = 10 * 60
+        # Business rule (ТЗ / prompt: "10:00 AM – 10:00 PM, last booking at 9pm"):
+        # the salon does NOT book before 10:00 and takes NO booking that STARTS
+        # after 21:00 — never offer 9:00/9:30 or 21:30/22:00 even if YClients
+        # lists them (a master's YClients hours sometimes run later than the
+        # salon actually serves home visits).
+        WORK_START = 10 * 60        # 10:00 — first booking
+        WORK_LAST_START = 21 * 60   # 21:00 — last booking start ("last booking at 9pm")
 
         # Keep EVERY genuinely-free slot (10:00+, past-time filtered for today,
         # travel-buffer clear of existing visits). We deliberately do NOT thin
@@ -828,7 +832,7 @@ class YClientsService:
         # instead of wrongly rejecting it because a display-sample dropped it.
         chosen = []
         for m in candidates:
-            if m < WORK_START:
+            if m < WORK_START or m > WORK_LAST_START:
                 continue
             if is_today and m < min_today:
                 continue
