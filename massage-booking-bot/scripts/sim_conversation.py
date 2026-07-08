@@ -69,12 +69,12 @@ async def _inject_slots(yc, ctx, date):
 
 async def run(scenario):
     yc = YClientsService()
-    agent = BookingAgent()
+    agent = BookingAgent(model=scenario.get("model"))  # optional model override for bake-offs
     ctx = DialogContext(user_id=90001)
     date = scenario.get("date") or (datetime.now(_UAE) + timedelta(days=1)).strftime("%Y-%m-%d")
     gps_at = scenario.get("gps_at_turn", None)
 
-    lines = [f"### {scenario.get('title','(untitled)')}"]
+    lines = [f"### {scenario.get('title','(untitled)')}  [model: {agent.model}]"]
     for i, msg in enumerate(scenario["turns"]):
         if gps_at is not None and i == gps_at:
             ctx.client_data["location"] = {"lat": 24.47, "lng": 54.37}
@@ -101,14 +101,25 @@ async def run(scenario):
 
         ctx.recent_messages.append({"role": "user", "content": msg})
         resp, actions = await agent.process_message_with_tools(msg, ctx)
-        final = wh._enforce_reply_wording(resp, actions, actions.booking_call, ctx.client_data)
+        final = wh._enforce_reply_wording(
+            resp, actions, actions.booking_call, ctx.client_data, user_text=msg,
+            already_booked_sig=getattr(ctx, "last_booking_sig", None))
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call
         tag = ""
         if bc is not None:
+            _sig = (bc.service, bc.date, bc.time)
             has_loc, has_name = wh._booking_has_location_and_name(bc, ctx.client_data)
-            tag = " [✅ RECORD CREATED]" if (has_loc and has_name) else " [gate: NO record — missing info]"
+            if getattr(ctx, "last_booking_sig", None) == _sig:
+                tag = " [duplicate — suppressed]"
+            elif wh._booking_day_mismatch(msg, bc):
+                tag = " [gate: wrong-day — blocked]"
+            elif has_loc and has_name:
+                tag = " [✅ RECORD CREATED]"
+                ctx.last_booking_sig = _sig
+            else:
+                tag = " [gate: NO record — missing info]"
         if actions.reschedule_call is not None:
             tag = " [reschedule request]"
         if actions.cancel_call is not None:

@@ -28,9 +28,11 @@ class BookingAgent:
     Основан на анализе 5 реальных WhatsApp диалогов.
     """
 
-    def __init__(self):
+    def __init__(self, model: str = None):
         self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
-        self.model = config.OPENAI_MODEL
+        # Allow a per-instance model override (used by the model bake-off /
+        # quality audits); defaults to the configured production model.
+        self.model = model or config.OPENAI_MODEL
 
         # System prompt основан на реальных WhatsApp диалогах Алины
         # Цены загружаются динамически из prices.py

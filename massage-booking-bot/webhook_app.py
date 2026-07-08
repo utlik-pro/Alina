@@ -191,7 +191,8 @@ def _booking_day_mismatch(user_text: str, booking_call):
     return None
 
 
-def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict, user_text: str = "") -> str:
+def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict,
+                           user_text: str = "", already_booked_sig=None) -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -207,6 +208,12 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
         return (f"Noted dear 🌹 I've passed your reschedule to {newt} to the team — "
                 f"we'll confirm it shortly 🙏")
     if booking_call is not None:
+        # Duplicate: the model re-fires book_appointment when the client adds/
+        # changes payment after it's already booked. Don't re-send "booked ✅".
+        _sig = (getattr(booking_call, "service", None), getattr(booking_call, "date", None),
+                getattr(booking_call, "time", None))
+        if already_booked_sig is not None and _sig == already_booked_sig:
+            return "Noted dear 🌹 all set — see you then!"
         _dm = _booking_day_mismatch(user_text, booking_call)
         if _dm:
             from datetime import datetime as _dt2
@@ -692,6 +699,43 @@ async def _maybe_create_booking(
             except Exception:
                 pass
         return
+
+    # Slot-reality gate: never create a record for a time that isn't genuinely
+    # free (an invented/occupied slot). Authoritative check against live YClients
+    # for the client's area + service duration. Skipped only if the area is
+    # unknown (can't check) — YClients save_if_busy=False is the final backstop.
+    _area = (context.client_data or {}).get("area")
+    if _area and booking_call.time:
+        try:
+            _slot_ok = await bot_module.yclients_service.is_slot_available(
+                _area, booking_call.date, booking_call.time,
+                int(booking_call.duration_minutes or 60))
+        except Exception as e:
+            logger.warning(f"Wappi: slot-reality check failed ({e}) — allowing")
+            _slot_ok = True
+        if not _slot_ok:
+            logger.error(
+                f"Wappi: booking BLOCKED — {booking_call.time} on {booking_call.date} "
+                f"({_area}) is NOT a real free slot. No record created."
+            )
+            if bot_module.notification_service:
+                try:
+                    await bot_module.notification_service.send_booking_failed(
+                        telegram_id=telegram_id,
+                        reason=(f"Agent tried to book {booking_call.time} {booking_call.date} "
+                                f"({_area}) but it's not free/offered. Blocked."),
+                    )
+                except Exception:
+                    pass
+            if wappi_client:
+                try:
+                    await wappi_client.send_message(
+                        phone,
+                        f"Sorry dear, {_to_ampm(booking_call.time)} isn't free 🙏 "
+                        "let me offer you the real times — one moment 🌹")
+                except Exception:
+                    pass
+            return
 
     # Save in local DB
     try:
@@ -1560,7 +1604,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # not reliable about it (it says "confirmed" on a reschedule, or before
         # it has a location/name). See _enforce_reply_wording.
         response_text = _enforce_reply_wording(
-            response_text, actions, booking_call, context.client_data, user_text=text
+            response_text, actions, booking_call, context.client_data, user_text=text,
+            already_booked_sig=getattr(context, "last_booking_sig", None),
         )
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
