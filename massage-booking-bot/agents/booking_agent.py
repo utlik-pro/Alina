@@ -822,11 +822,54 @@ You are Alina who speaks whatever language the client uses."""
             answer = self._remove_prepayment_from_response(answer)
             answer = self._remove_checking_from_response(answer)
 
+            # The model very often returns ONLY a tool call with empty text.
+            # Never leave an empty reply (and never let a filter fabricate a
+            # generic "booking confirmed") — synthesise the correct message from
+            # the structured call.
+            if not answer.strip() and (actions.booking_call or actions.cancel_call
+                                       or actions.reschedule_call):
+                answer = self._synthesize_tool_reply(actions)
+
             return answer, actions
 
         except Exception as e:
             logger.error(f"Ошибка при обработке (with_tools): {e}", exc_info=True)
             return "Sorry dear, there was a technical issue. Please try again 🙏", AgentActions()
+
+    @staticmethod
+    def _synthesize_tool_reply(actions) -> str:
+        """Build the client reply from a structured tool call when the model
+        returned no text. Reschedule/cancel are team-mediated (never say
+        "done"); a booking gets a real recap of what was booked."""
+        from services.yclients_service import _to_ampm
+        if actions.reschedule_call is not None:
+            nt = actions.reschedule_call.new_time
+            when = _to_ampm(nt) if nt else "the new time"
+            return (f"Noted dear 🌹 I've passed your reschedule to {when} to the team — "
+                    f"we'll confirm it shortly 🙏")
+        if actions.cancel_call is not None:
+            return ("Ok dear, I've passed your cancellation to the team — "
+                    "they'll confirm it for you shortly 🌹")
+        bc = actions.booking_call
+        if bc is not None:
+            svc = (bc.service or "appointment").replace("_", " ").strip().capitalize()
+            dur = f"{bc.duration_minutes}-min " if getattr(bc, "duration_minutes", None) else ""
+            when = ""
+            try:
+                d = datetime.strptime(bc.date, "%Y-%m-%d")
+                when = d.strftime("%a %-d %b")
+            except Exception:
+                when = bc.date or ""
+            t = _to_ampm(bc.time) if getattr(bc, "time", None) else ""
+            master = getattr(bc, "master_name", None) or "your therapist"
+            base = getattr(bc, "base_price_aed", None) or 0
+            pay = getattr(bc, "payment_method", "cash")
+            total = base if pay == "cash" else round(base * 1.05)
+            price = f", {int(total)} AED ({'cash' if pay == 'cash' else 'bank transfer'})" if base else ""
+            head = f"Your {dur}{svc} is booked ✅"
+            detail = " — ".join(x for x in [master, f"{when} {t}".strip(), price.lstrip(", ")] if x)
+            return f"{head}\n{detail} 🌹" if detail else head
+        return "Just a moment dear 🙏"
 
     # Patterns of stale assistant replies we never want to feed back to
     # the model. These were emitted by older builds when YClients data
@@ -1057,8 +1100,13 @@ You are Alina who speaks whatever language the client uses."""
                 flags=re.IGNORECASE | re.MULTILINE,
             )
 
-        # Если удалили всё — вернуть безопасный ответ
+        # If the INPUT was already empty (e.g. the model returned only a tool
+        # call, no text), do NOT fabricate a booking confirmation — the caller
+        # synthesises the right reply from the structured tool call. Only fall
+        # back when we actually stripped a real (prepayment) message to nothing.
         if not cleaned.strip():
+            if not (text or "").strip():
+                return ""
             logger.warning("Prepayment filter removed entire response, using safe fallback")
             return "Ok dear, your booking is confirmed 🌹 You'll pay at the appointment (cash or bank transfer — as you prefer) 🙏"
 

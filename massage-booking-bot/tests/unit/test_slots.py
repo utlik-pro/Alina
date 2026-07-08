@@ -118,6 +118,21 @@ async def test_long_service_needs_bigger_gap(yc, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_last_start_is_duration_aware(yc, monkeypatch):
+    """A long service must start early enough to finish by the 23:00 close:
+    last start = min(21:00, 23:00 - duration). A 3h combo can't start at 21:00."""
+    async def times(*a, **k):
+        return _bt(*[f"{h}:00" for h in range(10, 23)])  # 10:00–22:00 hourly
+    async def records(*a, **k):
+        return []
+    monkeypatch.setattr(yc, "get_available_times", times)
+    monkeypatch.setattr(yc, "get_records", records)
+    assert (await yc.get_real_available_slots(1, "2030-01-06", 60))[-1] == "21:00"
+    assert (await yc.get_real_available_slots(1, "2030-01-06", 120))[-1] == "21:00"
+    assert (await yc.get_real_available_slots(1, "2030-01-06", 180))[-1] == "20:00"  # 3h combo
+
+
+@pytest.mark.asyncio
 async def test_summary_passes_service_duration(yc, monkeypatch):
     """get_available_slots_summary must forward the requested duration to
     get_real_available_slots (default 60 when unset)."""

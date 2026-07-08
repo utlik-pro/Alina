@@ -823,7 +823,11 @@ class YClientsService:
         # lists them (a master's YClients hours sometimes run later than the
         # salon actually serves home visits).
         WORK_START = 10 * 60        # 10:00 — first booking
-        WORK_LAST_START = 21 * 60   # 21:00 — last booking start ("last booking at 9pm")
+        # Last START is 21:00, but the SESSION may run only until the 23:00
+        # close — so a long service must start earlier (a 3h combo can't start
+        # at 21:00 → ends midnight). Cap = min(21:00, 23:00 − duration).
+        WORK_CLOSE = 23 * 60
+        WORK_LAST_START = min(21 * 60, WORK_CLOSE - int(service_duration or 60))
 
         # Keep EVERY genuinely-free slot (10:00+, past-time filtered for today,
         # travel-buffer clear of existing visits). We deliberately do NOT thin
