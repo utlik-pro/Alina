@@ -134,7 +134,7 @@ class NotificationService:
         if booking.total_price:
             if booking.payment_method == "cash":
                 price_str = f"{booking.total_price:.2f} AED 💵 (наличные, без VAT)"
-            elif booking.payment_method == "transfer":
+            elif booking.payment_method in ("transfer", "bank_transfer"):
                 base = booking.base_price if booking.base_price else 0
                 vat = booking.vat_amount if booking.vat_amount else 0
                 price_str = f"{booking.total_price:.2f} AED 🏦 (перевод: {base:.2f} + {vat:.2f} VAT)"
