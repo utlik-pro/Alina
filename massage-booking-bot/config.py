@@ -19,7 +19,7 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
 
     # Database
     DATABASE_URL: str = os.getenv(
