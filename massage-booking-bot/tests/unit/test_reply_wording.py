@@ -59,3 +59,29 @@ def test_placeholder_name_does_not_count():
 def test_no_action_returns_original():
     out = _enforce_reply_wording("hello dear 🌹", _actions(), None, {})
     assert out == "hello dear 🌹"
+
+
+def test_recap_omits_placeholder_master_and_uses_friendly_name():
+    import types
+    from agents.booking_agent import BookingAgent
+    bc = types.SimpleNamespace(service="combo_mani_pedi", duration_minutes=180,
+                               date="2026-07-09", time="16:00", master_name="",
+                               base_price_aed=380, payment_method="cash")
+    out = BookingAgent._synthesize_tool_reply(
+        types.SimpleNamespace(booking_call=bc, cancel_call=None, reschedule_call=None))
+    assert "combo mani + pedi" in out          # friendly, not "180-min Nails"
+    assert "your therapist" not in out.lower()  # no placeholder
+    assert "booked ✅" in out
+
+
+def test_dedupe_collapses_stutter():
+    from agents.booking_agent import BookingAgent
+    dup = "Tomorrow 5 PM with Makhabat 🌹\n\nTomorrow 5 PM with Makhabat 🌹"
+    assert BookingAgent._dedupe_blocks(dup) == "Tomorrow 5 PM with Makhabat 🌹"
+
+
+def test_wrong_day_mismatch_none_when_no_day_word():
+    import types
+    from webhook_app import _booking_day_mismatch
+    bc = types.SimpleNamespace(date="2026-07-09", time="17:00")
+    assert _booking_day_mismatch("book me at 5pm", bc) is None  # no tomorrow/today word

@@ -169,7 +169,29 @@ def _booking_has_location_and_name(booking_call, client_data: dict) -> tuple:
     return has_loc, has_name
 
 
-def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict) -> str:
+def _booking_day_mismatch(user_text: str, booking_call):
+    """If the client's message says "tomorrow"/"today" but the booking's date is
+    a different day, return ("tomorrow"|"today", the_real_YYYY-MM-DD) so we can
+    confirm the day instead of silently booking a wrong-day home visit. Else None."""
+    if booking_call is None or not getattr(booking_call, "date", None):
+        return None
+    t = (user_text or "").lower()
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    now = _dt.now(_tz(_td(hours=4)))
+    try:
+        bd = _dt.strptime(booking_call.date, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    tomorrow = (now + _td(days=1)).date()
+    today = now.date()
+    if ("tomorrow" in t or "завтра" in t) and bd != tomorrow:
+        return ("tomorrow", tomorrow.isoformat())
+    if (("today" in t or "сегодня" in t) and "tomorrow" not in t and "завтра" not in t) and bd != today:
+        return ("today", today.isoformat())
+    return None
+
+
+def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict, user_text: str = "") -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -185,6 +207,15 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
         return (f"Noted dear 🌹 I've passed your reschedule to {newt} to the team — "
                 f"we'll confirm it shortly 🙏")
     if booking_call is not None:
+        _dm = _booking_day_mismatch(user_text, booking_call)
+        if _dm:
+            from datetime import datetime as _dt2
+            try:
+                _nice = _dt2.strptime(_dm[1], "%Y-%m-%d").strftime("%A %-d %b")
+            except ValueError:
+                _nice = _dm[1]
+            return (f"Just to confirm dear 🌹 you'd like {_dm[0]} — {_nice}, right? "
+                    f"I want to make sure the therapist comes on the correct day.")
         has_loc, has_name = _booking_has_location_and_name(booking_call, client_data)
         if not (has_loc and has_name):
             if not has_loc and not has_name:
@@ -612,6 +643,32 @@ async def _maybe_create_booking(
     # binding. If either is missing, DON'T create the record; ask the client for
     # what's missing and alert the admin. (The confirmation reply was already
     # sent, so we send a corrective follow-up.)
+    # Wrong-day guard: if the client's last message said tomorrow/today but the
+    # booking date is a different day, do NOT create the record — a home visit on
+    # the wrong day is the worst outcome. The wording override already asked the
+    # client to confirm the day; here we just block + alert admin.
+    _last_user = ""
+    for _m in reversed(context.recent_messages or []):
+        if _m.get("role") == "user":
+            _last_user = _m.get("content") or ""
+            break
+    _dm = _booking_day_mismatch(_last_user, booking_call)
+    if _dm:
+        logger.error(
+            f"Wappi: WRONG-DAY booking BLOCKED for {telegram_id} — client said "
+            f"{_dm[0]!r} but tool date={booking_call.date}. No record created."
+        )
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=(f"Day mismatch: client said {_dm[0]} ({_dm[1]}) but tool "
+                            f"date={booking_call.date}. Blocked — confirm the day."),
+                )
+            except Exception:
+                pass
+        return
+
     _has_location, _has_name = _booking_has_location_and_name(
         booking_call, context.client_data
     )
@@ -1503,7 +1560,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # not reliable about it (it says "confirmed" on a reschedule, or before
         # it has a location/name). See _enforce_reply_wording.
         response_text = _enforce_reply_wording(
-            response_text, actions, booking_call, context.client_data
+            response_text, actions, booking_call, context.client_data, user_text=text
         )
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
