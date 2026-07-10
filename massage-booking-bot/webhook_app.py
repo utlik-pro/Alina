@@ -67,6 +67,13 @@ _WAPPI_BUFFER_DELAY = float(_os_buf.getenv("WAPPI_BUFFER_DELAY", "20"))  # secon
 # the "сначала записал, глючит" report). The lock serialises turns per phone.
 _wappi_locks: "dict[str, asyncio.Lock]" = {}
 
+# In-flight buffer-flush tasks (named "wappi-flush:<phone>"). Render deploys
+# SIGTERM the old instance while webhooks were already ACKed 200 to Wappi —
+# Wappi never redelivers, so a turn that dies here dies SILENTLY (live-caught
+# 2026-07-10 14:41: client sent two questions during a deploy, got dead air).
+# The shutdown drain awaits these before the process exits.
+_wappi_inflight: "set[asyncio.Task]" = set()
+
 # Promo photos already sent to a phone (this process lifetime). get_promo_photo
 # fires on every turn where the service/offer keywords match, so without this a
 # client discussing "body massage" across several turns would receive the same
@@ -579,6 +586,12 @@ async def lifespan(application: FastAPI):
 
     # Shutdown — do NOT delete webhook, new instance will re-set it on startup
     logger.info("Shutting down...")
+    # FIRST: finish what clients are owed. Buffered/in-flight Wappi turns die
+    # silently if we close the clients under them (deploy = SIGTERM here).
+    try:
+        await _drain_wappi_turns()
+    except Exception:
+        logger.error("Wappi shutdown drain failed", exc_info=True)
     if getattr(bot_module, "reminder_scheduler", None):
         await bot_module.reminder_scheduler.stop()
     if bot_module.follow_up_service:
@@ -658,8 +671,97 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
             pass  # new message arrived, will be handled by new timer
         except Exception as e:
             logger.error(f"Wappi buffer flush error: {e}", exc_info=True)
+            # Never leave the client on read: a crash here used to mean dead
+            # air (the webhook already ACKed Wappi, nothing retries).
+            try:
+                if wappi_client:
+                    await wappi_client.send_message(
+                        phone, "Sorry dear, one moment 🙏 Please repeat your message 🌹"
+                    )
+            except Exception:
+                pass
 
-    entry["timer"] = asyncio.create_task(_flush())
+    task = asyncio.create_task(_flush(), name=f"wappi-flush:{phone}")
+    _wappi_inflight.add(task)
+    task.add_done_callback(_wappi_inflight.discard)
+    entry["timer"] = task
+
+
+# Render sends SIGKILL ~30s after SIGTERM; leave headroom for the fallback
+# sends + admin alert after the drain wait.
+_WAPPI_DRAIN_TIMEOUT = float(_os_buf.getenv("WAPPI_DRAIN_TIMEOUT", "22"))
+
+
+async def _drain_wappi_turns():
+    """Flush buffered Wappi messages and wait out in-flight turns on shutdown.
+
+    Without this, a deploy silently drops every message that is sitting in the
+    20s collect window or mid-LLM: the webhook already returned 200, Wappi
+    never redelivers, the client just gets read-and-ignored.
+    """
+    # Phones still in the buffer are waiting out the collect window — their
+    # timer hasn't popped the buffer yet, so it is safe to cancel and process
+    # the collected fragments immediately.
+    drained: "list[asyncio.Task]" = []
+    for phone, entry in list(_wappi_buffer.items()):
+        _wappi_buffer.pop(phone, None)
+        timer = entry.get("timer")
+        if timer and not timer.done():
+            timer.cancel()
+        combined = "\n".join(entry["messages"])
+        sender = entry.get("sender_name") or ""
+
+        async def _run(p=phone, text=combined, name=sender):
+            async with _phone_lock(p):
+                await _process_wappi_message(p, text, name)
+
+        drained.append(asyncio.create_task(_run(), name=f"wappi-flush:{phone}"))
+
+    # Tasks already past their sleep are mid-turn (possibly mid-LLM) — never
+    # cancel those, wait for them. Just-cancelled timers finish instantly.
+    inflight = [t for t in _wappi_inflight if not t.done()]
+    if not drained and not inflight:
+        return
+    logger.info(
+        f"Shutdown: draining {len(drained)} buffered + {len(inflight)} in-flight Wappi turns"
+    )
+    _done, pending = await asyncio.wait(
+        drained + inflight, timeout=_WAPPI_DRAIN_TIMEOUT
+    )
+    if not pending:
+        return
+    # About to be SIGKILLed with turns unfinished: ask the client to nudge us
+    # instead of dead air, and tell the admin which dialogues were cut.
+    cut_phones = []
+    for t in pending:
+        name = t.get_name()
+        cut_phones.append(name.split(":", 1)[1] if ":" in name else name)
+    logger.error(f"Shutdown drain timed out; turns cut for: {cut_phones}")
+    for p in cut_phones:
+        try:
+            if wappi_client and p.isdigit():
+                await asyncio.wait_for(
+                    wappi_client.send_message(
+                        p, "Sorry dear, one moment 🙏 Please repeat your message 🌹"
+                    ),
+                    timeout=5,
+                )
+        except Exception:
+            pass
+    try:
+        import bot as bot_module
+        ns = getattr(bot_module, "notification_service", None)
+        if ns and getattr(ns, "group_chat_id", None):
+            await ns.bot.send_message(
+                chat_id=ns.group_chat_id,
+                text=(
+                    "⚠️ Деплой оборвал обработку сообщений WhatsApp.\n"
+                    "Клиенты: " + ", ".join(cut_phones)[:500] + "\n"
+                    "Агент попросил их написать ещё раз — проверьте, что диалог продолжился."
+                ),
+            )
+    except Exception:
+        pass
 
 
 async def _maybe_create_booking(
