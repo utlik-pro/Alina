@@ -37,11 +37,40 @@ def test_booking_without_name_is_replaced_with_ask():
     assert "name" in out.lower()
 
 
-def test_booking_with_location_and_name_is_left_unchanged():
+def test_booking_confirmed_by_client_is_left_unchanged():
     bc = _bc(address="Khalifa City villa 3", client_name="Sara")
     original = "Your body massage is booked on Tuesday at 5:00 PM ✅"
-    out = _enforce_reply_wording(original, _actions(), bc, {})
+    # The client explicitly said yes → the model's confirmation passes through.
+    out = _enforce_reply_wording(original, _actions(), bc, {}, user_text="yes please confirm")
     assert out == original
+
+
+def test_booking_without_explicit_confirm_becomes_recap_question():
+    """ТЗ: …→ payment → explicit CONFIRM. If the model books straight off the
+    payment answer ("cash"), the reply must become the recap question instead
+    of a premature "booked ✅" (live 2026-07-10 catch)."""
+    bc = types.SimpleNamespace(
+        address="Khalifa City villa 3", client_name="Sara",
+        service="body_massage", duration_minutes=90, date="2030-01-06",
+        time="10:00", payment_method="cash", base_price_aed=460,
+        master_name="Natalia",
+    )
+    out = _enforce_reply_wording(
+        "Your body massage is booked ✅", _actions(), bc, {}, user_text="cash")
+    assert "Shall I confirm?" in out
+    assert "booked" not in out.lower()
+    # Recap carries the agreed details.
+    assert "90-min" in out and "Natalia" in out and "460 AED" in out
+
+
+def test_client_confirmed_detector():
+    from webhook_app import _client_confirmed
+    for yes in ("yes", "Yes, confirm", "ok", "давай", "подтверждаю", "book it",
+                "👍", "+", "sure, go ahead", "да, записывайте"):
+        assert _client_confirmed(yes), yes
+    for no in ("cash", "bank transfer", "Sarah", "Al Reem Island villa 3",
+               "10:00 AM", "what about tomorrow?", ""):
+        assert not _client_confirmed(no), no
 
 
 def test_gps_in_context_counts_as_location():

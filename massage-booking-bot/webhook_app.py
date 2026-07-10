@@ -283,7 +283,61 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
                 return ("Almost done dear 🌹 please share your location 📍 (or type your "
                         "address) so the therapist can reach you 🙏")
             return "Almost done dear 🌹 may I have your name for the booking?"
+        # Explicit-confirm gate (ТЗ: …→ payment → explicit CONFIRM). The prompt
+        # asks for a recap + "yes", but the model sometimes books straight off
+        # the payment answer ("cash") — caught in the 2026-07-10 live test.
+        # If the client's LAST message isn't a confirmation, replace the
+        # premature "booked ✅" with the recap question; _maybe_create_booking
+        # applies the same check so no record is created on this turn.
+        if not _client_confirmed(user_text):
+            return _booking_recap_question(booking_call)
     return response_text
+
+
+# Words that count as the client's explicit "yes" to the final recap. Checked
+# against the LAST client message only — this is the second line of defence
+# (the model shouldn't call book_appointment before a confirm at all).
+_CONFIRM_WORDS_RE = re.compile(
+    r"\b(?:yes|yep|yeah|yup|confirm(?:ed)?|sure|ok(?:ay)?|go ahead|book(?: it| me)?|"
+    r"please book|sounds good|perfect|great|deal|agreed|yalla|"
+    r"да|ага|конечно|подтверждаю|подтверди(?:те)?|давай(?:те)?|хорошо|ок|окей|"
+    r"бронируй(?:те)?|записывай(?:те)?|запиши(?:те)?|пиши(?:те)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _client_confirmed(user_text: str) -> bool:
+    """True if the client's message reads as an explicit go-ahead."""
+    t = (user_text or "").strip()
+    if not t:
+        return False
+    if "✅" in t or "👍" in t or t == "+":
+        return True
+    return _CONFIRM_WORDS_RE.search(t) is not None
+
+
+def _booking_recap_question(booking_call) -> str:
+    """The final recap the agent must send BEFORE booking: one message with
+    every agreed detail and a direct yes/no question."""
+    svc = (getattr(booking_call, "service", "") or "appointment").replace("_", " ").strip()
+    dur = getattr(booking_call, "duration_minutes", None)
+    when = getattr(booking_call, "date", "") or ""
+    try:
+        from datetime import datetime as _dt3
+        when = _dt3.strptime(when, "%Y-%m-%d").strftime("%A %-d %b")
+    except ValueError:
+        pass
+    t = _to_ampm(getattr(booking_call, "time", "") or "")
+    master = (getattr(booking_call, "master_name", None) or "").strip()
+    pay = getattr(booking_call, "payment_method", "") or ""
+    price = getattr(booking_call, "base_price_aed", None)
+    bits = [f"{dur}-min {svc}" if dur else svc]
+    if master:
+        bits.append(f"with {master}")
+    bits.append(f"{when} at {t}".strip())
+    if price:
+        bits.append(f"{int(price)} AED ({'cash — tax free' if pay == 'cash' else 'bank transfer +5% VAT'})")
+    return f"So dear — {', '.join(bits)} 🌹 Shall I confirm?"
 
 
 def _detect_service_duration(text_lower: str) -> Optional[int]:
@@ -766,6 +820,19 @@ async def _maybe_create_booking(
                 )
             except Exception:
                 pass
+        return
+
+    # Explicit-confirm gate (ТЗ: …→ payment → explicit CONFIRM). The model
+    # sometimes calls book_appointment straight off the payment answer ("cash")
+    # without the final recap+yes — caught live 2026-07-10. If the client's
+    # LAST message isn't a confirmation, don't create the record; the wording
+    # override already replaced the reply with the recap question, so the
+    # client's "yes" on the next turn re-fires the tool and passes this gate.
+    if not _client_confirmed(_last_user):
+        logger.info(
+            f"Wappi: booking deferred for {telegram_id} — awaiting explicit "
+            f"confirm (last msg: {_last_user[:60]!r}). Recap question sent."
+        )
         return
 
     # Slot-reality gate: never create a record for a time that isn't genuinely
