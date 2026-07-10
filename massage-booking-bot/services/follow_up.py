@@ -280,12 +280,15 @@ class FollowUpService:
         location_details: str = "",
     ) -> str:
         """Format day-before booking confirmation message."""
+        from prices import display_service_name
         date_str = booking_date.strftime("%A, %B %d")
         time_str = booking_date.strftime("%I:%M %p")
         location = location_details if location_details else "Your location"
 
         return DAY_BEFORE_TEMPLATE.format(
-            service_name=service_name,
+            # bookings store the tool-call key ("deep_facial_cleansing") —
+            # never show that raw to a client
+            service_name=display_service_name(service_name),
             date=date_str,
             time=time_str,
             location=location,

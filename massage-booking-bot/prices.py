@@ -382,3 +382,19 @@ def format_special_offers_for_prompt() -> str:
         lines.append(f"- {pkg['name']}: {pkg['sessions']} x {pkg['duration']}min - {pkg['price']:,} AED (was {pkg['was']:,})")
 
     return "\n".join(lines)
+
+
+def display_service_name(raw: str) -> str:
+    """Human-readable service name for client-facing messages.
+
+    Bookings store the tool-call service key ("deep_facial_cleansing"), and
+    reminder/survey templates used to print it verbatim (live catch
+    2026-07-10). Look the key up in the catalog; fall back to de-snaking.
+    """
+    key = (raw or "").strip()
+    if not key:
+        return "your appointment"
+    item = SERVICE_CATALOG.get(key)
+    if item and item.get("name"):
+        return item["name"]
+    return key.replace("_", " ").strip().capitalize()

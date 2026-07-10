@@ -138,3 +138,12 @@ def test_match_booking_by_old_slot():
     assert _match_booking_by_old_slot([b1, b2], None, None) is None
     # Garbage time → no crash, no guess.
     assert _match_booking_by_old_slot([b1, b2], None, "half past five") is None
+
+
+def test_display_service_name_never_leaks_snake_case():
+    """Reminders/surveys печатали сырой ключ ('deep_facial_cleansing') — live
+    catch 2026-07-10. Client-facing name must come from the catalog."""
+    from prices import display_service_name as d
+    assert d("deep_facial_cleansing") == "Deep facial cleansing"
+    assert "_" not in d("body_massage_90")
+    assert d("") == "your appointment"

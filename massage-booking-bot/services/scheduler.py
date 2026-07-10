@@ -205,9 +205,14 @@ class ReminderScheduler:
             name = (b.get("client_name") or "dear").split(" ")[0]
             try:
                 # 1) the survey itself
+                from prices import display_service_name
                 await self.send_message(
                     phone,
-                    SURVEY_TEMPLATE.format(name=name, service=b["service_name"]),
+                    SURVEY_TEMPLATE.format(
+                        name=name,
+                        # never show the raw tool key ("deep_facial_cleansing")
+                        service=display_service_name(b["service_name"]),
+                    ),
                 )
 
                 # 2) the next-step offer (consumes a package session if linked)
