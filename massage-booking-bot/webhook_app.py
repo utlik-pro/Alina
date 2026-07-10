@@ -103,6 +103,23 @@ def _is_reset_command(text: str) -> bool:
     return text.strip().lower().rstrip("!. ") in _RESET_COMMANDS
 
 
+# Fresh-start reply after /clear — bypasses the LLM, so it must itself follow
+# ТЗ §6 step 1 (greeting + the brief service menu). It used to be a bare
+# "What services are you interested in?" with no menu — the owner's complaint.
+_RESET_GREETING = (
+    "✅ Memory cleared dear 🌹 Let's start fresh!\n\n"
+    "Welcome to Crystal Lab home service 🙌\n"
+    "Certified Russian therapists and free transportation to your home 🏠\n"
+    "Abu Dhabi, Al Ain and Dubai 🌹\n\n"
+    "- Body massage (different techniques)\n"
+    "- Face massage\n"
+    "- Deep facial cleansing\n"
+    "- Manicure and pedicure\n"
+    "- Eyelash extension and lifting\n\n"
+    "What services are you interested in? We will give you all the details 🌹"
+)
+
+
 _NAILS_KW = ("manicure", "pedicure", "mani ", "mani+", "pedi", "nail", "gelish",
              "маникюр", "педикюр", "ногт")
 _MASSAGE_KW = ("massage", "body", "lymphatic", "cupping", "deep tissue",
@@ -1403,7 +1420,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             if wappi_client:
                 await wappi_client.send_message(
                     phone,
-                    "✅ Memory cleared dear 🌹 Let's start fresh! What services are you interested in?"
+                    _RESET_GREETING
                 )
             return
 
@@ -2105,10 +2122,7 @@ async def _reset_and_greet(phone: str, user_id: str):
         async with _phone_lock(phone):
             await _reset_user(user_id, user_id)
         if wappi_client:
-            await wappi_client.send_message(
-                phone,
-                "✅ Memory cleared dear 🌹 Let's start fresh! What services are you interested in?"
-            )
+            await wappi_client.send_message(phone, _RESET_GREETING)
     except Exception as e:
         logger.error(f"Reset-and-greet failed for {phone}: {e}")
 
