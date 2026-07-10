@@ -95,7 +95,11 @@ A booking created without location + confirmation is a bug.
   currently makes a local record but does NOT move the YClients slot, so the calendar
   keeps the old time ("перенёс с 2 на 4 — осталась на 2"). Either update YClients or
   tell the client "requested — admin will confirm". Resolve with the client.
-- With >1 active booking, don't guess which — ask the client.
+- With >1 active booking, don't guess which — the cancel/reschedule tools carry an
+  `old_date`/`old_time` selector (the slot the client names, "move my 5:30 PM");
+  `_match_booking_by_old_slot` picks the unique match, and ONLY an unresolvable
+  ambiguity asks the client. (Before 2026-07-10 the clarifying answer had no path
+  back → "which one?" looped forever — live-caught and fixed.)
 
 ## Reliability invariants (hardened 2026-07-09 — do NOT regress)
 - **Outage ≠ day-off.** `get_available_times` returns **None** on a YClients API
