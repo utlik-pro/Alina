@@ -90,11 +90,22 @@ client to state minutes; look it up from the service. For body massage, ask 60 o
 text address) → NAME → payment → explicit CONFIRM`. Phone is already known (WhatsApp).
 A booking created without location + confirmation is a bug.
 
-### Cancel / reschedule
-- YClients records are NOT auto-modified (safety rule). **Open decision:** reschedule
-  currently makes a local record but does NOT move the YClients slot, so the calendar
-  keeps the old time ("перенёс с 2 на 4 — осталась на 2"). Either update YClients or
-  tell the client "requested — admin will confirm". Resolve with the client.
+### Cancel / reschedule — the agent manages YClients ITSELF
+- **Owner decision 2026-07-10 (Dmitry, explicit): full YClients automation.** The old
+  "never modify YClients" safety rule is REVOKED. Cancel = the agent DELETES the
+  record; reschedule = the agent MOVES the record (PUT, same therapist, services/
+  costs preserved, comment gets "Перенесено агентом"). No Telegram hand-off as the
+  primary mechanism — the calendar itself must be correct.
+- **HARD GUARD (do not weaken):** a record is only mutated when its client phone
+  matches the WhatsApp client asking (`_phones_match`, last-9-digits). Other clients'
+  records, admin records and emirate markers (no client) can never be touched; a
+  mismatch/outage refuses and alerts the admin instead. Old bookings without a stored
+  record id are resolved via `find_record_by_phone` (unique live match only).
+- YClients record id is persisted on create (`set_yclients_id`); cancel/reschedule
+  target through it. If the YClients mutation fails → admin alert «уберите/обновите
+  вручную» + (reschedule only) an honest follow-up to the client.
+- Agent wording: cancel → "Your appointment is cancelled ✅"; reschedule → "moved to
+  [time] ✅" (unconfirmed cancel still asks "shall I cancel?").
 - With >1 active booking, don't guess which — the cancel/reschedule tools carry an
   `old_date`/`old_time` selector (the slot the client names, "move my 5:30 PM");
   `_match_booking_by_old_slot` picks the unique match, and ONLY an unresolvable
@@ -122,6 +133,16 @@ A booking created without location + confirmation is a bug.
   "…Shall I confirm?". Proven live 2026-07-10 ([TEST] records #9/#10).
 - **Admin mutation endpoints deny by default** — never open when `WEBHOOK_SECRET`
   is unset.
+- **A deploy must not eat client messages.** Wappi webhooks are ACKed 200
+  immediately — Wappi never redelivers. Render SIGTERM used to kill turns
+  sitting in the 20s collect buffer or mid-LLM → dead air (live-caught
+  2026-07-10 14:41: a push to develop redeployed prod exactly while a tester
+  asked two questions). `_drain_wappi_turns` in `webhook_app.py` now flushes
+  buffers + awaits in-flight turns on shutdown (22s, `WAPPI_DRAIN_TIMEOUT`);
+  turns that can't finish get a "please repeat" nudge + admin-group alert. A
+  flush exception also sends a fallback instead of silence. ⚠️ Corollary:
+  **pushing to develop = instant prod deploy** — don't push while testers are
+  mid-conversation.
 
 ## Verification checklist before saying "done"
 - [ ] Drove the FULL live conversation (service→area→slot→location→name→payment→confirm)

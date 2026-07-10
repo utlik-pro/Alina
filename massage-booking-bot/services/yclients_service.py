@@ -1111,6 +1111,158 @@ class YClientsService:
             logger.error(f"YClients: create booking exception: {e}")
             return None
 
-    # ─── FORBIDDEN OPERATIONS ───────────────────────────────
-    # These methods are intentionally NOT implemented.
-    # DO NOT add update_booking(), delete_booking(), or any PUT/PATCH/DELETE methods.
+    # ─── RECORD MUTATIONS (owner decision 2026-07-10) ─────────────────────
+    # The agent fully manages YClients for ITS OWN clients: create, cancel
+    # (delete the record), reschedule (move the record). This replaced the old
+    # "never modify YClients" safety rule at the owner's explicit request —
+    # no Telegram hand-off, the calendar itself must be correct.
+    #
+    # HARD GUARD (do not weaken): a record is only ever mutated when its
+    # client phone matches the WhatsApp client asking. Other clients' records,
+    # admin records and the emirate marker records (no client at all) can
+    # never be touched — a phone mismatch refuses and reports instead.
+
+    @staticmethod
+    def _phones_match(a: Optional[str], b: Optional[str]) -> bool:
+        """Compare phones by their last 9 digits (country formats vary)."""
+        da = "".join(ch for ch in str(a or "") if ch.isdigit())
+        db = "".join(ch for ch in str(b or "") if ch.isdigit())
+        if len(da) < 7 or len(db) < 7:
+            return False
+        return da[-9:] == db[-9:]
+
+    async def get_record(self, record_id) -> Optional[Dict]:
+        """Fetch a single record by id. None on failure/not found."""
+        data = await self._get(f"record/{self.company_id}/{record_id}")
+        if isinstance(data, dict):
+            rec = data.get("data")
+            return rec if isinstance(rec, dict) else None
+        return None
+
+    async def find_record_by_phone(self, phone: str, date: str) -> Optional[Dict]:
+        """Find this client's record on `date` by phone (for bookings created
+        before we started persisting the YClients id locally). Returns the
+        record dict, or None if there is no UNIQUE live match — never guesses
+        between two records."""
+        data = await self._get(f"records/{self.company_id}", params={
+            "start_date": date, "end_date": date, "count": 100,
+        })
+        if not isinstance(data, dict):
+            return None
+        matches = [
+            r for r in (data.get("data") or [])
+            if not r.get("deleted")
+            and self._phones_match((r.get("client") or {}).get("phone"), phone)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                f"YClients: {len(matches)} records for {phone} on {date} — ambiguous, not guessing"
+            )
+        return None
+
+    async def _guarded_record(self, record_id, client_phone: str, action: str) -> Optional[Dict]:
+        rec = await self.get_record(record_id)
+        if not rec:
+            logger.error(f"YClients {action}: record {record_id} not found / API failure")
+            return None
+        rec_phone = (rec.get("client") or {}).get("phone")
+        if not self._phones_match(rec_phone, client_phone):
+            logger.error(
+                f"YClients {action} REFUSED: record {record_id} belongs to "
+                f"{rec_phone!r}, not to requester {client_phone!r}"
+            )
+            return None
+        return rec
+
+    async def cancel_record(self, record_id, client_phone: str) -> bool:
+        """Delete the client's record from the calendar (client-initiated
+        cancellation). True only on confirmed deletion."""
+        rec = await self._guarded_record(record_id, client_phone, "cancel")
+        if not rec:
+            return False
+        url = f"{self.BASE_URL}/record/{self.company_id}/{record_id}"
+        try:
+            session = await self._get_session()
+            async with session.delete(url, headers=self._headers) as resp:
+                if resp.status in (200, 204):
+                    logger.info(f"YClients: record {record_id} deleted (cancel by {client_phone})")
+                    return True
+                body = await resp.text()
+                logger.error(f"YClients: delete record {record_id} failed: {resp.status} {body[:200]}")
+                return False
+        except Exception as e:
+            logger.error(f"YClients: delete record {record_id} exception: {e}")
+            return False
+
+    async def reschedule_record(
+        self,
+        record_id,
+        client_phone: str,
+        new_date: str,
+        new_time: str,
+        duration_minutes: Optional[int] = None,
+    ) -> bool:
+        """Move the client's record to a new date/time (same therapist).
+        Preserves services/costs/comment. True only on confirmed update."""
+        rec = await self._guarded_record(record_id, client_phone, "reschedule")
+        if not rec:
+            return False
+        staff_id = (rec.get("staff") or {}).get("id") or rec.get("staff_id")
+        if not staff_id:
+            logger.error(f"YClients: reschedule {record_id}: no staff_id on record")
+            return False
+        if duration_minutes:
+            seance = max(int(duration_minutes), 15) * 60
+        else:
+            seance = int(rec.get("seance_length") or 3600)
+        # Preserve existing service linkage incl. costs (package pricing must
+        # survive the move).
+        services = []
+        for s in rec.get("services") or []:
+            if s.get("id"):
+                item = {"id": s["id"]}
+                for k in ("cost", "first_cost", "discount", "amount"):
+                    if s.get(k) is not None:
+                        item[k] = s[k]
+                services.append(item)
+        cli = rec.get("client") or {}
+        old_when = rec.get("date") or "?"
+        payload = {
+            "staff_id": staff_id,
+            "services": services,
+            # Same wall-clock convention as create_booking (account is UTC+3,
+            # salon enters UAE wall-clock against it).
+            "datetime": f"{new_date}T{new_time}:00+03:00",
+            "seance_length": seance,
+            "save_if_busy": False,
+            "attendance": rec.get("attendance", 0),
+            "comment": ((rec.get("comment") or "").strip()
+                        + f" | Перенесено агентом: было {old_when}").strip(" |"),
+            "client": {
+                "name": cli.get("name") or "Client",
+                "phone": cli.get("phone") or client_phone,
+            },
+        }
+        url = f"{self.BASE_URL}/record/{self.company_id}/{record_id}"
+        try:
+            session = await self._get_session()
+            async with session.put(url, headers=self._headers, json=payload) as resp:
+                try:
+                    data = await resp.json()
+                except Exception:
+                    data = {}
+                if resp.status in (200, 201) and (data.get("success") or data.get("data")):
+                    logger.info(
+                        f"YClients: record {record_id} moved {old_when} → {new_date} {new_time}"
+                    )
+                    return True
+                logger.error(
+                    f"YClients: move record {record_id} failed: {resp.status} "
+                    f"{(data.get('meta') or {}).get('message', '')}"
+                )
+                return False
+        except Exception as e:
+            logger.error(f"YClients: move record {record_id} exception: {e}")
+            return False

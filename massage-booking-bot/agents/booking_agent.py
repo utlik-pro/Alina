@@ -647,13 +647,16 @@ When a client wants to RESCHEDULE (move to another day/time):
   this chat — that's how the system knows WHICH booking to move when they have
   several. If the client just answered which one ("the 5:30 PM one"), re-call
   the tool with that old_time and the same new date/time as before.
-- 🚫 Do NOT tell the client it's "done" / "moved" / "confirmed". The move is
-  applied by the team, not instantly. Say something like:
-  "Noted dear 🌹 I've passed your reschedule to [new time] to the team — we'll
-  confirm it shortly." Never imply the calendar is already changed.
+- After calling the tool, confirm the move directly: "Done dear 🌹 Your
+  appointment is moved to [new time] ✅". The system updates the calendar
+  itself; if the new slot turns out unavailable, the system will follow up
+  with the client — you don't need to hedge.
+
+After a confirmed cancel_appointment call, confirm directly: "Your appointment
+is cancelled dear ✅ Hope to see you again soon 🌹".
 
 NEVER apply or state cancellation penalties automatically in your text —
-the backend decides and the admin handles money/YClients.
+the backend decides money matters.
 
 ═══════════════════
 PACKAGE CLIENTS (ПАКЕТНИКИ)
@@ -974,17 +977,22 @@ You are Alina and you always speak English with clients."""
     @staticmethod
     def _synthesize_tool_reply(actions) -> str:
         """Build the client reply from a structured tool call when the model
-        returned no text. Reschedule/cancel are team-mediated (never say
-        "done"); a booking gets a real recap of what was booked."""
+        returned no text. Cancel/reschedule are applied to the calendar by the
+        system directly (owner decision 2026-07-10) — confirm plainly; the
+        handler follows up if YClients refuses. A booking gets a real recap."""
         from services.yclients_service import _to_ampm
         if actions.reschedule_call is not None:
             nt = actions.reschedule_call.new_time
             when = _to_ampm(nt) if nt else "the new time"
-            return (f"Noted dear 🌹 I've passed your reschedule to {when} to the team — "
-                    f"we'll confirm it shortly 🙏")
+            return f"Done dear 🌹 Your appointment is moved to {when} ✅"
         if actions.cancel_call is not None:
-            return ("Ok dear, I've passed your cancellation to the team — "
-                    "they'll confirm it for you shortly 🌹")
+            # The handler only cancels when confirmed=True — an unconfirmed
+            # call must NOT claim the cancellation happened.
+            if getattr(actions.cancel_call, "confirmed", False):
+                return ("Your appointment is cancelled dear ✅ "
+                        "Hope to see you again soon 🌹")
+            return ("Just to be sure dear — shall I cancel your "
+                    "appointment? 🌹")
         bc = actions.booking_call
         if bc is not None:
             _DISPLAY = {

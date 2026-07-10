@@ -1180,6 +1180,15 @@ async def _maybe_create_booking(
                         f"✅ YClients booking created from WhatsApp: "
                         f"#{yc_result.get('id', '?')}"
                     )
+                    # Persist the record id — cancel/reschedule mutate YClients
+                    # directly and target the record through this.
+                    if yc_result.get("id"):
+                        try:
+                            await bot_module.booking_service.set_yclients_id(
+                                booking.id, yc_result["id"]
+                            )
+                        except Exception as e:
+                            logger.error(f"Couldn't persist YClients id: {e}")
                 else:
                     # Create failed (4xx / slot conflict / save_if_busy). This
                     # used to be a bare log — the appointment silently never
@@ -1299,11 +1308,10 @@ async def _notify_driver(booking, client) -> str:
 
 
 async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall", context=None):
-    """Cancel the client's active booking locally + apply penalty rules.
-
-    YClients records are NOT auto-modified (safety rule) — admin is asked
-    to update YClients manually.
-    """
+    """Cancel the client's active booking: local status + penalty rules +
+    DELETE the YClients record (owner decision 2026-07-10 — the agent manages
+    the calendar itself). If the YClients delete fails, the admin is alerted
+    to remove the record manually."""
     import bot as bot_module
     from services.cancellation import calculate_penalty
     from services.scheduler import now_uae
@@ -1378,14 +1386,38 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
     elif pen["free"]:
         penalty_note = "\n✅ Без штрафа (заблаговременная отмена)"
 
+    # Cancel in YClients too (owner decision 2026-07-10: the agent manages the
+    # calendar itself, no manual hand-off). Guarded: only a record whose client
+    # phone matches this WhatsApp client can be deleted.
+    yc_deleted = False
+    yc_id = b.get("yclients_appointment_id")
+    try:
+        yc = bot_module.yclients_service
+        if yc:
+            if not yc_id and b.get("booking_date"):
+                # Older bookings didn't persist the record id — find it by phone.
+                found = await yc.find_record_by_phone(
+                    phone, b["booking_date"].strftime("%Y-%m-%d")
+                )
+                yc_id = found and found.get("id")
+            if yc_id:
+                yc_deleted = await yc.cancel_record(yc_id, phone)
+    except Exception as e:
+        logger.error(f"Cancel: YClients sync error: {e}")
+
     when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
+    _yc_line = (
+        f"🗑️ Запись {yc_id} удалена из YClients автоматически ✅"
+        if yc_deleted else
+        f"⚠️ НЕ удалилось из YClients (id {yc_id or 'не найден'}) — уберите запись вручную"
+    )
     await _admin_text(
-        f"❌ <b>Отмена брони (обработать в YClients вручную)</b>\n\n"
+        f"❌ <b>Отмена брони</b>\n\n"
         f"👤 {b.get('client_name') or telegram_id}\n"
         f"📞 {phone}\n"
         f"🛎️ {b['service_name']} — {when}\n"
         f"💬 Причина: {call.reason or '—'}{penalty_note}\n"
-        f"🆔 YClients: {b.get('yclients_appointment_id') or '—'}"
+        f"{_yc_line}"
     )
 
     # Waiting list: a slot just freed up — notify first match.
@@ -1393,10 +1425,9 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
 
 
 async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall", context=None):
-    """Move the client's active booking to a new date/time (local) + notify admin.
-
-    YClients is NOT auto-modified (safety rule).
-    """
+    """Move the client's active booking to a new date/time: local records +
+    move the YClients record itself (owner decision 2026-07-10). If the
+    YClients move fails, the admin is alerted to move it manually."""
     import bot as bot_module
     from datetime import datetime as _dt, timedelta as _td
 
@@ -1510,17 +1541,57 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
     await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
 
+    # Move the YClients record itself (owner decision 2026-07-10). Guarded:
+    # only a record whose client phone matches this WhatsApp client.
+    yc_moved = False
+    yc_id = b.get("yclients_appointment_id")
+    try:
+        yc = bot_module.yclients_service
+        if yc:
+            if not yc_id and b.get("booking_date"):
+                found = await yc.find_record_by_phone(
+                    phone, b["booking_date"].strftime("%Y-%m-%d")
+                )
+                yc_id = found and found.get("id")
+            if yc_id:
+                yc_moved = await yc.reschedule_record(
+                    yc_id, phone, call.new_date, call.new_time,
+                    duration_minutes=b.get("duration"),
+                )
+                if yc_moved:
+                    await bot_module.booking_service.set_yclients_id(
+                        new_booking.id, yc_id
+                    )
+    except Exception as e:
+        logger.error(f"Reschedule: YClients sync error: {e}")
+
     old_when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
     new_when = new_dt.strftime("%d.%m.%Y %H:%M")
+    _yc_line = (
+        f"📌 Запись {yc_id} перенесена в YClients автоматически ✅"
+        if yc_moved else
+        f"⚠️ НЕ перенеслось в YClients (id {yc_id or 'не найден'}) — обновите вручную"
+    )
     await _admin_text(
-        f"📅 <b>Перенос брони (обновить в YClients вручную)</b>\n\n"
+        f"📅 <b>Перенос брони</b>\n\n"
         f"👤 {b.get('client_name') or telegram_id}\n"
         f"📞 {phone}\n"
         f"🛎️ {b['service_name']}\n"
         f"⏮️ Было: {old_when}\n"
         f"⏭️ Стало: {new_when}\n"
-        f"🆔 YClients: {b.get('yclients_appointment_id') or '—'}"
+        f"{_yc_line}"
     )
+    # The agent replied optimistically ("moved ✅") at tool time. If YClients
+    # actually refused the move, walk it back with the client honestly.
+    if not yc_moved and wappi_client:
+        try:
+            await wappi_client.send_message(
+                phone,
+                "Small note dear — our team is double-checking the calendar for "
+                "your new time and will confirm it shortly 🌹"
+            )
+        except Exception:
+            pass
 
 
 async def _notify_waiting_list(area, freed_date):

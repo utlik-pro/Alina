@@ -537,6 +537,17 @@ class BookingService:
             )).all()
             return len(rows)
 
+    async def set_yclients_id(self, booking_id: int, yclients_id) -> None:
+        """Persist the YClients record id after a confirmed sync — cancel and
+        reschedule mutate YClients directly and need this to target the record."""
+        async with self.db.session() as session:
+            await session.execute(
+                update(Booking)
+                .where(Booking.id == booking_id)
+                .values(yclients_appointment_id=str(yclients_id),
+                        updated_at=datetime.utcnow())
+            )
+
     async def set_rescheduled(self, old_id: int, new_id: int) -> None:
         async with self.db.session() as session:
             await session.execute(
