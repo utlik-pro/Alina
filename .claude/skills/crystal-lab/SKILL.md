@@ -112,6 +112,10 @@ A booking created without location + confirmation is a bug.
   A failed or unresolved YClients create **alerts the admin** (never a silent log).
 - **Slot-reality gate keys off `booking_call.area`** (authoritative), not the
   in-memory context area (which may be None → gate silently skipped).
+- **Explicit-confirm is a CODE gate** (`_client_confirmed` + recap override in
+  `webhook_app.py`): no record until the client's LAST message reads as a
+  yes/confirm/да/подтверждаю. A premature "booked ✅" becomes the recap question
+  "…Shall I confirm?". Proven live 2026-07-10 ([TEST] records #9/#10).
 - **Admin mutation endpoints deny by default** — never open when `WEBHOOK_SECRET`
   is unset.
 
