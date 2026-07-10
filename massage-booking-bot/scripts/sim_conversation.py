@@ -87,12 +87,11 @@ async def run(scenario):
             ctx.booking_data["service_type"] = cat
             if ctx.booking_data.get("service_duration"):
                 ctx.booking_data["service_duration"] = None
-        for kw, ar in [("al ain", "al_ain"), ("alain", "al_ain"), ("dubai", "dubai"),
-                       ("дубай", "dubai"), ("abu dhabi", "abu_dhabi"), ("abudhabi", "abu_dhabi"),
-                       ("mbz", "abu_dhabi"), ("khalifa", "abu_dhabi"), ("al ain", "al_ain")]:
-            if kw in low:
-                ctx.client_data["area"] = ar
-                break
+        # Use the SAME detector prod uses, so the sim can't drift from the
+        # webhook (it used to only know "abu dhabi" and missed "Абу-Даби").
+        _ar = wh.detect_area(msg)
+        if _ar:
+            ctx.client_data["area"] = _ar
         dur = wh._detect_duration_minutes(low) or wh._detect_service_duration(low)
         if dur:
             ctx.booking_data["service_duration"] = dur

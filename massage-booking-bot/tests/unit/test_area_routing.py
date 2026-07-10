@@ -34,11 +34,15 @@ def yc(monkeypatch):
 
     # Every real master has the same generous free day so the area filter is
     # the ONLY thing that changes which names appear.
-    async def slots(staff_id, date, duration=60):
+    async def slots(staff_id, date, duration=60, records=None):
         return ["10:00", "12:00", "14:00"]
+
+    async def records(staff_id, date):
+        return []  # no daily emirate markers → area comes from the name tag
 
     monkeypatch.setattr(svc, "get_staff", staff)
     monkeypatch.setattr(svc, "get_real_available_slots", slots)
+    monkeypatch.setattr(svc, "get_records", records)
     return svc
 
 
@@ -191,3 +195,113 @@ async def test_is_slot_available(yc):
     assert await yc.is_slot_available("abu_dhabi", "2030-01-06", "9:00", 60) is False
     # "09:00" normalises to "9:00" for comparison.
     assert await yc.is_slot_available("abu_dhabi", "2030-01-06", "10:00", 60) is True
+
+
+# ── detect_area (shared webhook/sim message-level emirate detector) ────────
+# Regression: a Russian tester typing the standard hyphenated "Абу-Даби" was
+# NOT recognised (the list only had space-form "абу даби"), so area stayed
+# unknown and the agent re-asked "which area?" ("снова спрашивает откуда я").
+
+import webhook_app as _wh
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Абу-Даби", "abu_dhabi"),          # hyphenated — the reported bug
+    ("абу даби", "abu_dhabi"),          # space form
+    ("я в Абу-Даби, вилла 12", "abu_dhabi"),
+    ("Abu Dhabi", "abu_dhabi"),
+    ("yas island", "abu_dhabi"),
+    ("Дубай", "dubai"),
+    ("я сейчас в Дубае", "dubai"),
+    ("Dubai Marina", "dubai"),
+    ("Al Ain", "al_ain"),
+    ("аль айн", "al_ain"),
+    ("al aim please", "al_ain"),        # autocorrect typo
+])
+def test_detect_area_positive(text, expected):
+    assert _wh.detect_area(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "Sarah",            # must NOT match "raha"
+    "always available", # must NOT match "yas"
+    "body massage please",
+    "how much is it?",
+    "",
+])
+def test_detect_area_no_false_positive(text):
+    assert _wh.detect_area(text) is None
+
+
+# ── daily emirate marker (floating master, e.g. Lyudmila) ─────────────────
+# Live YClients truth: a floating master's emirate is set per DAY via an admin
+# ~09:00 record with no client and comment = the emirate ("Дубай"/"Абу-Даби").
+# Her name tag ("Людмила Дубай") is only her default. Routing must follow the
+# marker for the date, not the tag.
+
+from services.yclients_service import _is_emirate_marker, _marker_area_from_records
+
+
+def test_is_emirate_marker():
+    assert _is_emirate_marker({"comment": "Дубай", "client": None}) is True
+    assert _is_emirate_marker({"comment": "Абу-Даби ", "client": None}) is True
+    assert _is_emirate_marker({"comment": "Al ain", "client": {}}) is True
+    # A real visit (has a client) is NOT a marker even if it mentions a place.
+    assert _is_emirate_marker({"comment": "Дубай", "client": {"name": "Sara"}}) is False
+    # A long free-text comment is not a marker.
+    assert _is_emirate_marker({"comment": "please come to Dubai marina villa 12 at 5pm", "client": None}) is False
+    assert _is_emirate_marker({"comment": "", "client": None}) is False
+
+
+def test_marker_area_from_records():
+    assert _marker_area_from_records([{"comment": "Абу-Даби", "client": None}]) == "abu_dhabi"
+    assert _marker_area_from_records([{"comment": "Дубай", "client": None}]) == "dubai"
+    assert _marker_area_from_records([{"comment": "Al ain", "client": None}]) == "al_ain"
+    assert _marker_area_from_records([{"comment": "3+", "client": {"name": "X"}}]) is None
+    assert _marker_area_from_records([]) is None
+
+
+@pytest.mark.asyncio
+async def test_floating_master_routes_by_daily_marker(monkeypatch):
+    """Lyudmila's tag says Dubai, but her marker for the day says Abu Dhabi →
+    she must appear for Abu Dhabi clients and be hidden from Dubai clients."""
+    svc = YClientsService()
+
+    async def staff(*a, **k):
+        return [{"id": 5305116, "name": "Людмила Дубай", "specialization": "массажист"}]
+
+    async def records(staff_id, date):
+        return [{"datetime": f"{date}T09:00:00+03:00", "seance_length": 3600,
+                 "comment": "Абу-Даби", "client": None}]
+
+    async def times(staff_id, date):
+        return [{"time": "14:00"}, {"time": "15:00"}]
+
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_records", records)
+    monkeypatch.setattr(svc, "get_available_times", times)
+
+    ad = await svc.get_available_slots_summary(date="2030-01-06", service_name="body massage", area="abu_dhabi", service_duration=60)
+    dxb = await svc.get_available_slots_summary(date="2030-01-06", service_name="body massage", area="dubai", service_duration=60)
+    assert "Lyudmila" in ad          # marker puts her in Abu Dhabi that day
+    assert "Lyudmila" not in dxb     # so NOT shown to Dubai clients
+
+
+@pytest.mark.asyncio
+async def test_emirate_marker_does_not_block_slots(monkeypatch):
+    """The 09:00 marker record must not consume a booking slot / travel buffer
+    (it used to hide the master's 10:00/10:30)."""
+    svc = YClientsService()
+
+    async def times(staff_id, date):
+        return [{"time": "10:00"}, {"time": "10:30"}, {"time": "12:00"}]
+
+    async def records(staff_id, date):
+        return [{"datetime": f"{date}T09:00:00+03:00", "seance_length": 3600,
+                 "comment": "Дубай", "client": None}]
+
+    monkeypatch.setattr(svc, "get_available_times", times)
+    monkeypatch.setattr(svc, "get_records", records)
+    slots = await svc.get_real_available_slots(5305116, "2030-01-06", 60)
+    assert "10:00" in slots  # NOT blocked by the 09:00 marker
+    assert "10:30" in slots

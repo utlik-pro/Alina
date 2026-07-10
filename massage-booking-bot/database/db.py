@@ -79,6 +79,9 @@ class Database:
 
         # table -> {column: SQL type}. Keep types portable (SQLite + Postgres).
         wanted = {
+            "clients": {
+                "area": "VARCHAR(50)",
+            },
             "bookings": {
                 "area": "VARCHAR(50)",
                 "penalty_amount": "FLOAT",

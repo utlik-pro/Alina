@@ -32,7 +32,7 @@ BOOK_APPOINTMENT_TOOL: Dict[str, Any] = {
             "additionalProperties": False,
             "required": [
                 "service", "duration_minutes", "date", "time",
-                "area", "payment_method", "client_name",
+                "area", "payment_method", "client_name", "base_price_aed",
             ],
             "properties": {
                 "service": {
@@ -46,7 +46,12 @@ BOOK_APPOINTMENT_TOOL: Dict[str, Any] = {
                 },
                 "duration_minutes": {
                     "type": "integer",
-                    "enum": [30, 45, 60, 75, 80, 90, 120],
+                    # 25/40/50 cover short face services (facial massage is
+                    # 50 min); 150 = Japanese mani+pedi combo (2.5h); 180 =
+                    # Russian mani+pedi combo (3h) and nail extensions (2.5-3h).
+                    # Without these the schema truncated services to a wrong
+                    # length, writing the wrong seance_length to YClients.
+                    "enum": [25, 30, 40, 45, 50, 60, 75, 80, 90, 120, 150, 180],
                     "description": "Session length in minutes.",
                 },
                 "date": {
@@ -165,7 +170,9 @@ class BookingCall:
             area=str(args["area"]),
             payment_method=str(args["payment_method"]),
             client_name=str(args["client_name"]),
-            base_price_aed=float(args["base_price_aed"]),
+            # Required in the schema, but stay defensive: a missing/blank price
+            # must not raise KeyError and drop the whole booking mid-turn.
+            base_price_aed=float(args.get("base_price_aed") or 0),
             master_id=_opt_int(args.get("master_id")),
             master_name=_opt_str(args.get("master_name")),
             client_phone=_opt_str(args.get("client_phone")),

@@ -141,15 +141,180 @@ async def test_summary_passes_service_duration(yc, monkeypatch):
     async def staff(*a, **k):
         return [{"id": 1, "name": "Наталья", "specialization": "массажист"}]
 
-    async def real_slots(staff_id, date, duration=60):
+    async def real_slots(staff_id, date, duration=60, records=None):
         seen.append(duration)
         return ["10:00"]
 
+    async def no_records(staff_id, date):
+        return []
+
     monkeypatch.setattr(yc, "get_staff", staff)
     monkeypatch.setattr(yc, "get_real_available_slots", real_slots)
+    monkeypatch.setattr(yc, "get_records", no_records)
 
     await yc.get_available_slots_summary(date="2030-01-06", area="abu_dhabi", service_duration=90)
     assert seen == [90]
     seen.clear()
     await yc.get_available_slots_summary(date="2030-01-06", area="abu_dhabi")
     assert seen == [60]                 # default when unset
+
+
+# ── nail-duration default (no explicit duration) ──────────────────────────
+# Regression: a bare "manicure" (no "gel" keyword) resolved to duration=None
+# and defaulted to a 60-min buffer, so slots were offered back-to-back for a
+# service that really runs ≥2h (впритык). Nails now default to 120 min.
+
+@pytest.mark.asyncio
+async def test_nail_service_defaults_to_120_when_duration_unknown(monkeypatch):
+    svc = YClientsService()
+    captured = {}
+
+    async def staff(*a, **k):
+        return [{"id": 7, "name": "Елена", "specialization": "мастер маникюра"}]
+
+    async def real_slots(staff_id, date, service_duration=60, records=None):
+        captured["duration"] = service_duration
+        return ["10:00", "14:00"]
+
+    async def no_records(staff_id, date):
+        return []
+
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_real_available_slots", real_slots)
+    monkeypatch.setattr(svc, "get_records", no_records)
+
+    await svc.get_available_slots_summary(
+        date="2030-01-06", service_name="manicure", area="abu_dhabi",
+        service_duration=None,
+    )
+    assert captured["duration"] == 120  # nails default, NOT 60
+
+
+@pytest.mark.asyncio
+async def test_massage_still_defaults_to_60_when_duration_unknown(monkeypatch):
+    svc = YClientsService()
+    captured = {}
+
+    async def staff(*a, **k):
+        return [{"id": 8, "name": "Наталья", "specialization": "массажист"}]
+
+    async def real_slots(staff_id, date, service_duration=60, records=None):
+        captured["duration"] = service_duration
+        return ["10:00"]
+
+    async def no_records(staff_id, date):
+        return []
+
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_real_available_slots", real_slots)
+    monkeypatch.setattr(svc, "get_records", no_records)
+
+    await svc.get_available_slots_summary(
+        date="2030-01-06", service_name="body massage", area="abu_dhabi",
+        service_duration=None,
+    )
+    assert captured["duration"] == 60
+
+
+def test_book_tool_duration_enum_covers_long_nail_services():
+    from agents.tools import BOOK_APPOINTMENT_TOOL
+    enum = BOOK_APPOINTMENT_TOOL["function"]["parameters"]["properties"]["duration_minutes"]["enum"]
+    assert 150 in enum   # Japanese mani+pedi combo (2.5h)
+    assert 180 in enum   # Russian mani+pedi combo (3h) / nail extension
+
+
+@pytest.mark.asyncio
+async def test_nails_outside_abu_dhabi_reports_area_limitation(monkeypatch):
+    """A Dubai/Al Ain client asking for nails must be told nails are Abu Dhabi
+    only — NOT the generic 'try another day' dead-end."""
+    svc = YClientsService()
+
+    async def staff(*a, **k):
+        return [
+            {"id": 7, "name": "Елена", "specialization": "мастер маникюра"},   # Abu Dhabi
+            {"id": 9, "name": "Людмила Дубай", "specialization": "массажист"},
+        ]
+
+    async def no_records(staff_id, date):
+        return []
+
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_records", no_records)
+    msg = await svc.get_available_slots_summary(
+        date="2030-01-06", service_name="gel manicure", area="dubai",
+        service_duration=None,
+    )
+    assert "NOT AVAILABLE" in msg
+    assert "Abu Dhabi" in msg
+
+
+# ── YClients OUTAGE vs real day-off (reliability) ─────────────────────────
+# get_available_times returns None on API failure (auth/5xx/network) — this
+# must NOT be shown to a client as "no availability" nor block a real booking.
+
+@pytest.mark.asyncio
+async def test_outage_returns_none_not_empty(yc, monkeypatch):
+    async def outage(*a, **k):
+        return None  # API failure
+    async def no_records(*a, **k):
+        return []
+    monkeypatch.setattr(yc, "get_available_times", outage)
+    monkeypatch.setattr(yc, "get_records", no_records)
+    assert await yc.get_real_available_slots(1, "2030-01-06", 60) is None  # NOT []
+
+
+@pytest.mark.asyncio
+async def test_summary_says_temporarily_unavailable_on_outage(monkeypatch):
+    svc = YClientsService()
+    async def staff(*a, **k):
+        return [{"id": 1, "name": "Наталья", "specialization": "массажист"}]
+    async def outage(*a, **k):
+        return None
+    async def no_records(*a, **k):
+        return []
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_available_times", outage)
+    monkeypatch.setattr(svc, "get_records", no_records)
+    msg = await svc.get_available_slots_summary(date="2030-01-06", service_name="body massage", area="abu_dhabi", service_duration=60)
+    assert "TEMPORARILY UNAVAILABLE" in msg           # outage, not a lie
+    assert "no availability" not in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_is_slot_available_fails_open_on_outage(monkeypatch):
+    svc = YClientsService()
+    async def staff(*a, **k):
+        return [{"id": 1, "name": "Наталья", "specialization": "массажист"}]
+    async def outage(*a, **k):
+        return None
+    async def no_records(*a, **k):
+        return []
+    monkeypatch.setattr(svc, "get_staff", staff)
+    monkeypatch.setattr(svc, "get_available_times", outage)
+    monkeypatch.setattr(svc, "get_records", no_records)
+    # Can't verify during an outage → must NOT block a client-confirmed slot.
+    assert await svc.is_slot_available("abu_dhabi", "2030-01-06", "14:00", 60) is True
+
+
+# ── book_appointment tool schema hardening ────────────────────────────────
+
+def test_base_price_is_required_and_short_durations_present():
+    from agents.tools import BOOK_APPOINTMENT_TOOL
+    fn = BOOK_APPOINTMENT_TOOL["function"]["parameters"]
+    assert "base_price_aed" in fn["required"]      # a price omission must not slip through
+    enum = fn["properties"]["duration_minutes"]["enum"]
+    for d in (25, 40, 50, 60, 90, 120, 150, 180):  # face 50, combos 150/180, etc.
+        assert d in enum
+
+
+def test_booking_call_tolerates_missing_price():
+    """A missing base_price must degrade to 0, not raise KeyError and drop the
+    whole booking mid-turn."""
+    from agents.tools import BookingCall
+    bc = BookingCall.from_tool_args({
+        "service": "body_massage", "duration_minutes": 60, "date": "2030-01-06",
+        "time": "14:00", "area": "abu_dhabi", "payment_method": "cash",
+        "client_name": "Sara",
+        # base_price_aed intentionally omitted
+    })
+    assert bc.base_price_aed == 0

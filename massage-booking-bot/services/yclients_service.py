@@ -72,11 +72,44 @@ def _staff_area(staff_name: str) -> str:
     Returns one of: "al_ain", "dubai", "abu_dhabi".
     """
     n = (staff_name or "").lower()
-    if "al ain" in n or "al-ain" in n or "alain" in n:
+    # Latin + Cyrillic spellings — a Cyrillic "Аль-Айн" marker/tag used to fall
+    # through to Abu Dhabi and misroute the master.
+    if "al ain" in n or "al-ain" in n or "alain" in n or "аль айн" in n or "аль-айн" in n:
         return "al_ain"
     if "дубай" in n or "dubai" in n:
         return "dubai"
     return "abu_dhabi"
+
+
+_EMIRATE_KW_RE = re.compile(r"(al\s*ain|аль.?айн|абу.?даб|dubai|дубай|abu\s*dhabi)", re.I)
+
+
+def _is_emirate_marker(rec: dict) -> bool:
+    """True for an admin 'pin' record, not a real client visit.
+
+    The salon marks a FLOATING master's emirate-of-the-day with a daily ~09:00
+    record that has NO client and whose comment is just the emirate
+    ("Дубай" / "Абу-Даби" / "Al ain"). Confirmed live in YClients for Людмила,
+    whose name tag ("Дубай") is only her default — her real emirate varies by
+    day. Such a record must NOT count as a visit (it would consume a booking
+    slot + travel buffer, hiding her 10:00/10:30), and its comment tells us her
+    area for that date.
+    """
+    c = (rec.get("comment") or "").strip()
+    if not c or len(c) > 20:
+        return False
+    if rec.get("client"):
+        return False
+    return _EMIRATE_KW_RE.search(c) is not None
+
+
+def _marker_area_from_records(records) -> Optional[str]:
+    """A floating master's emirate for the day, read from the 09:00 pin record.
+    None when there's no marker (→ caller falls back to the name-tag area)."""
+    for rec in (records or []):
+        if _is_emirate_marker(rec):
+            return _staff_area(rec.get("comment") or "")
+    return None
 
 
 def _to_ampm(hhmm: str) -> str:
@@ -145,7 +178,13 @@ class YClientsService:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            # Hard timeout so a hung YClients backend can't stall a whole
+            # conversation for aiohttp's 300s default while holding the
+            # per-phone lock. A timeout raises → _get returns None → callers
+            # treat it as an outage (fail-open on the gate, "checking with the
+            # team" to the client) rather than a 5-minute freeze.
+            timeout = aiohttp.ClientTimeout(total=15, connect=5)
+            self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
 
     async def close(self):
@@ -231,23 +270,24 @@ class YClientsService:
             return data["data"]
         return []
 
-    async def get_available_times(self, staff_id: int, date: str, service_id: int = None) -> List[Dict]:
+    async def get_available_times(self, staff_id: int, date: str, service_id: int = None) -> Optional[List[Dict]]:
         """Get available time slots for a specific staff member and date.
 
-        Args:
-            staff_id: Staff member ID
-            date: Date in YYYY-MM-DD format
-            service_id: Optional service ID for duration-aware slots
-
         Returns:
-            List of available time slots
+            list of slots on success (possibly empty = real day off / fully booked),
+            or **None** when the YClients API call FAILED (auth/5xx/network). The
+            None-vs-[] distinction is load-bearing: an outage must never be shown
+            to a client as "no availability" nor block a real booking (see
+            get_real_available_slots / get_available_slots_summary / is_slot_available).
         """
         params = {}
         if service_id:
             params["service_ids[]"] = service_id
 
         data = await self._get(f"book_times/{self.company_id}/{staff_id}/{date}", params)
-        if data and isinstance(data.get("data"), list):
+        if data is None:
+            return None  # API failure — propagate, do NOT conflate with a day off
+        if isinstance(data.get("data"), list):
             return data["data"]
         return []
 
@@ -267,9 +307,22 @@ class YClientsService:
         Returns a formatted string like:
         "Tomorrow: Svetlana 10am, 12pm, 4pm | Marina 2pm, 7pm"
         """
+        # Determine if we need massage therapists or nail techs
+        is_nails = service_category == "nails" or (service_name and any(
+            kw in (service_name or "").lower() for kw in ["mani", "pedi", "nail", "gel", "маникюр"]
+        ))
+
         # How long the actual session runs. If the client asked for a 90-min
-        # massage we must not offer a slot that only has 60 min free.
-        slot_duration = int(service_duration) if service_duration else 60
+        # massage we must not offer a slot that only has 60 min free. When the
+        # duration is unknown, default to the service's realistic minimum: nail
+        # services run ≥2h (a "manicure" with no "gel" keyword used to fall back
+        # to 60 min and get offered back-to-back slots — впритык), massages 60.
+        if service_duration:
+            slot_duration = int(service_duration)
+        elif is_nails:
+            slot_duration = 120
+        else:
+            slot_duration = 60
         # Use UAE timezone (UTC+4) — Crystal Lab is in Abu Dhabi/Al Ain
         from datetime import timezone
         uae_tz = timezone(timedelta(hours=4))
@@ -282,34 +335,68 @@ class YClientsService:
         now_hour = now_uae.hour if is_today else 0
         now_minute = now_uae.minute if is_today else 0
 
-        # Determine if we need massage therapists or nail techs
-        is_nails = service_category == "nails" or (service_name and any(
-            kw in (service_name or "").lower() for kw in ["mani", "pedi", "nail", "gel", "маникюр"]
-        ))
-
         staff_list = await self.get_staff()
         if not staff_list:
             return "No available slots for this date"
 
-        # 1) Filter candidates (admin/area/specialization) — pure, no API.
-        candidates = []
+        import asyncio as _asyncio
+
+        # 1a) Roster: drop admin + wrong specialisation (pure, no API). Area is
+        #     resolved NEXT, per date — a floating master's emirate can differ
+        #     from her name tag on a given day (see _is_emirate_marker).
+        roster = []
         for staff in staff_list:
             staff_name = (staff.get("name", "") or "")
             spec = (staff.get("specialization", "") or "").lower()
             if "АДМИНИСТРАТОР" in staff_name.upper() or "ЛИСТ ОЖИДАНИЯ" in staff_name.upper():
-                continue
-            # Area: each master serves exactly one emirate (tagged in the
-            # YClients name — "Al Ain" / "Дубай"; untagged = Abu Dhabi). A
-            # client only sees masters from their own area — cross-emirate
-            # drives (a 90-min haul) aren't offered.
-            if area and _staff_area(staff_name) != area:
                 continue
             is_nail_tech = "маникюр" in spec or "nail" in spec.lower()
             if is_nails and not is_nail_tech:
                 continue
             if not is_nails and is_nail_tech:
                 continue
-            candidates.append((staff, is_nail_tech))
+            roster.append((staff, is_nail_tech))
+
+        # 1b) Fetch each roster member's records ONCE (parallel) — reused for
+        #     the per-date emirate marker AND (passed down) the travel buffer.
+        _recs_list = await _asyncio.gather(
+            *[self.get_records(s["id"], date) for s, _ in roster],
+            return_exceptions=True,
+        )
+
+        # 1c) Area filter using the EFFECTIVE area for THIS date: the daily
+        #     emirate marker wins, else the name tag. A client only ever sees
+        #     masters actually in their emirate that day — no cross-emirate drive.
+        candidates = []
+        for (staff, is_nail_tech), recs in zip(roster, _recs_list):
+            if isinstance(recs, Exception):
+                recs = None
+            eff_area = _marker_area_from_records(recs) or _staff_area(staff.get("name", "") or "")
+            if area and eff_area != area:
+                continue
+            candidates.append((staff, is_nail_tech, recs, eff_area))
+
+        # Nails are offered in Abu Dhabi ONLY (no nail tech works Al Ain/Dubai).
+        # Without this, a Dubai client asking for a manicure got the generic
+        # "no availability, try another day" — an endless dead-end (they'd keep
+        # asking "Saturday? Sunday?"). Tell them the truth: it's the emirate,
+        # not the day. Report where nails ARE available, data-driven.
+        if is_nails and not candidates:
+            nail_areas = {
+                _staff_area(s.get("name", "") or "")
+                for s in staff_list
+                if ("маникюр" in (s.get("specialization", "") or "").lower()
+                    or "nail" in (s.get("specialization", "") or "").lower())
+            }
+            if nail_areas and area and area not in nail_areas:
+                pretty = {"abu_dhabi": "Abu Dhabi", "al_ain": "Al Ain", "dubai": "Dubai"}
+                where = ", ".join(sorted(pretty.get(a, a) for a in nail_areas))
+                return (
+                    f"NAILS ARE NOT AVAILABLE in this area. Nail services are "
+                    f"offered in {where} only. Tell the client honestly that "
+                    f"nails aren't available in their emirate (do NOT offer "
+                    f"another day — it's the location, not the schedule)."
+                )
 
         # 2) Fetch every candidate's slots IN PARALLEL. This loop used to run
         #    sequentially (~9 masters × 2+ YClients calls each), which pushed a
@@ -317,30 +404,40 @@ class YClientsService:
         #    moment, please repeat"). asyncio.gather collapses it to ~one round
         #    trip. Every master gets the SAME slot_duration (a service's length
         #    is the same whoever performs it), so we resolve it once above.
-        import asyncio as _asyncio
         slot_lists = await _asyncio.gather(
-            *[self.get_real_available_slots(s["id"], date, slot_duration) for s, _ in candidates],
+            *[self.get_real_available_slots(s["id"], date, slot_duration, records=recs)
+              for s, _, recs, _ in candidates],
             return_exceptions=True,
         )
 
+        # An API outage returns None (or raises) per master — distinct from an
+        # empty list (real day off). If EVERY candidate is unavailable due to an
+        # outage we must NOT tell the client "no availability" (that's a lie that
+        # sends them away during a YClients blip). Track it.
+        had_outage = any(r is None or isinstance(r, Exception) for r in slot_lists)
+
         slots_info = []
-        for (staff, is_nail_tech), time_strs in zip(candidates, slot_lists):
+        for (staff, is_nail_tech, _recs, eff_area), time_strs in zip(candidates, slot_lists):
             if isinstance(time_strs, Exception) or not time_strs:
                 continue
             staff_name = (staff.get("name", "") or "")
             # Show ALL free slots (ground truth) so the agent can confirm a
-            # specific requested time ("17:00?") instead of rejecting it. The
-            # prompt still tells the agent to OFFER only 2-3 to the client — but
-            # it needs the full list to validate. Cap at 12 to avoid extreme
-            # walls on a fully-empty day (keeps the whole day's range).
-            if len(time_strs) > 12:
-                step = (len(time_strs) - 1) / 11.0
-                idxs = sorted({round(i * step) for i in range(12)})
+            # specific requested time ("17:30?") instead of wrongly rejecting it.
+            # The prompt still tells the agent to OFFER only 2-3 to the client.
+            # Cap high enough to keep an ENTIRE open day (10:00–21:00 at 30-min
+            # granularity ≈ 23 slots) — the old cap of 12 thinned out interior
+            # times, so a client asking for a dropped slot was told it's taken.
+            _CAP = 24
+            if len(time_strs) > _CAP:
+                step = (len(time_strs) - 1) / float(_CAP - 1)
+                idxs = sorted({round(i * step) for i in range(_CAP)})
                 time_strs = [time_strs[i] for i in idxs]
 
-            # Display name — transliterate Russian to English.
+            # Display name — transliterate Russian to English. Use the EFFECTIVE
+            # area for the date (marker-aware), so a floating master isn't
+            # mislabelled "(Dubai)" on a day her marker puts her in Abu Dhabi.
             first_name = _display_first_name(staff_name)
-            _area_tag = _staff_area(staff_name)
+            _area_tag = eff_area
             if _area_tag == "al_ain":
                 display_name = first_name + " (Al Ain)"
             elif _area_tag == "dubai":
@@ -362,9 +459,18 @@ class YClientsService:
 
         if slots_info:
             return f"Available on {date}:\n" + "\n".join(slots_info)
-        # No mock/hardcoded fallback here — if every therapist returned
-        # empty slots (day off OR records API failure) we must tell the
-        # agent the truth so it doesn't fabricate times.
+        # Nothing to show. Distinguish a genuine empty schedule from a YClients
+        # OUTAGE — telling a client "no availability, try another day" during an
+        # API blip sends them away wrongly. On outage, ask them to hold instead.
+        if had_outage:
+            return (
+                "SCHEDULE TEMPORARILY UNAVAILABLE (YClients did not respond). Do "
+                "NOT tell the client the day is fully booked and do NOT invent "
+                "times — tell them warmly you're checking with the team and will "
+                "confirm a time shortly."
+            )
+        # No mock/hardcoded fallback here — a real empty schedule: tell the agent
+        # the truth so it doesn't fabricate times.
         return (
             "No slots available for this date from the schedule. "
             "Tell the client honestly there's no availability and "
@@ -552,6 +658,7 @@ class YClientsService:
         self,
         name: Optional[str] = None,
         area: Optional[str] = None,
+        date: Optional[str] = None,
     ) -> Optional[int]:
         """Find staff ID by name and/or area.
 
@@ -580,12 +687,28 @@ class YClientsService:
             n = (s.get("name", "") or "").upper()
             return "АДМИНИСТРАТОР" in n or "ЛИСТ ОЖИДАНИЯ" in n
 
-        # Apply area filter first. Each master serves exactly one emirate,
-        # tagged in their YClients name; a booking is only routed to a master
-        # from the client's own area (never across emirates).
+        # Apply area filter first. A booking is only routed to a master in the
+        # client's own emirate (never across emirates). Area comes from the
+        # name tag, EXCEPT a floating master whose daily marker (for `date`)
+        # overrides it — matches what get_available_slots_summary offered.
         pool = [s for s in staff if not _is_admin(s)]
         if area in ("al_ain", "abu_dhabi", "dubai"):
-            pool = [s for s in pool if _staff_area(s.get("name", "")) == area]
+            if date:
+                import asyncio as _asyncio
+                _recs = await _asyncio.gather(
+                    *[self.get_records(s["id"], date) for s in pool],
+                    return_exceptions=True,
+                )
+                _kept = []
+                for s, recs in zip(pool, _recs):
+                    if isinstance(recs, Exception):
+                        recs = None
+                    eff = _marker_area_from_records(recs) or _staff_area(s.get("name", ""))
+                    if eff == area:
+                        _kept.append(s)
+                pool = _kept
+            else:
+                pool = [s for s in pool if _staff_area(s.get("name", "")) == area]
 
         if not pool:
             logger.warning(
@@ -660,17 +783,25 @@ class YClientsService:
         # No name — return first from filtered pool.
         return pool[0]["id"]
 
-    async def staff_area_of(self, staff_id: int) -> Optional[str]:
-        """Emirate a specific staff_id serves (from their YClients name tag),
-        or None if no staff with that id exists. Used to reject a booking whose
-        model-supplied master_id belongs to a different emirate than the
-        client's area (a cross-emirate misroute)."""
+    async def staff_area_of(self, staff_id: int, date: Optional[str] = None) -> Optional[str]:
+        """Emirate a specific staff_id serves, or None if no such staff. Used to
+        reject a booking whose model-supplied master_id belongs to a different
+        emirate than the client's area (a cross-emirate misroute).
+
+        When `date` is given, a floating master's daily emirate marker wins over
+        her name tag (so Lyudmila, tag=Dubai, validates as Abu Dhabi on a day
+        her marker puts her there — otherwise the guard would drop her and the
+        client gets a DIFFERENT therapist than the one they confirmed)."""
         try:
             sid = int(staff_id)
         except (TypeError, ValueError):
             return None
         for s in (await self.get_staff() or []):
             if s.get("id") == sid:
+                if date:
+                    marker = _marker_area_from_records(await self.get_records(sid, date))
+                    if marker:
+                        return marker
                 return _staff_area(s.get("name", ""))
         return None
 
@@ -684,15 +815,26 @@ class YClientsService:
             want = f"{int(h)}:{int(m):02d}"
         except (ValueError, AttributeError):
             return True  # can't parse — don't block
+        outage = False
         for s in (await self.get_staff() or []):
             nm = s.get("name", "") or ""
             if "АДМИНИСТРАТОР" in nm.upper() or "ЛИСТ ОЖИДАНИЯ" in nm.upper():
                 continue
-            if area and _staff_area(nm) != area:
+            recs = await self.get_records(s["id"], date)
+            eff_area = _marker_area_from_records(recs) or _staff_area(nm)
+            if area and eff_area != area:
                 continue
-            slots = await self.get_real_available_slots(s["id"], date, int(duration or 60))
+            slots = await self.get_real_available_slots(s["id"], date, int(duration or 60), records=recs)
+            if slots is None:
+                outage = True  # couldn't fetch this master's schedule
+                continue
             if want in slots:
                 return True
+        # Fail OPEN on an outage: never BLOCK a client-confirmed slot just because
+        # YClients was unreachable (the gate's job is to catch invented times, not
+        # to reject real ones during a blip).
+        if outage:
+            return True
         return False
 
     async def find_client_by_phone(self, phone: str) -> Optional[Dict]:
@@ -749,7 +891,7 @@ class YClientsService:
             return data["data"]
         return []
 
-    async def get_real_available_slots(self, staff_id: int, date: str, service_duration: int = 60) -> List[str]:
+    async def get_real_available_slots(self, staff_id: int, date: str, service_duration: int = 60, records=None) -> Optional[List[str]]:
         """Truly available slots = YClients' own bookable times, minus a
         60-min travel buffer around existing home visits.
 
@@ -772,20 +914,29 @@ class YClientsService:
 
         # Native bookable times (already working-hours & booking aware).
         book_times = await self.get_available_times(staff_id, date)
+        if book_times is None:
+            return None  # API outage — caller must NOT treat as a day off
         if not book_times:
             return []  # Day off / fully booked — no slots
 
         # Existing visits → raw (start, end) minute intervals for travel-gap.
-        records = await self.get_records(staff_id, date)
+        # Caller (get_available_slots_summary) may pass records it already
+        # fetched (to also read the emirate marker) — avoid a double fetch.
         if records is None:
-            logger.error(
-                f"YClients: records API unavailable for staff {staff_id} "
-                f"on {date} — slots may not account for travel buffer"
-            )
-            records = []
+            records = await self.get_records(staff_id, date)
+            if records is None:
+                logger.error(
+                    f"YClients: records API unavailable for staff {staff_id} "
+                    f"on {date} — slots may not account for travel buffer"
+                )
+                records = []
 
         raw_blocks = []
         for rec in records:
+            # Admin emirate-pin (no client, comment = emirate) is not a real
+            # visit — it must not consume a slot / travel buffer.
+            if _is_emirate_marker(rec):
+                continue
             try:
                 dt = datetime.fromisoformat(rec.get("datetime", ""))
                 start_min = dt.hour * 60 + dt.minute

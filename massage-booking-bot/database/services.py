@@ -45,6 +45,7 @@ class ClientService:
         location_longitude: Optional[float] = None,
         location_details: Optional[str] = None,
         medical_notes: Optional[str] = None,
+        area: Optional[str] = None,
     ) -> Client:
         """Update client information"""
         async with self.db.session() as session:
@@ -63,6 +64,8 @@ class ClientService:
                 client.location_longitude = location_longitude
             if location_details:
                 client.location_details = location_details
+            if area:
+                client.area = area
             if medical_notes:
                 # Append to existing medical notes
                 if client.medical_notes:
@@ -88,6 +91,7 @@ class ClientService:
             client.location_latitude = None
             client.location_longitude = None
             client.location_details = None
+            client.area = None
             client.updated_at = datetime.utcnow()
             await session.flush()
             logger.info(f"Reset client data for {telegram_id}")

@@ -37,6 +37,21 @@ Scope: **WhatsApp path only** — `webhook_app.py`, `agents/booking_agent.py`,
   Abu Dhabi. Elena / Safina = nails.
 - A client only ever sees / is booked with masters in their own emirate.
 - **Lash extensions: Abu Dhabi ONLY** (not Al Ain, not Dubai).
+- **Nails (Elena/Safina): Abu Dhabi ONLY** — a Dubai/Al Ain client asking for a
+  manicure has no nail tech in their area (tell them honestly, don't say "no slots").
+- 🔑 **Emirate is PER-DAY for floating masters, not just the name tag.** Discovered
+  live in YClients 2026-07-09: the salon marks a floating master's emirate-of-the-day
+  with a **~09:00 admin record, no client, comment = the emirate** ("Дубай" /
+  "Абу-Даби" / "Al ain"). **Lyudmila is the only floater** — her tag "Людмила Дубай"
+  is only her default; her real emirate varies daily (e.g. 10 Jul = Abu Dhabi, from
+  11 Jul = Dubai). Code now reads that marker for the date (`_marker_area_from_records`
+  / `_is_emirate_marker` in `yclients_service.py`) in slot display AND booking
+  validation (`staff_area_of`/`find_staff_id` take a `date`). The marker record is
+  also EXCLUDED from the travel buffer (it's a pin, not a visit — it used to hide her
+  10:00/10:30). To move any master, the salon just sets the day's marker (or renames).
+- Area is detected from the client message via the shared `detect_area()` helper in
+  `webhook_app.py` (used by prod AND the sim — keep it the single source). Russian
+  "Абу-Даби" (hyphen) must resolve — it silently didn't before 2026-07-09.
 
 ### Hours & travel buffer
 - First booking start **10:00**. **Last booking START 21:00** (session may finish up
@@ -82,6 +97,24 @@ A booking created without location + confirmation is a bug.
   tell the client "requested — admin will confirm". Resolve with the client.
 - With >1 active booking, don't guess which — ask the client.
 
+## Reliability invariants (hardened 2026-07-09 — do NOT regress)
+- **Outage ≠ day-off.** `get_available_times` returns **None** on a YClients API
+  failure, `[]` only on a real empty schedule. `get_real_available_slots` returns
+  None on outage. `get_available_slots_summary` says "SCHEDULE TEMPORARILY
+  UNAVAILABLE… checking with the team" on outage (never a false "no availability").
+  `is_slot_available` **fails OPEN** on outage (never blocks a real confirmed slot).
+- **YClients HTTP has a 15s timeout** — a hung backend must not freeze a turn / hold
+  the per-phone lock.
+- **Client `area` is a DB column** (`clients.area`, auto-migrated) — persisted on
+  capture, restored on a fresh context. In-memory + history-recovery are fallbacks.
+- **Booking de-dup fingerprint (`last_booking_sig`) is set ONLY after a confirmed
+  YClients sync** — a failed sync must stay retryable, not be suppressed as a dup.
+  A failed or unresolved YClients create **alerts the admin** (never a silent log).
+- **Slot-reality gate keys off `booking_call.area`** (authoritative), not the
+  in-memory context area (which may be None → gate silently skipped).
+- **Admin mutation endpoints deny by default** — never open when `WEBHOOK_SECRET`
+  is unset.
+
 ## Verification checklist before saying "done"
 - [ ] Drove the FULL live conversation (service→area→slot→location→name→payment→confirm)
       and saw a correct YClients record created.
@@ -90,7 +123,8 @@ A booking created without location + confirmation is a bug.
 - [ ] `pytest` green; pushed to `develop`; stated the deploy/prod caveat.
 
 ## Reference
-- Model **gpt-5.4-mini** (also set in Render env `OPENAI_MODEL`). Company id **1094806**.
+- Model **gpt-5.4** (config.py default + local .env; also set in Render env
+  `OPENAI_MODEL` — changing config does NOT change prod). Company id **1094806**.
 - Admin group "Crystal Lab - Leads" `-1003250489002`. Dev group "Crystal разработка"
   `-5059625262`. Feedback auto-triage → Dmitry DM `1379584180`.
 - Related memory: [[reference-area-routing]], [[reference-yclients-slots]],

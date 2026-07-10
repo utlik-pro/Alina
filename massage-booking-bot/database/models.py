@@ -20,6 +20,10 @@ class Client(Base):
     location_latitude = Column(Float, nullable=True)
     location_longitude = Column(Float, nullable=True)
     location_details = Column(String(500), nullable=True)  # Villa/Apartment number
+    # Client's emirate (abu_dhabi | al_ain | dubai). Persisted so the agent
+    # doesn't re-ask "which area?" after a Render restart / a delayed reply to
+    # the post-session survey (context is in-memory only otherwise).
+    area = Column(String(50), nullable=True)
     medical_notes = Column(Text, nullable=True)
     preferred_therapist = Column(String(255), nullable=True)
     total_bookings = Column(Integer, default=0)

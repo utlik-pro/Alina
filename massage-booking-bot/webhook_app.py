@@ -124,6 +124,57 @@ def _detect_service_category(text: str) -> Optional[str]:
     return None
 
 
+# Emirate keywords, kept in ONE place so the webhook slot-injection and the
+# offline simulator detect area identically (they used to drift — the sim only
+# knew "abu dhabi", so a Russian tester typing "Абу-Даби" was silently ignored
+# in the sim while prod behaved differently). Abu Dhabi previously listed only
+# "абу даби" (space) — the standard hyphenated "абу-даби" fell through, leaving
+# area unknown and the agent re-asking "which area?" ("снова спрашивает откуда я").
+_AREA_DUBAI_KW = (
+    "dubai", "dxb", "dubai marina", "jbr", "deira", "bur dubai",
+    "business bay", "palm jumeirah", "downtown dubai",
+    # Russian nominative + inflected cases ("я в Дубае", "из Дубая", "по Дубаю").
+    "дубай", "дубае", "дубая", "дубаи", "дубаем", "дубаю",
+)
+_AREA_ABU_DHABI_KW = (
+    "abu dhabi", "abudhabi", "abu-dhabi", "abu-dabi", "abudabi",
+    # Russian — hyphen AND space AND no-separator spellings (all indeclinable).
+    "абу-даби", "абу даби", "абудаби", "абу-дабе", "абу дабе",
+    # Abu Dhabi districts clients name instead of the emirate.
+    "raha", "al raha", "khalifa", "al khalifa", "mussafah", "mbz",
+    "mohammed bin zayed", "mohamed bin zayed", "yas", "yas island",
+    "saadiyat", "al reem", "reem island", "corniche", "tourist club",
+    "al bateen", "bateen", "shahama", "baniyas", "shamkha",
+    "al wathba", "wathba",
+)
+# Typo-tolerant Al Ain: "al ain", "alain", "al-ain", "al aim" (autocorrect), etc.
+_AL_AIN_TYPO_RE = re.compile(r"\ba[li][\s\-]*[aie]i[nm]\b", re.IGNORECASE)
+
+
+def detect_area(text: str) -> Optional[str]:
+    """Detect an EXPLICIT emirate mention in a client message.
+
+    Returns 'al_ain' | 'dubai' | 'abu_dhabi' | None. Word-boundary matched so
+    short tokens ("yas", "mbz") don't fire inside unrelated words ("always").
+    Shared by webhook slot-injection AND scripts/sim_conversation.py so the two
+    never diverge.
+    """
+    t = (text or "").lower()
+
+    def _has(kw: str) -> bool:
+        return re.search(r"\b" + re.escape(kw) + r"\b", t) is not None
+
+    if _AL_AIN_TYPO_RE.search(t) or any(
+        _has(k) for k in ("al ain", "alain", "al-ain", "аль айн", "аль-айн")
+    ):
+        return "al_ain"
+    if any(_has(k) for k in _AREA_DUBAI_KW):
+        return "dubai"
+    if any(_has(k) for k in _AREA_ABU_DHABI_KW):
+        return "abu_dhabi"
+    return None
+
+
 # Pull an explicit session length from a client message ("90 min", "90 минут",
 # "1.5 hours", "полтора часа") so slot filtering can require the WHOLE session
 # to fit, not a default 60 min. Requires a unit word so a bare "90" (price) or
@@ -591,6 +642,23 @@ async def _maybe_create_booking(
         )
         return
 
+    # Card-terminal note is a HARD rule (1 terminal for 6 masters): if the
+    # client asked to pay by card/terminal ANYWHERE in the conversation, the
+    # YClients record MUST carry "нужен терминал" so a master brings it. The
+    # prompt asks the model to set this note, but that's advisory — enforce it
+    # in code so a forgotten note never drops a terminal request on the floor.
+    _convo = " ".join(
+        (m.get("content") or "") for m in getattr(context, "recent_messages", [])
+    ).lower()
+    _wants_terminal = any(
+        kw in _convo for kw in ("terminal", "терминал", "card machine", "pos machine")
+    )
+    if _wants_terminal and "терминал" not in (booking_call.notes or "").lower():
+        booking_call.notes = (
+            (booking_call.notes + ". ") if booking_call.notes else ""
+        ) + "нужен терминал"
+        logger.info("terminal requested by client — forced 'нужен терминал' note")
+
     # Parse structured date/time into a datetime.
     try:
         booking_date = datetime.strptime(
@@ -702,9 +770,11 @@ async def _maybe_create_booking(
 
     # Slot-reality gate: never create a record for a time that isn't genuinely
     # free (an invented/occupied slot). Authoritative check against live YClients
-    # for the client's area + service duration. Skipped only if the area is
-    # unknown (can't check) — YClients save_if_busy=False is the final backstop.
-    _area = (context.client_data or {}).get("area")
+    # for the client's area + service duration. Prefer booking_call.area (the
+    # authoritative area the record will be created for, always present in the
+    # tool call) over the in-memory context area, which may be None on a fresh
+    # context — the gate used to be silently skipped in that case.
+    _area = booking_call.area or (context.client_data or {}).get("area")
     if _area and booking_call.time:
         try:
             _slot_ok = await bot_module.yclients_service.is_slot_available(
@@ -763,9 +833,6 @@ async def _maybe_create_booking(
         )
         await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
         dialog_manager.update_state(user_id, "completed")
-        # Remember this exact booking so a re-call on "thanks" is suppressed,
-        # but a different service/date/time is allowed as a 2nd booking.
-        context.last_booking_sig = _new_sig
         logger.info(
             f"✅ Wappi booking {booking.id} saved "
             f"({booking_call.service} {booking_call.date} {booking_call.time} "
@@ -775,8 +842,16 @@ async def _maybe_create_booking(
         logger.error(f"Wappi DB booking error: {e}", exc_info=True)
         return
 
+    # Did the appointment actually reach YClients? Stays True when there is no
+    # YClients path (mock/dev). We only fingerprint the booking for de-dup AFTER
+    # it is confirmed synced — so a FAILED sync can be retried by the model's
+    # next identical tool call instead of being silently suppressed as a
+    # duplicate (which previously left the appointment in local DB only).
+    _yc_synced = True
+
     # Create in YClients
     if bot_module.yclients_service and not config.MOCK_YCLIENTS:
+        _yc_synced = False
         try:
             import os as _os
             yc_service_id = await bot_module.yclients_service.find_service_id(
@@ -815,7 +890,11 @@ async def _maybe_create_booking(
             # re-resolve within the area — a cross-emirate booking is a 90-min
             # wrong-city drive / missed appointment.
             if yc_staff_id and booking_call.area:
-                _mid_area = await bot_module.yclients_service.staff_area_of(yc_staff_id)
+                # date-aware: a floating master (Lyudmila) validates by her
+                # daily emirate marker, not her name tag — else she'd be dropped
+                # and the client would get a DIFFERENT therapist than confirmed.
+                _mid_area = await bot_module.yclients_service.staff_area_of(
+                    yc_staff_id, date=booking_call.date)
                 if _mid_area is not None and _mid_area != booking_call.area:
                     logger.warning(
                         f"book: master_id {yc_staff_id} serves {_mid_area!r}, not "
@@ -826,6 +905,7 @@ async def _maybe_create_booking(
                 yc_staff_id = await bot_module.yclients_service.find_staff_id(
                     name=booking_call.master_name,
                     area=booking_call.area,
+                    date=booking_call.date,
                 )
             if not yc_staff_id:
                 logger.error(
@@ -875,12 +955,30 @@ async def _maybe_create_booking(
                     duration_minutes=booking_call.duration_minutes,
                 )
                 if yc_result:
+                    _yc_synced = True
                     logger.info(
                         f"✅ YClients booking created from WhatsApp: "
                         f"#{yc_result.get('id', '?')}"
                     )
                 else:
+                    # Create failed (4xx / slot conflict / save_if_busy). This
+                    # used to be a bare log — the appointment silently never
+                    # reached the calendar. Alert the admin so it's reconciled.
                     logger.warning("⚠️ YClients booking creation failed")
+                    if bot_module.notification_service:
+                        try:
+                            await bot_module.notification_service.send_booking_failed(
+                                telegram_id=telegram_id,
+                                reason=(
+                                    f"YClients did NOT accept booking #{booking.id} "
+                                    f"({booking_call.service} {booking_call.date} "
+                                    f"{booking_call.time}, {booking_call.area}). "
+                                    f"Local record saved — admin must create the "
+                                    f"YClients record manually."
+                                ),
+                            )
+                        except Exception:
+                            pass
             else:
                 logger.warning(
                     f"⚠️ YClients: service_id={yc_service_id}, "
@@ -888,6 +986,13 @@ async def _maybe_create_booking(
                 )
         except Exception as e:
             logger.error(f"❌ YClients booking error from WhatsApp: {e}")
+
+    # Fingerprint for de-dup ONLY once the booking is confirmed synced (or there
+    # was no YClients path at all). A failed sync leaves the sig unset so the
+    # model's next identical book_appointment call retries instead of being
+    # suppressed as a duplicate.
+    if _yc_synced:
+        context.last_booking_sig = _new_sig
 
     # Notify admin + auto-share the trip with the driver/logistics group.
     try:
@@ -901,6 +1006,16 @@ async def _maybe_create_booking(
             await bot_module.notification_service.send_booking_confirmed(fresh_client, booking)
         except Exception as e:
             logger.error(f"Wappi: failed to notify admin: {e}")
+
+    # Terminal is a physical constraint (1 terminal for 6 masters). The note is
+    # in the YClients comment, but the admin coordinates who carries it — surface
+    # it in Telegram too so it isn't missed.
+    if booking_call.notes and "терминал" in booking_call.notes.lower():
+        await _admin_text(
+            f"💳 <b>Клиент просит ТЕРМИНАЛ</b> — бронь #{booking.id} "
+            f"({booking_call.service} {booking_call.date} {booking_call.time}, "
+            f"{booking_call.area}). Мастеру нужно взять терминал."
+        )
 
     # Auto-share with driver on booking creation (FR 5.2). No-op until
     # DRIVER_TELEGRAM_CHAT_ID is configured, so safe to always call.
@@ -1083,7 +1198,14 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     try:
         new_dt = _dt.strptime(f"{call.new_date} {call.new_time}", "%Y-%m-%d %H:%M")
     except ValueError:
+        # The client was already told "passed to the team, we'll confirm shortly"
+        # — so a silent return would strand them. Alert the admin to follow up.
         logger.error(f"Reschedule: bad datetime {call.new_date} {call.new_time}")
+        await _admin_text(
+            f"⚠️ <b>Перенос — не разобрал дату/время</b>\nКлиент <code>{telegram_id}</code> "
+            f"({phone}): агент прислал некорректные {call.new_date!r} {call.new_time!r}. "
+            f"Клиенту сказали «передали команде» — уточните и перенесите вручную."
+        )
         return
 
     # Sanity window — same guard as new bookings: not in the past (1h grace),
@@ -1232,6 +1354,30 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "role": msg["role"],
                         "content": msg["content"],
                     })
+            # Area lives only in the in-memory context, so a Render restart /
+            # deploy (frequent during this testing sprint) or a delayed reply to
+            # the post-session survey lands on a FRESH context with area=None —
+            # and the agent re-asks "which area?" ("снова спрашивает откуда я").
+            # Restore it: (1) the persisted client.area column is authoritative;
+            # (2) fall back to the newest area mention in the reloaded history.
+            if not context.client_data.get("area"):
+                if getattr(client, "area", None):
+                    context.client_data["area"] = client.area
+                    logger.info(f"area restored from DB: {client.area!r}")
+                else:
+                    for _m in reversed(context.recent_messages):
+                        if _m.get("role") != "user":
+                            continue
+                        _recovered = detect_area(_m.get("content") or "")
+                        if _recovered:
+                            context.client_data["area"] = _recovered
+                            logger.info(f"area recovered from history: {_recovered!r}")
+                            # Backfill the column so next time it's a clean DB read.
+                            try:
+                                await bot_module.client_service.update_client(telegram_id, area=_recovered)
+                            except Exception:
+                                pass
+                            break
 
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
@@ -1255,6 +1401,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             if context.booking_data.get("service_duration"):
                 dialog_manager.update_booking_data(user_id, "service_duration", None)
 
+        # Reset the injected-slots block EVERY turn before rebuilding it. It is
+        # per-turn ground truth (dated "TODAY — <date>"); if this turn's fetch is
+        # skipped or fails, a leftover block from a previous turn would re-inject
+        # STALE slots with an outdated date. Start clean.
+        context.extra_system_info = ""
+
         # Inject YClients slots if we know the area
         logger.info(
             f"slot_inject_check: yc_service={bot_module.yclients_service is not None} "
@@ -1271,61 +1423,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # when an area is already cached, so a client can CHANGE area
             # mid-session ("actually I'm in Abu Dhabi" must override a cached
             # al_ain — was stuck before, showing the wrong emirate's masters).
-            if True:
-                import re as _re_area
-                # Short tokens like "raha", "yas", "mbz" match inside unrelated
-                # words if we just check substring containment (e.g. "raha"
-                # inside "Sarah", "yas" inside "always"). Require word
-                # boundaries. Multi-word tokens like "abu dhabi" still work.
-                def _has_kw(kw: str) -> bool:
-                    return _re_area.search(r"\b" + _re_area.escape(kw) + r"\b", _text_lower) is not None
-
-                # Typo-tolerant pattern for "Al Ain": covers "al ain",
-                # "alain", "al-ain", "al aim" (common autocorrect),
-                # "alaim", "ai ain", "aiain", etc. Allows 0-1 space/hyphen
-                # between "al" and the second word, which starts with a/e/i
-                # and ends in n/m (captures vowel and terminal-letter
-                # autocorrects).
-                _al_ain_typo = _re_area.compile(
-                    r"\ba[li][\s\-]*[aie]i[nm]\b", _re_area.IGNORECASE
+            # Detection lives in the shared detect_area() helper so the offline
+            # simulator matches prod exactly.
+            _explicit_area = detect_area(_text_lower)
+            # Explicit mention wins over any cached value.
+            if _explicit_area and _explicit_area != _client_area:
+                logger.info(
+                    f"area switch: {_client_area!r} → {_explicit_area!r} "
+                    f"(explicit mention in message)"
                 )
-
-                _explicit_area = None
-                if _al_ain_typo.search(_text_lower) or any(
-                    _has_kw(kw) for kw in ["al ain", "alain", "al-ain", "аль айн"]
-                ):
-                    _explicit_area = "al_ain"
-                elif any(_has_kw(kw) for kw in [
-                    "dubai", "dxb",
-                    # Russian nominative + inflected cases ("я в Дубае",
-                    # "из Дубая", "по Дубаю") — \b matches Cyrillic in Python re.
-                    "дубай", "дубае", "дубая", "дубаи", "дубаем", "дубаю",
-                    "dubai marina", "jbr", "deira", "bur dubai",
-                    "business bay", "palm jumeirah", "downtown dubai",
-                ]):
-                    _explicit_area = "dubai"
-                elif any(_has_kw(kw) for kw in [
-                    "abu dhabi", "abudhabi", "абу даби",
-                    "abudabi", "abu-dhabi", "abu-dabi",  # common typos
-                    "raha", "al raha", "khalifa", "al khalifa",
-                    "mussafah", "mbz", "mohammed bin zayed", "mohamed bin zayed",
-                    "yas", "yas island", "saadiyat", "al reem", "reem island",
-                    "corniche", "tourist club", "al bateen", "bateen",
-                    "shahama", "baniyas", "shamkha", "al wathba", "wathba",
-                ]):
-                    _explicit_area = "abu_dhabi"
-
-                # Explicit mention wins over any cached value.
-                if _explicit_area and _explicit_area != _client_area:
-                    logger.info(
-                        f"area switch: {_client_area!r} → {_explicit_area!r} "
-                        f"(explicit mention in message)"
-                    )
-                    _client_area = _explicit_area
-                    dialog_manager.update_client_data(user_id, "area", _explicit_area)
-                elif _explicit_area and not _client_area:
-                    _client_area = _explicit_area
-                    dialog_manager.update_client_data(user_id, "area", _explicit_area)
+                _client_area = _explicit_area
+                dialog_manager.update_client_data(user_id, "area", _explicit_area)
+                # Persist so it survives a restart / delayed survey reply.
+                try:
+                    await bot_module.client_service.update_client(telegram_id, area=_explicit_area)
+                except Exception as _e:
+                    logger.warning(f"couldn't persist area to client record: {_e}")
 
             # Capture the session length on ANY message (even before area is
             # known) and persist it, so slots only offer times the WHOLE session
@@ -1599,6 +1712,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         f"reply → {_detected}"
                     )
                     dialog_manager.update_client_data(user_id, "area", _detected)
+                    try:
+                        await bot_module.client_service.update_client(telegram_id, area=_detected)
+                    except Exception:
+                        pass
 
         # Guarantee honest client-facing wording at the CODE level — the LLM is
         # not reliable about it (it says "confirmed" on a reschedule, or before
@@ -1842,6 +1959,7 @@ async def wappi_webhook(request: Request, background_tasks: BackgroundTasks):
                     f"wappi_{phone}",
                     location_latitude=latitude,
                     location_longitude=longitude,
+                    area=area,
                 )
             except Exception as _e:
                 logger.warning(f"Wappi: couldn't persist GPS to client record: {_e}")
@@ -2030,10 +2148,12 @@ async def admin_share_with_driver(booking_id: int, request: Request):
     lets an admin resend or push a booking made outside the agent.
     """
     import bot as bot_module
-    if config.WEBHOOK_SECRET:
-        secret = request.headers.get("X-Admin-Secret", "")
-        if secret != config.WEBHOOK_SECRET:
-            return Response(content="forbidden", status_code=403)
+    # Deny by default: an admin mutation endpoint must NOT be open when
+    # WEBHOOK_SECRET is unset (was `if config.WEBHOOK_SECRET:` → skipped the
+    # check entirely on a misconfigured deploy, leaving these endpoints public).
+    secret = request.headers.get("X-Admin-Secret", "")
+    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+        return Response(content="forbidden", status_code=403)
 
     if not config.DRIVER_TELEGRAM_CHAT_ID:
         return {"status": "no_driver_configured"}
@@ -2058,10 +2178,12 @@ async def admin_share_with_driver(booking_id: int, request: Request):
 async def admin_mark_paid(booking_id: int, request: Request):
     """Mark a booking as paid (admin reconciles a bank transfer)."""
     import bot as bot_module
-    if config.WEBHOOK_SECRET:
-        secret = request.headers.get("X-Admin-Secret", "")
-        if secret != config.WEBHOOK_SECRET:
-            return Response(content="forbidden", status_code=403)
+    # Deny by default: an admin mutation endpoint must NOT be open when
+    # WEBHOOK_SECRET is unset (was `if config.WEBHOOK_SECRET:` → skipped the
+    # check entirely on a misconfigured deploy, leaving these endpoints public).
+    secret = request.headers.get("X-Admin-Secret", "")
+    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+        return Response(content="forbidden", status_code=403)
     from services.payment import PaymentService
     try:
         await PaymentService(bot_module.booking_service).mark_paid(booking_id)
@@ -2074,10 +2196,12 @@ async def admin_mark_paid(booking_id: int, request: Request):
 @app.get("/admin/logs")
 async def admin_logs(request: Request):
     """Return recent structured turn logs (for debugging / bug analysis)."""
-    if config.WEBHOOK_SECRET:
-        secret = request.headers.get("X-Admin-Secret", "")
-        if secret != config.WEBHOOK_SECRET:
-            return Response(content="forbidden", status_code=403)
+    # Deny by default: an admin mutation endpoint must NOT be open when
+    # WEBHOOK_SECRET is unset (was `if config.WEBHOOK_SECRET:` → skipped the
+    # check entirely on a misconfigured deploy, leaving these endpoints public).
+    secret = request.headers.get("X-Admin-Secret", "")
+    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+        return Response(content="forbidden", status_code=403)
     from services.turn_logger import read_recent, LOG_PATH
     try:
         n = int(request.query_params.get("n", "50"))

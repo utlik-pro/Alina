@@ -81,7 +81,18 @@ class WappiClient:
                     data = await resp.json()
                     last_data = data
                     if resp.status == 200:
-                        logger.info(f"Wappi: {log_label} ok")
+                        # HTTP 200 does NOT guarantee delivery — Wappi can return
+                        # 200 with a body error (e.g. recipient not on WhatsApp).
+                        # Surface that instead of logging a false "ok" (the
+                        # "silently never replies" class of prod failure).
+                        _bs = str((data or {}).get("status") or "").lower() if isinstance(data, dict) else ""
+                        if _bs and _bs not in ("done", "success", "ok", "sent", "queued", "delivered", "processing"):
+                            logger.error(
+                                f"Wappi {log_label}: HTTP 200 but body status={_bs!r} — "
+                                f"message likely NOT delivered: {data}"
+                            )
+                        else:
+                            logger.info(f"Wappi: {log_label} ok")
                         return data
                     # 4xx (auth/invalid recipient) — no point retrying.
                     if 400 <= resp.status < 500:
