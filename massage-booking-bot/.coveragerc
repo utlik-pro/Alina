@@ -1,0 +1,10 @@
+# Coverage config for the bot test suite (referenced from pytest.ini via
+# --cov-config). Was previously a dead [coverage:run] section inside pytest.ini
+# that coverage never read — and that section header hid the pytest markers.
+[run]
+omit =
+    */tests/*
+    */venv/*
+    */.venv/*
+    */migrations/*
+    */test_*.py
