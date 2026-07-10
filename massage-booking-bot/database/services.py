@@ -492,6 +492,29 @@ class BookingService:
             b = result.scalar_one_or_none()
             return self._booking_row_to_dict(b, client) if b else None
 
+    async def get_active_bookings(self, telegram_id: str):
+        """ALL upcoming confirmed bookings, soonest first. Used to match a
+        cancel/reschedule to the booking the client actually means (by the
+        old date/time they mention) instead of guessing the soonest one."""
+        uae_now = datetime.utcnow() + timedelta(hours=4)
+        lower_bound = uae_now - timedelta(hours=2)
+        async with self.db.session() as session:
+            client = (await session.execute(
+                select(Client).where(Client.telegram_id == telegram_id)
+            )).scalar_one_or_none()
+            if not client:
+                return []
+            rows = (await session.execute(
+                select(Booking)
+                .where(
+                    Booking.client_id == client.id,
+                    Booking.status == "confirmed",
+                    Booking.booking_date >= lower_bound,
+                )
+                .order_by(Booking.booking_date.asc())
+            )).scalars().all()
+            return [self._booking_row_to_dict(b, client) for b in rows]
+
     async def count_active_bookings(self, telegram_id: str) -> int:
         """How many upcoming confirmed bookings the client has. When >1, a bare
         'cancel'/'reschedule' is ambiguous (get_latest_active_booking would pick

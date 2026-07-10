@@ -236,6 +236,20 @@ CANCEL_APPOINTMENT_TOOL: Dict[str, Any] = {
                         "way (admin context). Null/false otherwise."
                     ),
                 },
+                "old_date": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "ISO date of the booking being cancelled, if known — "
+                        "selects which one when the client has several."
+                    ),
+                },
+                "old_time": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "24h HH:MM of the booking being cancelled (client said "
+                        "'cancel my 5:30 PM' → \"17:30\"). Fill when known."
+                    ),
+                },
             },
         },
     },
@@ -265,6 +279,23 @@ RESCHEDULE_APPOINTMENT_TOOL: Dict[str, Any] = {
                     "pattern": r"^([01]\d|2[0-3]):[0-5]\d$",
                     "description": "New 24h time HH:MM in UAE local time.",
                 },
+                "old_date": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "ISO date of the EXISTING booking being moved, if the "
+                        "client mentioned it or it's known from context. With "
+                        "several upcoming bookings this selects which one to "
+                        "move — always fill it when you can."
+                    ),
+                },
+                "old_time": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "24h HH:MM of the EXISTING booking being moved (e.g. "
+                        "the client said 'move my 5:30 PM' → \"17:30\"). "
+                        "Selects which booking to move — always fill when known."
+                    ),
+                },
                 "reason": {
                     "type": ["string", "null"],
                     "description": "Optional reason for the reschedule.",
@@ -282,6 +313,8 @@ class CancelCall:
     reason: str = ""
     confirmed: bool = False
     master_en_route: bool = False
+    old_date: Optional[str] = None   # selector: date of the booking to cancel
+    old_time: Optional[str] = None   # selector: time of the booking to cancel
 
     @classmethod
     def from_tool_args(cls, args: Dict[str, Any]) -> "CancelCall":
@@ -289,6 +322,8 @@ class CancelCall:
             reason=_opt_str(args.get("reason")) or "",
             confirmed=bool(args.get("confirmed") or False),
             master_en_route=bool(args.get("master_en_route") or False),
+            old_date=_opt_str(args.get("old_date")),
+            old_time=_opt_str(args.get("old_time")),
         )
 
 
@@ -298,6 +333,8 @@ class RescheduleCall:
 
     new_date: str          # YYYY-MM-DD
     new_time: str          # HH:MM
+    old_date: Optional[str] = None   # selector: date of the booking being moved
+    old_time: Optional[str] = None   # selector: time of the booking being moved
     reason: Optional[str] = None
 
     @classmethod
@@ -305,6 +342,8 @@ class RescheduleCall:
         return cls(
             new_date=str(args["new_date"]),
             new_time=str(args["new_time"]),
+            old_date=_opt_str(args.get("old_date")),
+            old_time=_opt_str(args.get("old_time")),
             reason=_opt_str(args.get("reason")),
         )
 

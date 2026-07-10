@@ -333,6 +333,40 @@ def _client_confirmed(user_text: str) -> bool:
     return _CONFIRM_WORDS_RE.search(t) is not None
 
 
+def _match_booking_by_old_slot(bookings, old_date, old_time):
+    """Pick the ONE booking matching the old date/time the client named.
+
+    `bookings` are dicts with a datetime `booking_date`. Matching is tolerant:
+    time alone ("17:30") is enough when it's unique; date alone likewise; both
+    must agree when both are given. Returns the single match or None (caller
+    then asks the client) — never a guess.
+    """
+    if not bookings:
+        return None
+    want_t = None
+    if old_time:
+        try:
+            hh, mm = str(old_time).split(":")
+            want_t = (int(hh), int(mm))
+        except (ValueError, AttributeError):
+            want_t = None
+    want_d = (old_date or "").strip() or None
+
+    matches = []
+    for b in bookings:
+        bd = b.get("booking_date")
+        if bd is None:
+            continue
+        if want_t and (bd.hour, bd.minute) != want_t:
+            continue
+        if want_d and bd.strftime("%Y-%m-%d") != want_d:
+            continue
+        matches.append(b)
+    if (want_t or want_d) and len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def _booking_recap_question(booking_call) -> str:
     """The final recap the agent must send BEFORE booking: one message with
     every agreed detail and a direct yes/no question."""
@@ -1179,23 +1213,31 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
 
     # Disambiguate: with >1 upcoming booking, a bare "cancel" would silently hit
     # the SOONEST one, which may not be the one the client means. Don't guess —
-    # route to admin and let the client name which appointment.
-    if await bot_module.booking_service.count_active_bookings(telegram_id) > 1:
-        logger.info(f"Cancel: {telegram_id} has multiple active bookings — not auto-cancelling")
-        await _admin_text(
-            f"❓ <b>Отмена — уточнить какую</b>\nКлиент <code>{telegram_id}</code> "
-            f"({phone}) просит отмену, но у него НЕСКОЛЬКО активных броней. "
-            f"Ничего не отменял — уточните у клиента и обработайте вручную."
-        )
-        if wappi_client:
-            await wappi_client.send_message(
-                phone,
-                "You have more than one upcoming appointment dear 🌹 "
-                "Which one would you like to cancel — the date and service please?"
+    # route to admin and let the client name which appointment. The tool's
+    # old_date/old_time selector picks the booking when the client named it
+    # ("cancel my 5:30 PM") — only an unresolvable ambiguity asks the client.
+    actives = await bot_module.booking_service.get_active_bookings(telegram_id)
+    b = None
+    if len(actives) == 1:
+        b = actives[0]
+    elif len(actives) > 1:
+        b = _match_booking_by_old_slot(actives, call.old_date, call.old_time)
+        if b is None:
+            logger.info(f"Cancel: {telegram_id} has multiple active bookings — not auto-cancelling")
+            await _admin_text(
+                f"❓ <b>Отмена — уточнить какую</b>\nКлиент <code>{telegram_id}</code> "
+                f"({phone}) просит отмену, но у него НЕСКОЛЬКО активных броней. "
+                f"Ничего не отменял — уточните у клиента и обработайте вручную."
             )
-        return
+            if wappi_client:
+                await wappi_client.send_message(
+                    phone,
+                    "You have more than one upcoming appointment dear 🌹 "
+                    "Which one would you like to cancel — please tell me its "
+                    "time (e.g. 'the 5:30 PM one')?"
+                )
+            return
 
-    b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
     if not b:
         logger.info(f"Cancel requested but no active booking for {telegram_id}")
         await _admin_text(
@@ -1254,24 +1296,38 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     import bot as bot_module
     from datetime import datetime as _dt, timedelta as _td
 
-    # Disambiguate: with >1 upcoming booking a bare "reschedule" would hit the
-    # soonest one, maybe the wrong one. Don't guess — ask the client.
-    if await bot_module.booking_service.count_active_bookings(telegram_id) > 1:
-        logger.info(f"Reschedule: {telegram_id} has multiple active bookings — not auto-moving")
-        await _admin_text(
-            f"❓ <b>Перенос — уточнить какой</b>\nКлиент <code>{telegram_id}</code> "
-            f"({phone}) просит перенос, но у него НЕСКОЛЬКО активных броней. "
-            f"Ничего не переносил — уточните у клиента."
-        )
-        if wappi_client:
-            await wappi_client.send_message(
-                phone,
-                "You have more than one upcoming appointment dear 🌹 "
-                "Which one shall I move — the date and service please?"
+    # Pick WHICH booking to move. With >1 upcoming booking a bare "reschedule"
+    # would hit the soonest one, maybe the wrong one. The tool now carries an
+    # old_date/old_time selector (the client almost always names the original
+    # slot — "move my 5:30 PM"); match on it. Only if the selector can't
+    # single out one booking do we ask the client — this used to LOOP because
+    # the clarifying answer had no way to reach the handler.
+    actives = await bot_module.booking_service.get_active_bookings(telegram_id)
+    b = None
+    if len(actives) == 1:
+        b = actives[0]
+    elif len(actives) > 1:
+        b = _match_booking_by_old_slot(actives, call.old_date, call.old_time)
+        if b is None:
+            logger.info(
+                f"Reschedule: {telegram_id} has {len(actives)} active bookings, "
+                f"selector old_date={call.old_date!r} old_time={call.old_time!r} "
+                f"didn't single one out — asking the client"
             )
-        return
+            await _admin_text(
+                f"❓ <b>Перенос — уточнить какой</b>\nКлиент <code>{telegram_id}</code> "
+                f"({phone}) просит перенос, но у него НЕСКОЛЬКО активных броней. "
+                f"Ничего не переносил — уточните у клиента."
+            )
+            if wappi_client:
+                await wappi_client.send_message(
+                    phone,
+                    "You have more than one upcoming appointment dear 🌹 "
+                    "Which one shall I move — please tell me its time "
+                    "(e.g. 'the 5:30 PM one')?"
+                )
+            return
 
-    b = await bot_module.booking_service.get_latest_active_booking(telegram_id)
     if not b:
         await _admin_text(
             f"📅 <b>Запрос на перенос</b>\nКлиент <code>{telegram_id}</code> "

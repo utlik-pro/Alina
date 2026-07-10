@@ -114,3 +114,27 @@ def test_wrong_day_mismatch_none_when_no_day_word():
     from webhook_app import _booking_day_mismatch
     bc = types.SimpleNamespace(date="2026-07-09", time="17:00")
     assert _booking_day_mismatch("book me at 5pm", bc) is None  # no tomorrow/today word
+
+
+def test_match_booking_by_old_slot():
+    """Reschedule/cancel selector: the client's named old slot must pick the
+    right booking among several (the 'which one → loop' live catch)."""
+    from datetime import datetime
+    from webhook_app import _match_booking_by_old_slot
+
+    b1 = {"booking_id": 1, "booking_date": datetime(2030, 1, 6, 10, 0)}
+    b2 = {"booking_id": 2, "booking_date": datetime(2030, 1, 6, 17, 30)}
+    b3 = {"booking_id": 3, "booking_date": datetime(2030, 1, 7, 17, 30)}
+
+    # Unique time picks it.
+    assert _match_booking_by_old_slot([b1, b2], None, "17:30")["booking_id"] == 2
+    # Ambiguous time (two 17:30s) → None, ask the client.
+    assert _match_booking_by_old_slot([b1, b2, b3], None, "17:30") is None
+    # Date + time disambiguates.
+    assert _match_booking_by_old_slot([b1, b2, b3], "2030-01-07", "17:30")["booking_id"] == 3
+    # Date alone, unique.
+    assert _match_booking_by_old_slot([b1, b3], "2030-01-07", None)["booking_id"] == 3
+    # No selector at all → None (never guess).
+    assert _match_booking_by_old_slot([b1, b2], None, None) is None
+    # Garbage time → no crash, no guess.
+    assert _match_booking_by_old_slot([b1, b2], None, "half past five") is None
