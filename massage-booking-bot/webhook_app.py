@@ -1249,15 +1249,17 @@ async def _maybe_create_booking(
 
 
 async def _admin_text(message: str):
-    """Post a plain HTML message to the admin group (best-effort)."""
+    """Post a plain HTML message to the admin group; falls back to the DM
+    (NotificationService._send_with_fallback) — alerts must never vanish just
+    because the group id is dead (live catch 2026-07-10: getChat 400)."""
     import bot as bot_module
     ns = bot_module.notification_service
     if not ns or not ns.group_chat_id:
         return
     try:
-        await ns.bot.send_message(chat_id=ns.group_chat_id, text=message, parse_mode="HTML")
+        await ns._send_with_fallback(text=message, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Failed to post admin text: {e}")
+        logger.error(f"Failed to post admin text (incl. fallback): {e}")
 
 
 def _driver_request_text(booking, client) -> str:

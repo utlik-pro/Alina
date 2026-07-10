@@ -1066,18 +1066,47 @@ class YClientsService:
 
         url = f"{self.BASE_URL}/records/{self.company_id}"
 
-        try:
+        async def _post(pl):
             session = await self._get_session()
-            async with session.post(url, headers=self._headers, json=payload) as resp:
-                data = await resp.json()
-                if data.get("success"):
-                    record_id = data["data"].get("id", "?")
-                    logger.info(f"YClients: created booking #{record_id} for {client_name} on {date} {time}")
-                    return data["data"]
-                else:
-                    error_msg = data.get("meta", {}).get("message", "Unknown error")
-                    logger.error(f"YClients: failed to create booking: {error_msg}")
-                    return None
+            async with session.post(url, headers=self._headers, json=pl) as resp:
+                return await resp.json()
+
+        try:
+            data = await _post(payload)
+            if data.get("success"):
+                record_id = data["data"].get("id", "?")
+                logger.info(f"YClients: created booking #{record_id} for {client_name} on {date} {time}")
+                return data["data"]
+
+            error_msg = data.get("meta", {}).get("message", "Unknown error")
+            logger.error(f"YClients: failed to create booking: {error_msg}")
+
+            # FALLBACK — the record MUST land in the calendar. The most common
+            # rejection is a service not attached to the therapist in YClients
+            # (live case 2026-07-10: 'Deep facial cleansing' is attached to NO
+            # master at all, so every booking for it died while the client was
+            # told ✅). Retry WITHOUT the services array: a bare time-block
+            # record with the service named in the comment. The admin attaches
+            # the service manually — but the slot is HELD and the client is
+            # not lost.
+            if payload.get("services"):
+                fb = dict(payload)
+                fb.pop("services", None)
+                fb["comment"] = (f"{comment} | УСЛУГА НЕ ПРИВЯЗАНА к мастеру в YClients — "
+                                 f"добавьте услугу вручную (id {service_ids}).").strip()
+                data2 = await _post(fb)
+                if data2.get("success"):
+                    record_id = data2["data"].get("id", "?")
+                    logger.warning(
+                        f"YClients: booking #{record_id} created WITHOUT services "
+                        f"(fallback; original error: {error_msg})"
+                    )
+                    return data2["data"]
+                logger.error(
+                    f"YClients: fallback (no services) also failed: "
+                    f"{(data2.get('meta') or {}).get('message', 'Unknown error')}"
+                )
+            return None
         except Exception as e:
             logger.error(f"YClients: create booking exception: {e}")
             return None

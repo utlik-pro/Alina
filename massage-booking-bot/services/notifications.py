@@ -1,5 +1,6 @@
 """Notification service for sending updates to Telegram group"""
 
+import os
 from typing import Optional
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -10,6 +11,12 @@ from database.models import Client, Booking
 
 class NotificationService:
     """Service for sending notifications to admin Telegram group"""
+
+    # Admin alerts must NEVER die silently: the configured group turned out
+    # not to exist on prod (getChat 400, live 2026-07-10) and every alert —
+    # including "booking NOT synced to YClients" — vanished into the void.
+    # When the group send fails, fall back to a direct DM (Dmitry).
+    FALLBACK_CHAT_ID = os.getenv("ALERT_FALLBACK_CHAT_ID", "1379584180")
 
     def __init__(self, bot: Bot, group_chat_id: Optional[str] = None):
         """
@@ -27,6 +34,20 @@ class NotificationService:
         else:
             logger.warning("No group chat ID provided - notifications disabled")
 
+    async def _send_with_fallback(self, **kwargs):
+        """Send to the admin group; on ANY failure re-send to the fallback DM
+        so a booking-failure alert can't disappear with a dead group id."""
+        try:
+            await self.bot.send_message(chat_id=self.group_chat_id, **kwargs)
+        except Exception as e:
+            logger.error(
+                f"Admin-group send failed ({e}) — falling back to DM "
+                f"{self.FALLBACK_CHAT_ID}"
+            )
+            text = kwargs.get("text") or ""
+            kwargs["text"] = f"⚠️ (группа алертов недоступна)\n{text}"
+            await self.bot.send_message(chat_id=self.FALLBACK_CHAT_ID, **kwargs)
+
     async def send_new_client(self, client: Client):
         """Notify about new client"""
         if not self.group_chat_id:
@@ -40,8 +61,7 @@ class NotificationService:
 Ожидаем первое бронирование..."""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
@@ -100,8 +120,7 @@ class NotificationService:
 📊 Статус: <b>{self._format_status(booking.status)}</b>"""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
                 disable_web_page_preview=False,
@@ -154,8 +173,7 @@ class NotificationService:
 ✅ Добавлено в YClients!"""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
                 disable_web_page_preview=False,
@@ -182,8 +200,7 @@ class NotificationService:
             f"Клиент оставил контакты, но ещё не забронировал."
         )
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
@@ -204,8 +221,7 @@ class NotificationService:
             f"Проверьте диалог и создайте запись вручную."
         )
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
@@ -234,8 +250,7 @@ class NotificationService:
 {reason_info}"""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
@@ -263,8 +278,7 @@ class NotificationService:
 Рекомендуется связаться с клиентом!"""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
@@ -290,8 +304,7 @@ class NotificationService:
 ⚠️ Необходимо проинформировать мастера перед визитом!"""
 
         try:
-            await self.bot.send_message(
-                chat_id=self.group_chat_id,
+            await self._send_with_fallback(
                 text=message,
                 parse_mode="HTML",
             )
