@@ -2122,7 +2122,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             pass
 
     except Exception as e:
-        logger.error(f"Wappi background processing error: {e}", exc_info=True)
+        logger.opt(exception=True).error(
+            "Wappi background processing error: {}", str(e))
         try:
             from services.turn_logger import log_turn
             log_turn(phone, text, error=str(e)[:300])

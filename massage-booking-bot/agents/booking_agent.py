@@ -971,7 +971,10 @@ You are Alina and you always speak English with clients."""
             return answer, actions
 
         except Exception as e:
-            logger.error(f"Ошибка при обработке (with_tools): {e}", exc_info=True)
+            # loguru re-formats the message string — an f-stringed exception that
+            # contains "{...}" (e.g. an OpenAI 429 JSON body) makes .format() raise
+            # KeyError and MASKS the real error. Pass e as an arg, not in the template.
+            logger.opt(exception=True).error("Ошибка при обработке (with_tools): {}", str(e))
             return "Sorry dear, there was a technical issue. Please try again 🙏", AgentActions()
 
     @staticmethod
