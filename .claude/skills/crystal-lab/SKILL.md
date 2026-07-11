@@ -144,6 +144,29 @@ A booking created without location + confirmation is a bug.
   **pushing to develop = instant prod deploy** — don't push while testers are
   mid-conversation.
 
+## Pipeline auditor — the instrument toward "agent = full administrator"
+- **North star (owner, 2026-07-11): the WhatsApp agent must work like a human
+  administrator.** The 500+ YClients record comments admins write ARE the job
+  description. `scripts/audit_pipelines.py --from --to` replays real dialogues
+  (`logs/wappi_chats`) against real YClients state and reports two things,
+  deterministically (pure logic, NO prompts/LLM — by owner requirement):
+  1. **Regression** — say-do integrity (`booked ✅` ↔ real record; distinguishes
+     phantom from moved-after-confirm), cancel/reschedule completion, manual-
+     override (admin touched an agent booking = signal). Code: `services/pipeline_audit/`.
+  2. **Gap-to-admin** — coverage map from comment taxonomy. First run
+     (2026-07-11): agent covers **~16%** of admin workload. Biggest gap by far:
+     **packages/абонементы = 58% of comments, agent is blind to them.**
+- ⚠️ **Package data is API-walled:** `GET /company/1094806/loyalty/abonements`
+  → 403 «Недостаточно прав» / 404. Two-track plan (owner-approved): parse the
+  package counters admins write in comments ("5+", "ост. 150 мин") NOW, and
+  Alina requests a loyalty-scope YClients token in parallel. Do NOT let the
+  agent SPEAK package info until the parser is auditor-verified accurate.
+- Auditor findings are FAIL / WARN / FLAG_HUMAN — free-text comment semantics,
+  blame attribution and conversational quality are NOT logic-checkable → they go
+  to a human-review queue, never a silent pass.
+- Roadmap order (v1 shipped = checks #1/#6/#7 + gap): v2 adds slot-replay,
+  area-routing, gate, duration, comment-token cross-checks, then watchdog wrap.
+
 ## Verification checklist before saying "done"
 - [ ] Drove the FULL live conversation (service→area→slot→location→name→payment→confirm)
       and saw a correct YClients record created.
