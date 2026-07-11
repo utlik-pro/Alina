@@ -55,6 +55,20 @@ def classify_comments(comments: List[str]) -> Dict:
         if not hit:
             unmatched += 1
 
+    # Package readability: the parser can't change agent behaviour until it's
+    # wired live, but it measures how much of the (uncovered) package workload is
+    # now machine-readable — the concrete progress lever toward closing the gap.
+    from services.package_parser import parse_comment
+    pkg_total = counts.get("Packages / session counter", 0)
+    pkg_readable = 0
+    for c in comments:
+        c = (c or "").strip()
+        if not c or _TEST_STAMP.search(c):
+            continue
+        st = parse_comment(c)
+        if st and (st.body_session or st.face_session or st.remaining_minutes is not None):
+            pkg_readable += 1
+
     rows = []
     for name in counts:
         rows.append({
@@ -75,4 +89,6 @@ def classify_comments(comments: List[str]) -> Dict:
         "unmatched": unmatched,
         "bot_records": bot_records,
         "admin_coverage_score": covered,   # 0..1 of the CLASSIFIED workload
+        "package_readable": pkg_readable,  # comments the parser structures
+        "package_total": pkg_total,        # package comments seen
     }

@@ -47,6 +47,11 @@ def render(findings: List[Finding], gap: Dict, meta: Dict) -> str:
     L.append(f"Agent covers **~{score*100:.0f}%** of the classified admin workload "
              f"({gap.get('total_human_comments',0)} real comments; "
              f"{gap.get('unmatched',0)} free-text → human queue).\n")
+    p_read, p_tot = gap.get("package_readable", 0), gap.get("package_total", 0)
+    if p_tot:
+        L.append(f"> 📦 Package parser (built, not yet wired to the agent) already "
+                 f"machine-reads **{p_read}/{p_tot} ({p_read/p_tot*100:.0f}%)** of package "
+                 f"comments into a session counter — the lever to close the biggest gap.\n")
     L.append("| Admin responsibility | Real load | Agent |")
     L.append("|---|---|---|")
     for r in gap.get("rows", []):
