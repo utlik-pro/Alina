@@ -203,3 +203,89 @@ def test_gap_report_packages_dominate_and_uncovered():
     assert rows["Terminal (card) payment"]["coverage"] == "full"
     assert g["bot_records"] == 1  # test stamp excluded from human workload
     assert 0.0 <= g["admin_coverage_score"] <= 1.0
+
+
+# ── #3 area routing ──────────────────────────────────────────────────────
+
+class _FakeSvc:
+    def __init__(self, area_by_id):
+        self._m = area_by_id
+    async def staff_area_of(self, staff_id, date=None):
+        return self._m.get(staff_id)
+
+
+@pytest.mark.asyncio
+async def test_area_routing_fail_cross_emirate():
+    from services.pipeline_audit.checks import area_routing
+    recs = [{
+        "id": 1, "date": "2026-07-11 12:00:00",
+        "comment": "WhatsApp (Wappi) bot booking #5. Area: dubai. Address: villa 3.",
+        "staff": {"id": 700, "name": "Наталья"},
+        "client": {"phone": "971500"},
+    }]
+    out = await area_routing.check_records(recs, _FakeSvc({700: "abu_dhabi"}))
+    assert len(out) == 1 and out[0].severity == FAIL
+    assert "CROSS-EMIRATE" in out[0].summary
+
+
+@pytest.mark.asyncio
+async def test_area_routing_ok_match():
+    from services.pipeline_audit.checks import area_routing
+    recs = [{
+        "id": 2, "date": "2026-07-11 12:00:00",
+        "comment": "WhatsApp (Wappi) bot booking #6. Area: al_ain.",
+        "staff": {"id": 800, "name": "Элиза Al Ain"},
+        "client": {"phone": "971501"},
+    }]
+    out = await area_routing.check_records(recs, _FakeSvc({800: "al_ain"}))
+    assert out[0].severity == OK
+
+
+@pytest.mark.asyncio
+async def test_area_routing_skips_admin_parked():
+    from services.pipeline_audit.checks import area_routing
+    recs = [{
+        "id": 3, "date": "2026-07-11 12:00:00",
+        "comment": "WhatsApp (Wappi) bot booking #7. Area: abu_dhabi.",
+        "staff": {"id": 0, "name": "АДМИНИСТРАТОРЫ"},
+        "client": {"phone": "971502"},
+    }]
+    assert await area_routing.check_records(recs, _FakeSvc({})) == []
+
+
+# ── #4 booking gate ──────────────────────────────────────────────────────
+
+def test_gate_ok_with_confirm_and_address():
+    from services.pipeline_audit.checks import booking_gate
+    ep = _ep("375293726634", [
+        (True, "So dear — Ekaterina, Sat 11 Jul 12:00 PM. Shall I confirm?", BASE_TS),
+        (False, "Yes", BASE_TS+1),
+        (True, "Your body massage is booked ✅ Ekaterina — Sat 11 Jul 12:00 PM", BASE_TS+2),
+    ])
+    recs = {"293726634": [{"id": 1, "date": "2026-07-11 12:00:00", "deleted": False,
+                           "comment": "WhatsApp (Wappi) bot booking #1. Area: abu_dhabi. Address: villa 5."}]}
+    out = booking_gate.check(ep, recs, window=("2026-07-11", "2026-07-11"))
+    assert out[0].severity == OK
+
+
+def test_gate_fail_no_confirm():
+    from services.pipeline_audit.checks import booking_gate
+    ep = _ep("375293726634", [
+        (True, "Your body massage is booked ✅ Ekaterina — Sat 11 Jul 12:00 PM", BASE_TS+2),
+    ])
+    recs = {"293726634": [{"id": 1, "date": "2026-07-11 12:00:00", "deleted": False,
+                           "comment": "WhatsApp (Wappi) bot booking #1. Area: abu_dhabi. Address: villa 5."}]}
+    out = booking_gate.check(ep, recs, window=("2026-07-11", "2026-07-11"))
+    assert out[0].severity == FAIL
+
+
+def test_gate_warn_no_address():
+    from services.pipeline_audit.checks import booking_gate
+    ep = _ep("375293726634", [
+        (False, "yes please book it", BASE_TS),
+        (True, "Your body massage is booked ✅ Ekaterina — Sat 11 Jul 12:00 PM", BASE_TS+2),
+    ])
+    recs = {"293726634": [{"id": 1, "date": "2026-07-11 12:00:00", "deleted": False,
+                           "comment": "WhatsApp (Wappi) bot booking #1. Area: abu_dhabi."}]}
+    out = booking_gate.check(ep, recs, window=("2026-07-11", "2026-07-11"))
+    assert out[0].severity == WARN

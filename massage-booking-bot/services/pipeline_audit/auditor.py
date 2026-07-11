@@ -15,7 +15,10 @@ from .loader import (
 )
 from .episodes import segment_all
 from .gap_report import classify_comments
-from .checks import booking_integrity, cancel_reschedule, manual_override
+from .checks import (
+    booking_integrity, cancel_reschedule, manual_override,
+    area_routing, booking_gate,
+)
 
 
 async def run_audit(svc, date_from: str, date_to: str,
@@ -33,9 +36,11 @@ async def run_audit(svc, date_from: str, date_to: str,
     for ep in episodes:
         findings += booking_integrity.check(ep, by_phone, window)
         findings += cancel_reschedule.check(ep, by_phone, window)
+        findings += booking_gate.check(ep, by_phone, window)
 
-    # record-level check (manual override of agent bookings)
+    # record-level checks (over agent bookings)
     findings += manual_override.check_records(records)
+    findings += await area_routing.check_records(records, svc)
 
     # gap-to-administrator coverage map (from record comments)
     comments = [r.get("comment") or "" for r in records if (r.get("comment") or "").strip()]

@@ -36,7 +36,8 @@ def render(findings: List[Finding], gap: Dict, meta: Dict) -> str:
     L.append("## Pipeline health (regression)\n")
     L.append("| Pipeline | 🔴 FAIL | 🟡 review | 🟢 OK |")
     L.append("|---|---|---|---|")
-    for pl in ("booking_integrity", "cancel_reschedule", "manual_override"):
+    for pl in ("booking_integrity", "cancel_reschedule", "booking_gate",
+               "area_routing", "manual_override"):
         s = stats.get(pl, {})
         L.append(f"| {pl} | {s.get(FAIL,0)} | {s.get(FLAG_HUMAN,0)} | {s.get(OK,0)} |")
     L.append("")

@@ -164,8 +164,15 @@ A booking created without location + confirmation is a bug.
 - Auditor findings are FAIL / WARN / FLAG_HUMAN — free-text comment semantics,
   blame attribution and conversational quality are NOT logic-checkable → they go
   to a human-review queue, never a silent pass.
-- Roadmap order (v1 shipped = checks #1/#6/#7 + gap): v2 adds slot-replay,
-  area-routing, gate, duration, comment-token cross-checks, then watchdog wrap.
+- Roadmap: v1 = #1 say-do / #6 manual-override / #7 cancel-reschedule + gap.
+  v2 = #3 area-routing (record Area stamp vs staff emirate, marker-aware) + #4
+  gate (confirm from dialogue, Address stamp from record). ⚠️ **#2 slot-replay is
+  watchdog-only** — replaying "was the slot free" on a PAST date is meaningless
+  (the schedule changed); it belongs in the continuous mode on future-dated
+  offers, NOT historical batch. **#5 duration-fit via service titles is too noisy**
+  (titles bundle multiple durations: "Cupping 15 + body 30") — v2.1 does it via
+  dialogue-intent ("90 min") vs record seance_length instead. Next: comment-token
+  cross-checks + watchdog wrap (launchd, dedup, alert Dmitry).
 
 ## Verification checklist before saying "done"
 - [ ] Drove the FULL live conversation (service→area→slot→location→name→payment→confirm)
