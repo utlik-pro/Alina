@@ -1581,17 +1581,10 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         f"⏭️ Стало: {new_when}\n"
         f"{_yc_line}"
     )
-    # The agent replied optimistically ("moved ✅") at tool time. If YClients
-    # actually refused the move, walk it back with the client honestly.
-    if not yc_moved and wappi_client:
-        try:
-            await wappi_client.send_message(
-                phone,
-                "Small note dear — our team is double-checking the calendar for "
-                "your new time and will confirm it shortly 🌹"
-            )
-        except Exception:
-            pass
+    # No extra client message here: the agent's reply is now team-mediated
+    # ("passed your reschedule to the team — we'll confirm shortly"), which is
+    # honest whether or not the YClients move succeeded. The admin alert above
+    # carries the actual sync status. A second message would contradict it.
 
 
 async def _notify_waiting_list(area, freed_date):
