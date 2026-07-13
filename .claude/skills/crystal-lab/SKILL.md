@@ -90,12 +90,21 @@ client to state minutes; look it up from the service. For body massage, ask 60 o
 text address) → NAME → payment → explicit CONFIRM`. Phone is already known (WhatsApp).
 A booking created without location + confirmation is a bug.
 
-### Cancel / reschedule — the agent manages YClients ITSELF
-- **Owner decision 2026-07-10 (Dmitry, explicit): full YClients automation.** The old
-  "never modify YClients" safety rule is REVOKED. Cancel = the agent DELETES the
-  record; reschedule = the agent MOVES the record (PUT, same therapist, services/
-  costs preserved, comment gets "Перенесено агентом"). No Telegram hand-off as the
-  primary mechanism — the calendar itself must be correct.
+### Cancel / reschedule — TEAM-MEDIATED again (DELETE is API-walled)
+- ⚠️ **LIVE-PROVEN 2026-07-11: the YClients token CANNOT delete records.**
+  `DELETE /record/{company}/{id}` → **403 «Нет прав на управление филиалом 1094806»**.
+  POST (create) and PUT (move) work; DELETE does not. So **cancel cannot be
+  automated** with the current token, and the "agent fully manages YClients"
+  wording (14ed77b) was reverted: cancel + reschedule now say the HONEST
+  team-mediated line ("passed to the team — we'll confirm shortly") + admin alert.
+  **Do NOT re-enable "cancelled ✅"/"moved ✅" until the salon grants the token
+  DELETE permission** — otherwise the agent lies (master drives to a cancelled visit).
+- Reschedule MOVE (PUT) does work when the slot is genuinely free, but fails 409
+  on an overlapping slot (a 90-min booking can't move to a time inside its own
+  tail) and the handler creates a local booking before the move → local/YClients
+  desync. Treat reschedule as team-mediated until hardened.
+- Owner still wants full automation (2026-07-10) — blocked on: (1) DELETE
+  permission, (2) loyalty scope for packages. Both = salon-side YClients token grants.
 - **HARD GUARD (do not weaken):** a record is only mutated when its client phone
   matches the WhatsApp client asking (`_phones_match`, last-9-digits). Other clients'
   records, admin records and emirate markers (no client) can never be touched; a
