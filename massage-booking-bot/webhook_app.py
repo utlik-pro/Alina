@@ -184,6 +184,79 @@ def _looks_like_group(text: str) -> bool:
     return any(k in t for k in _GROUP_KW)
 
 
+# Roster resolution, tolerant of Russian case endings. Long/unambiguous forms are
+# matched as a STEM (\bstem\w* — so "Наталье"/"Людмилу" resolve); ambiguous short
+# forms ("Лена", "Катя", "Таня", "Люда", "Маша" — which collide with common words
+# as prefixes) are matched only as WHOLE words in their declined forms.
+_MASTER_STEMS = [
+    ("Lyudmila", ["lyudmila", "людмил"]),
+    ("Eliza", ["eliza", "элиз"]),
+    ("Natalia", ["natalia", "наталь", "натали", "наташ"]),
+    ("Masha", ["masha"]),
+    ("Tatyana", ["tatyana", "татьян"]),
+    ("Makhabat", ["makhabat", "махабат"]),
+    ("Ekaterina", ["ekaterina", "екатерин"]),
+    ("Elena", ["elena", "елен"]),
+    ("Safina", ["safina", "сафин"]),
+]
+_MASTER_SHORT = {
+    "люда": "Lyudmila", "люду": "Lyudmila", "люде": "Lyudmila", "люды": "Lyudmila",
+    "маша": "Masha", "машу": "Masha", "маше": "Masha", "маши": "Masha",
+    "таня": "Tatyana", "таню": "Tatyana", "тане": "Tatyana", "тани": "Tatyana", "tanya": "Tatyana",
+    "катя": "Ekaterina", "катю": "Ekaterina", "кате": "Ekaterina", "кати": "Ekaterina", "katya": "Ekaterina",
+    "лена": "Elena", "лену": "Elena", "лене": "Elena", "лены": "Elena",
+}
+
+# Negative-preference / replacement phrases ("don't send her again", "не понравилась").
+_AVOID_KW = (
+    "don't want", "dont want", "do not want", "don't send", "dont send",
+    "not her", "someone else", "didn't like", "did not like", "not happy with",
+    "no more", "never again", "не хочу", "не присылай", "не понрав", "не надо",
+    "не её", "не ее", "больше не", "замен",
+)
+# Explicit LASTING positive preference ("only Elena", "always with Natalia").
+_PREFER_KW = (
+    "only ", "always ", "same as last", "same therapist", "i prefer",
+    "book me with", "the usual", "только ", "как в прошлый", "тот же мастер",
+    "как всегда", "мне нравится", "постоянн",
+)
+
+
+def _find_master_name(text: str):
+    """Resolve a roster master mentioned in the text to its canonical name, else None."""
+    t = (text or "").lower()
+    # Ambiguous short forms — whole word only (declined forms enumerated).
+    for w in re.findall(r"\b\w+\b", t):
+        if w in _MASTER_SHORT:
+            return _MASTER_SHORT[w]
+    # Long/unambiguous forms — stem match tolerates Russian case endings.
+    for canon, stems in _MASTER_STEMS:
+        for st in stems:
+            if re.search(r"\b" + re.escape(st) + r"\w*", t):
+                return canon
+    return None
+
+
+def _detect_avoided_master(text: str):
+    """A NAMED master the client asked NOT to be sent (negative phrase + a name).
+
+    Unnamed 'give me another master' is handled conversationally, not persisted —
+    we only store an avoid when we know WHO. High-precision on purpose.
+    """
+    t = (text or "").lower()
+    if not any(k in t for k in _AVOID_KW):
+        return None
+    return _find_master_name(t)
+
+
+def _detect_preferred_master(text: str):
+    """A NAMED master the client states a LASTING preference for ('only Elena')."""
+    t = (text or "").lower()
+    if not any(k in t for k in _PREFER_KW):
+        return None
+    return _find_master_name(t)
+
+
 def _service_named(text: str) -> bool:
     """True if the message names a concrete service (massage/nails/lashes/facial).
 
@@ -1070,6 +1143,27 @@ async def _maybe_create_booking(
         )
         return
 
+    # Avoid-master guard: the client asked NOT to be sent this therapist, but the
+    # model picked them anyway (the injected prompt note is advisory — the LLM
+    # skips it). Don't create the record — re-offer with a different master and
+    # alert the admin. Code gate backs the advisory note (SKILL: no hard gate = bug).
+    _avoid_book = (context.client_data or {}).get("avoid_therapist") if context else None
+    if _avoid_book and booking_call.master_name and \
+            booking_call.master_name.strip().lower() == _avoid_book.strip().lower():
+        logger.info(f"Booking blocked: master {_avoid_book!r} is on the client's avoid list")
+        await _admin_text(
+            f"🙅 <b>Бронь с нежелательным мастером заблокирована</b>\n"
+            f"Клиент {telegram_id} ({phone}) просил НЕ присылать {_avoid_book}, а агент "
+            f"пытался записать именно к ней. Предложите другого мастера."
+        )
+        if wappi_client:
+            try:
+                await wappi_client.send_message(
+                    phone, "Let me find you another therapist dear 🌹 one moment 🙏")
+            except Exception:
+                pass
+        return
+
     # Slot-reality gate: never create a record for a time that isn't genuinely
     # free (an invented/occupied slot). Authoritative check against live YClients
     # for the client's area + service duration. Prefer booking_call.area (the
@@ -1135,6 +1229,15 @@ async def _maybe_create_booking(
         )
         await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
         dialog_manager.update_state(user_id, "completed")
+        # Remember who they booked with, so "same as last time" works next visit.
+        if booking_call.master_name:
+            try:
+                await bot_module.client_service.update_client(
+                    telegram_id, preferred_therapist=booking_call.master_name)
+                if context:
+                    context.client_data["preferred_therapist"] = booking_call.master_name
+            except Exception as _e:
+                logger.warning(f"couldn't persist preferred_therapist on booking: {_e}")
         logger.info(
             f"✅ Wappi booking {booking.id} saved "
             f"({booking_call.service} {booking_call.date} {booking_call.time} "
@@ -1840,6 +1943,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                                 pass
                             break
 
+            # Restore master preferences on a fresh context (survive a restart /
+            # delayed reply) so "same as last time" and an avoided master hold
+            # across sessions, not just within one in-memory context.
+            if getattr(client, "preferred_therapist", None) and not context.client_data.get("preferred_therapist"):
+                context.client_data["preferred_therapist"] = client.preferred_therapist
+            if getattr(client, "avoid_therapist", None) and not context.client_data.get("avoid_therapist"):
+                context.client_data["avoid_therapist"] = client.avoid_therapist
+
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
 
@@ -1863,6 +1974,31 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Sticky group-intent flag for the booking safety net below.
         if _looks_like_group(text) and not context.booking_data.get("group_requested"):
             dialog_manager.update_booking_data(user_id, "group_requested", True)
+
+        # Master preference / replacement — persist to the client record so it
+        # survives across sessions ("same as last time" works; an avoided master
+        # is never offered again). Injected into the agent context below + a hard
+        # booking guard backs it up.
+        _avoid_m = _detect_avoided_master(text)
+        if _avoid_m and _avoid_m != context.client_data.get("avoid_therapist"):
+            context.client_data["avoid_therapist"] = _avoid_m
+            try:
+                await bot_module.client_service.update_client(telegram_id, avoid_therapist=_avoid_m)
+            except Exception as _e:
+                logger.warning(f"couldn't persist avoid_therapist: {_e}")
+            await _admin_text(
+                f"🙅 <b>Замена мастера</b>\n"
+                f"Клиент {context.client_data.get('name') or telegram_id} ({phone}) "
+                f"просит НЕ присылать <b>{_avoid_m}</b>. Записал в предпочтения — "
+                f"агент больше не будет её предлагать."
+            )
+        _pref_m = _detect_preferred_master(text)
+        if _pref_m and _pref_m != context.client_data.get("preferred_therapist"):
+            context.client_data["preferred_therapist"] = _pref_m
+            try:
+                await bot_module.client_service.update_client(telegram_id, preferred_therapist=_pref_m)
+            except Exception as _e:
+                logger.warning(f"couldn't persist preferred_therapist: {_e}")
 
         _svc_cat = _detect_service_category(text)
         if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
@@ -2060,6 +2196,21 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     elif _client_area == "abu_dhabi":
                         area_note = "\n🚨 Client in ABU DHABI. Show ONLY Abu Dhabi therapists (no Al Ain / Dubai masters)."
 
+                    # Master preference / replacement — surface stored prefs so the
+                    # agent offers the preferred master first and NEVER offers the
+                    # avoided one (a hard booking guard backs the avoid up).
+                    _pref_note = ""
+                    _pm = (context.client_data or {}).get("preferred_therapist")
+                    _am = (context.client_data or {}).get("avoid_therapist")
+                    if _pm:
+                        _pref_note += (
+                            f"\n💚 This client PREFERS {_pm} — offer {_pm}'s times first "
+                            f"if available and honour 'same as last time'.")
+                    if _am:
+                        _pref_note += (
+                            f"\n🚫 This client asked NOT to be sent {_am} — NEVER offer "
+                            f"or book {_am} for them; pick another therapist.")
+
                     # Build a list of weekdays that ARE in this context so we
                     # can name them explicitly in the guard. The LLM keeps
                     # echoing its own previous "I don't have Sunday schedule
@@ -2095,7 +2246,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "offer TODAY's slots first. If the client doesn't want today, ask 'When "
                         "would suit you dear?' instead of jumping straight to tomorrow.\n"
                         "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
-                        f"{area_note}"
+                        f"{area_note}{_pref_note}"
                     )
                 except Exception as e:
                     logger.warning(f"Wappi: failed to fetch slots: {e}")

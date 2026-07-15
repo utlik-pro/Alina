@@ -89,6 +89,17 @@ client to state minutes; look it up from the service. For body massage, ask 60 o
 `service → area → slot (fits duration, 10:00–21:00, buffer clear) → LOCATION (GPS or
 text address) → NAME → payment → explicit CONFIRM`. Phone is already known (WhatsApp).
 A booking created without location + confirmation is a bug.
+- 💚🚫 **MASTER PREFERENCE / replacement persists across sessions (added 2026-07-15).**
+  Positive: `client.preferred_therapist` is stored (the master they booked with, or
+  an explicit "only Elena") so "same as last time" works even after a restart.
+  Negative/replacement: `client.avoid_therapist` (new column, auto-migrated) is set
+  when the client says "don't send X / didn't like X / не понравилась X" (a NAMED
+  master; unnamed "give me someone else" stays conversational) → admin alert + the
+  master is dropped from the injected slots (`_pref_note`) AND a **hard booking
+  guard** in `_maybe_create_booking` blocks a record with the avoided master even
+  if the LLM ignores the note. Detection tolerates RU case endings (`_find_master_name`
+  stems + short-form map). Verified live: avoid=Makhabat → she vanishes from the
+  offered list. Tests: `tests/unit/test_master_preference.py`.
 - 👥 **GROUP booking is TEAM-MEDIATED for the extra people (added 2026-07-15).**
   «для меня и мамы» / couple / friends: each person needs their OWN therapist
   (one master can't serve two at once). `book_appointment` now has a `guests`

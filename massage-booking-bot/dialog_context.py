@@ -23,6 +23,7 @@ class DialogContext:
             "location": None,
             "location_details": None,  # villa/apartment number
             "preferred_therapist": None,
+            "avoid_therapist": None,   # replacement: never offer/book this master
             "medical_notes": [],  # Важно для AI
         }
 

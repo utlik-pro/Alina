@@ -66,9 +66,16 @@ async def _inject_slots(yc, ctx, date):
     note = {"al_ain": "Client in AL AIN — only Al Ain therapists.",
             "dubai": "Client in DUBAI — only Dubai therapists.",
             "abu_dhabi": "Client in ABU DHABI — only Abu Dhabi therapists."}.get(area, "")
+    pref = ""
+    _pm = ctx.client_data.get("preferred_therapist")
+    _am = ctx.client_data.get("avoid_therapist")
+    if _pm:
+        pref += f"\n💚 This client PREFERS {_pm} — offer {_pm}'s times first."
+    if _am:
+        pref += f"\n🚫 This client asked NOT to be sent {_am} — NEVER offer or book {_am}."
     ctx.extra_system_info = (
         "\n\nREAL AVAILABLE SLOTS (ground truth — AM/PM, overrides anything you said before):\n"
-        + "\n\n".join(blocks) + f"\n🚨 Use ONLY these real slots. {note}"
+        + "\n\n".join(blocks) + f"\n🚨 Use ONLY these real slots. {note}{pref}"
     )
 
 
@@ -76,6 +83,12 @@ async def run(scenario):
     yc = YClientsService()
     agent = BookingAgent(model=scenario.get("model"))  # optional model override for bake-offs
     ctx = DialogContext(user_id=90001)
+    # Preset stored preferences (simulate a returning client), like the webhook
+    # hydrates them from the client record.
+    if scenario.get("preferred_therapist"):
+        ctx.client_data["preferred_therapist"] = scenario["preferred_therapist"]
+    if scenario.get("avoid_therapist"):
+        ctx.client_data["avoid_therapist"] = scenario["avoid_therapist"]
     date = scenario.get("date") or (datetime.now(_UAE) + timedelta(days=1)).strftime("%Y-%m-%d")
     gps_at = scenario.get("gps_at_turn", None)
 
@@ -90,6 +103,13 @@ async def run(scenario):
         # Sticky "service named" flag drives the service-first gate (see webhook).
         if wh._service_named(msg):
             ctx.booking_data["service_named"] = True
+        # Master preference / replacement detection (mirror the webhook).
+        _av = wh._detect_avoided_master(msg)
+        if _av:
+            ctx.client_data["avoid_therapist"] = _av
+        _pr = wh._detect_preferred_master(msg)
+        if _pr:
+            ctx.client_data["preferred_therapist"] = _pr
         cat = wh._detect_service_category(msg)
         if cat and cat != ctx.booking_data.get("service_type"):
             ctx.booking_data["service_type"] = cat

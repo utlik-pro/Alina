@@ -25,7 +25,8 @@ class Client(Base):
     # the post-session survey (context is in-memory only otherwise).
     area = Column(String(50), nullable=True)
     medical_notes = Column(Text, nullable=True)
-    preferred_therapist = Column(String(255), nullable=True)
+    preferred_therapist = Column(String(255), nullable=True)  # "same as last time"
+    avoid_therapist = Column(String(255), nullable=True)      # replacement: never send this master
     total_bookings = Column(Integer, default=0)
     is_vip = Column(Boolean, default=False)
     tags = Column(JSON, nullable=True)  # ["regular", "package_buyer", etc.]

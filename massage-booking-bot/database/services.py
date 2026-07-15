@@ -46,6 +46,8 @@ class ClientService:
         location_details: Optional[str] = None,
         medical_notes: Optional[str] = None,
         area: Optional[str] = None,
+        preferred_therapist: Optional[str] = None,
+        avoid_therapist: Optional[str] = None,
     ) -> Client:
         """Update client information"""
         async with self.db.session() as session:
@@ -66,6 +68,10 @@ class ClientService:
                 client.location_details = location_details
             if area:
                 client.area = area
+            if preferred_therapist:
+                client.preferred_therapist = preferred_therapist
+            if avoid_therapist:
+                client.avoid_therapist = avoid_therapist
             if medical_notes:
                 # Append to existing medical notes
                 if client.medical_notes:

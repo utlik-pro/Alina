@@ -81,6 +81,9 @@ class Database:
         wanted = {
             "clients": {
                 "area": "VARCHAR(50)",
+                "preferred_therapist": "VARCHAR(255)",
+                "avoid_therapist": "VARCHAR(255)",
+                "medical_notes": "TEXT",
             },
             "bookings": {
                 "area": "VARCHAR(50)",
