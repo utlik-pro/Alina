@@ -103,6 +103,9 @@ async def run(scenario):
         # Sticky "service named" flag drives the service-first gate (see webhook).
         if wh._service_named(msg):
             ctx.booking_data["service_named"] = True
+        # Sticky group-intent flag (mirror the webhook) — drives the group net.
+        if wh._looks_like_group(msg):
+            ctx.booking_data["group_requested"] = True
         # Master preference / replacement detection (mirror the webhook).
         _av = wh._detect_avoided_master(msg)
         if _av:
@@ -130,7 +133,8 @@ async def run(scenario):
         resp, actions = await agent.process_message_with_tools(msg, ctx)
         final = wh._enforce_reply_wording(
             resp, actions, actions.booking_call, ctx.client_data, user_text=msg,
-            already_booked_sig=getattr(ctx, "last_booking_sig", None))
+            already_booked_sig=getattr(ctx, "last_booking_sig", None),
+            group_requested=bool(ctx.booking_data.get("group_requested")))
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call
