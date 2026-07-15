@@ -154,8 +154,17 @@ A booking created without location + confirmation is a bug.
 - YClients record id is persisted on create (`set_yclients_id`); cancel/reschedule
   target through it. If the YClients mutation fails → admin alert «уберите/обновите
   вручную» + (reschedule only) an honest follow-up to the client.
-- Agent wording: cancel → "Your appointment is cancelled ✅"; reschedule → "moved to
-  [time] ✅" (unconfirmed cancel still asks "shall I cancel?").
+- 🔔 **Cancel alert is LOUD + actionable (2026-07-15).** Because DELETE always 403s,
+  removal is a MANUAL admin step — the record used to hang in the app (live-caught
+  2026-07-14, Татьяна «после отмены запись висит»). The alert now leads with a
+  «‼️ УДАЛИТЕ ЗАПИСЬ ВРУЧНУЮ В YCLIENTS» header + WHOSE calendar to open (master +
+  emirate) + record id + the consequence. **Waiting-list notify is gated on
+  `yc_deleted`** — a still-occupied slot must NOT be promised as free; the admin
+  offers it to the waiting list after the manual removal.
+- Agent wording (client-facing): cancel → HONEST team-mediated line "passed to the
+  team — we'll confirm shortly" (NOT "cancelled ✅", which would lie while the record
+  still exists); reschedule → "passed your reschedule to [time] to the team".
+  Unconfirmed cancel still asks "shall I cancel?".
 - With >1 active booking, don't guess which — the cancel/reschedule tools carry an
   `old_date`/`old_time` selector (the slot the client names, "move my 5:30 PM");
   `_match_booking_by_old_slot` picks the unique match, and ONLY an unresolvable

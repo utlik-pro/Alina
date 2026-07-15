@@ -1532,7 +1532,8 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
         _header = "‼️ <b>ОТМЕНА — УДАЛИТЕ ЗАПИСЬ ВРУЧНУЮ В YCLIENTS</b>"
         _yc_line = (
             f"⚠️ Запись (id {yc_id or 'не найдена'}) ОСТАЁТСЯ в YClients.\n"
-            f"Удалите вручную, иначе мастер приедет на отменённый визит."
+            f"Удалите вручную, иначе мастер приедет на отменённый визит.\n"
+            f"После удаления — предложите этот слот листу ожидания."
         )
     await _admin_text(
         f"{_header}\n\n"
@@ -1544,8 +1545,18 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
         f"{_yc_line}"
     )
 
-    # Waiting list: a slot just freed up — notify first match.
-    await _notify_waiting_list(b.get("area"), b.get("booking_date"))
+    # Waiting list: notify ONLY when the slot is GENUINELY free. On a failed
+    # DELETE (403 — the current token can't delete) the record still occupies
+    # the slot in YClients, so telling a waiting client "it's free" is a false
+    # promise — they'd try to book a still-busy slot. The admin offers it after
+    # the manual removal instead (see the alert above).
+    if yc_deleted:
+        await _notify_waiting_list(b.get("area"), b.get("booking_date"))
+    else:
+        logger.info(
+            "Waiting list NOT notified — YClients delete didn't confirm, slot "
+            "still occupied; admin will offer it after manual removal."
+        )
 
 
 async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall", context=None):
