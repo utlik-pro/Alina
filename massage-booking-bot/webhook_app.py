@@ -1444,15 +1444,27 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
         logger.error(f"Cancel: YClients sync error: {e}")
 
     when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
-    _yc_line = (
-        f"🗑️ Запись {yc_id} удалена из YClients автоматически ✅"
-        if yc_deleted else
-        f"⚠️ НЕ удалилось из YClients (id {yc_id or 'не найден'}) — уберите запись вручную"
-    )
+    _area_lbl = {"abu_dhabi": "Abu Dhabi", "al_ain": "Al Ain", "dubai": "Dubai"}.get(
+        b.get("area"), (b.get("area") or "").replace("_", " ").title())
+    _master_line = f"💆 {b.get('therapist_name') or '—'}" + (f" · {_area_lbl}" if _area_lbl else "")
+    # DELETE is API-walled (403) → removal from YClients is a MANUAL admin step.
+    # Make it impossible to miss: a loud action header + WHOSE calendar to open,
+    # else the record hangs in the app and the master drives to a cancelled visit
+    # (live-caught 2026-07-14: «после отмены запись висит в приложении»).
+    if yc_deleted:
+        _header = "❌ <b>Отмена брони</b>"
+        _yc_line = f"🗑️ Запись {yc_id} удалена из YClients автоматически ✅"
+    else:
+        _header = "‼️ <b>ОТМЕНА — УДАЛИТЕ ЗАПИСЬ ВРУЧНУЮ В YCLIENTS</b>"
+        _yc_line = (
+            f"⚠️ Запись (id {yc_id or 'не найдена'}) ОСТАЁТСЯ в YClients.\n"
+            f"Удалите вручную, иначе мастер приедет на отменённый визит."
+        )
     await _admin_text(
-        f"❌ <b>Отмена брони</b>\n\n"
+        f"{_header}\n\n"
         f"👤 {b.get('client_name') or telegram_id}\n"
         f"📞 {phone}\n"
+        f"{_master_line}\n"
         f"🛎️ {b['service_name']} — {when}\n"
         f"💬 Причина: {call.reason or '—'}{penalty_note}\n"
         f"{_yc_line}"
