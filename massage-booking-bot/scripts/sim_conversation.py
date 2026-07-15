@@ -40,6 +40,11 @@ async def _inject_slots(yc, ctx, date):
     if not area:
         ctx.extra_system_info = ""
         return
+    # Service-first gate — mirror the webhook: no slots until a service is named
+    # (uses the SAME constant so the sim can't drift from prod).
+    if not (ctx.booking_data.get("service_named") or ctx.booking_data.get("service_type")):
+        ctx.extra_system_info = wh.SERVICE_FIRST_GATE_MSG
+        return
     now = datetime.now(_UAE)
     today = now.strftime("%Y-%m-%d")
     tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -82,6 +87,9 @@ async def run(scenario):
 
         low = msg.lower()
         # Per-turn detection, mirroring the webhook.
+        # Sticky "service named" flag drives the service-first gate (see webhook).
+        if wh._service_named(msg):
+            ctx.booking_data["service_named"] = True
         cat = wh._detect_service_category(msg)
         if cat and cat != ctx.booking_data.get("service_type"):
             ctx.booking_data["service_type"] = cat

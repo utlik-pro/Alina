@@ -148,6 +148,44 @@ def _detect_service_category(text: str) -> Optional[str]:
     return None
 
 
+# Service-first gate signal: has the client named ANY service yet? Broader than
+# _detect_service_category (which only distinguishes massage vs nails for slot
+# ROUTING) — it also recognises lashes / brows / facial cleansing, which the
+# category detector deliberately doesn't route but which still mean "the client
+# told us what they want". Keeps these OUT of _detect_service_category so slot
+# routing is unchanged; used only to decide whether we may show slots at all.
+_SERVICE_EXTRA_KW = (
+    "lash", "eyelash", "brow", "eyebrow", "ресниц", "бров",
+    "cleansing", "чистк", "лиц",  # facial deep cleansing / «чистка лица»
+)
+
+
+def _service_named(text: str) -> bool:
+    """True if the message names a concrete service (massage/nails/lashes/facial).
+
+    The service-first gate uses this so we NEVER dump time slots at a client who
+    only said "I want to book" without a service (live-caught 2026-07-15: client
+    said just "записаться на завтра", agent showed massage slots, client actually
+    wanted a manicure). Canonical flow is service → area → slot.
+    """
+    t = (text or "").lower()
+    return _detect_service_category(t) is not None or any(k in t for k in _SERVICE_EXTRA_KW)
+
+
+# The exact instruction injected when the area is known but the service is not.
+# Kept as a module-level constant so scripts/sim_conversation.py injects the
+# IDENTICAL text — the sim must never drift from prod (same rule as detect_area).
+SERVICE_FIRST_GATE_MSG = (
+    "\n\n⚠️ SERVICE NOT KNOWN YET (area is confirmed, service is not).\n"
+    "🚨 Do NOT show, list or invent ANY times / slots / masters this turn.\n"
+    "🚨 FIRST ask what service the client wants, warmly, e.g.:\n"
+    "    'What would you like dear — massage, facial, manicure/pedicure, "
+    "or lash extensions? 🌹'\n"
+    "🚨 Only once the client names a service will the system provide real "
+    "slots on the next turn. Never guess the service."
+)
+
+
 # Emirate keywords, kept in ONE place so the webhook slot-injection and the
 # offline simulator detect area identically (they used to drift — the sim only
 # knew "abu dhabi", so a Russian tester typing "Абу-Даби" was silently ignored
@@ -1699,6 +1737,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # specialists on THIS and later turns (nails clients were shown
         # massage therapists because service_type stayed None on the Wappi path).
         # Last mention wins, so a client who switches massage↔nails is re-routed.
+        # Persist a sticky "service named" flag the moment the client names ANY
+        # service — it drives the service-first gate below and must SURVIVE later
+        # turns (client says "villa 15" / their name with no service word), or the
+        # gate would re-ask "what service?" mid-flow. Covers lashes/facial that
+        # service_type doesn't route.
+        if _service_named(text) and not context.booking_data.get("service_named"):
+            dialog_manager.update_booking_data(user_id, "service_named", True)
+
         _svc_cat = _detect_service_category(text)
         if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
             dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
@@ -1758,7 +1804,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 logger.info(f"duration_detect: {_dur_detected} min (from message)")
 
             logger.info(f"slot_inject_post_detect: area_now={_client_area!r}")
-            if _client_area:
+            _service_known = bool(
+                context.booking_data.get("service_named")
+                or context.booking_data.get("service_type")
+            )
+            if _client_area and not _service_known:
+                # SERVICE-FIRST GATE: area is confirmed but the client has NOT
+                # named a service yet. Injecting slots here dumps massage times at
+                # a client who may want nails/lashes/facial (live-caught
+                # 2026-07-15: client said only "записаться на завтра", was shown
+                # massage slots, actually wanted a manicure — "почему вы не
+                # спросили какая услуга?"). Canonical flow is service → area →
+                # slot; the prompt says so but the LLM skips it, so gate it in
+                # CODE (crystal-lab SKILL: "no hard gate = bug"). Ask first.
+                logger.info("service_first_gate: area known, service unknown → ask service")
+                context.extra_system_info = SERVICE_FIRST_GATE_MSG
+            elif _client_area:
                 try:
                     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
                     _uae = _tz(_td(hours=4))

@@ -89,6 +89,24 @@ client to state minutes; look it up from the service. For body massage, ask 60 o
 `service → area → slot (fits duration, 10:00–21:00, buffer clear) → LOCATION (GPS or
 text address) → NAME → payment → explicit CONFIRM`. Phone is already known (WhatsApp).
 A booking created without location + confirmation is a bug.
+- 🔑 **SERVICE-FIRST is a CODE gate (added 2026-07-15).** Slots are NOT injected /
+  shown until the client has named a service — even once the area is known.
+  Live-caught 2026-07-15: a client said only "записаться на завтра", the agent asked
+  the emirate and then DUMPED massage slots; the client actually wanted a manicure
+  ("почему вы не спросили какая услуга?"). Prompt guidance said service-first but the
+  LLM skipped it → now gated in `webhook_app.py`: if `area known && !service_named`,
+  inject "ask the service first" instead of slots. `_service_named()` is broader than
+  `_detect_service_category()` — it also recognises lashes / brows / facial cleansing
+  (which the category detector doesn't route) so the gate never re-asks a client who
+  already said what they want; a sticky `booking_data["service_named"]` flag survives
+  later filler turns (villa/name) so it can't re-fire mid-flow. Test:
+  `tests/unit/test_service_category.py::test_gate_replays_the_2026_07_15_bug`.
+- 🌐 **English-only is the OWNER's spec, not a bug (decision 2026-07-09).** The agent
+  ALWAYS replies in English no matter the client's language — `booking_agent.py`
+  L756-772, with an explicit sub-rule (L550) to answer "I can chat in English dear 🙏"
+  when the client says they don't understand. Reports that "he keeps replying in
+  English" describe the requirement working. A Russian/Arabic fallback would be a NEW
+  requirement (owner decision), not a defect — do NOT re-add language mirroring.
 
 ### Cancel / reschedule — TEAM-MEDIATED again (DELETE is API-walled)
 - ⚠️ **LIVE-PROVEN 2026-07-11: the YClients token CANNOT delete records.**
