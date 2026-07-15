@@ -188,15 +188,24 @@ class TestAgent:
         return r
 
     async def test_english_only(self) -> TestResult:
-        """Bot should always respond in English."""
-        r = TestResult("Language — Always English")
+        """English by default, but switch when the client can't follow English (rule revised 2026-07-15)."""
+        r = TestResult("Language — English default + switch")
         ctx = self._new_context()
 
+        # A lone/casual foreign message is NOT a trigger → stay in English.
         out = await self._send("Привет, хочу массаж", ctx)
         has_cyrillic = bool(re.search('[а-яА-Я]', out))
         r.add_step("Привет, хочу массаж", out,
                     not has_cyrillic or "english" in out.lower(),
-                    "Should respond in English, not Russian")
+                    "Casual RU greeting → stay in English")
+
+        # Client says they don't understand English → switch to Russian.
+        ctx2 = self._new_context()
+        await self._send("Hello, I want a massage", ctx2)
+        out2 = await self._send("извините, я не понимаю по-английски, напишите на русском пожалуйста", ctx2)
+        r.add_step("Я не понимаю по-английски…", out2,
+                    bool(re.search('[а-яА-Я]', out2)),
+                    "Client can't follow English → switch to Russian")
 
         return r
 

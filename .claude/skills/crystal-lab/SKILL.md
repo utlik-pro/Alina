@@ -101,12 +101,19 @@ A booking created without location + confirmation is a bug.
   already said what they want; a sticky `booking_data["service_named"]` flag survives
   later filler turns (villa/name) so it can't re-fire mid-flow. Test:
   `tests/unit/test_service_category.py::test_gate_replays_the_2026_07_15_bug`.
-- 🌐 **English-only is the OWNER's spec, not a bug (decision 2026-07-09).** The agent
-  ALWAYS replies in English no matter the client's language — `booking_agent.py`
-  L756-772, with an explicit sub-rule (L550) to answer "I can chat in English dear 🙏"
-  when the client says they don't understand. Reports that "he keeps replying in
-  English" describe the requirement working. A Russian/Arabic fallback would be a NEW
-  requirement (owner decision), not a defect — do NOT re-add language mirroring.
+- 🌐 **Language = English by default, switch when the client can't follow it
+  (revised 2026-07-15).** ⚠️ The earlier "English-only, mirroring removed" rule was
+  labelled "owner decision 2026-07-09" but a forensic sweep of the WHOLE corpus
+  (`feedback_log.json`, all 22 chat exports, meetings, requirements) found **NO client
+  request for English-only** — it was OUR change (commit `7efe830`, author `utlik-pro`,
+  2026-07-10; it replaced the original `MIRROR the client's language` prompt). On
+  2026-07-15 the owner (Madam Crystal) complained the agent "keeps talking in English
+  when clients write that they don't understand English." Current rule (`booking_agent.py`
+  LANGUAGE block + the ARABIC sub-rule): reply in English by default, but if the client
+  explicitly says they don't understand English / asks for RU/AR / keeps writing only in
+  their language → **switch and continue the whole dialogue in that language**. A single
+  foreign greeting ("Привет") is NOT a trigger — stay English. **Do NOT re-assert
+  "always English no matter what".** Needs a live end-to-end check (see checklist).
 
 ### Cancel / reschedule — TEAM-MEDIATED again (DELETE is API-walled)
 - ⚠️ **LIVE-PROVEN 2026-07-11: the YClients token CANNOT delete records.**
