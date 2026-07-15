@@ -30,6 +30,7 @@ class DialogContext:
         self.booking_data: Dict[str, Any] = {
             "service_type": None,  # body/face/combo
             "service_named": False,  # client has named ANY service → service-first gate may show slots
+            "group_requested": False,  # client asked to book 2+ people ("me and my mom") → group safety net
             "service_duration": None,  # 60/90/110 min
             "date": None,
             "time": None,

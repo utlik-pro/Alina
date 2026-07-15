@@ -116,6 +116,9 @@ async def run(scenario):
         bc = actions.booking_call
         tag = ""
         if bc is not None:
+            if getattr(bc, "guests", None):
+                _g = ", ".join(g.get("client_name", "?") for g in bc.guests)
+                tag += f" [+{len(bc.guests)} guest(s): {_g}]"
             _sig = (bc.service, bc.date, bc.time)
             has_loc, has_name = wh._booking_has_location_and_name(bc, ctx.client_data)
             if getattr(ctx, "last_booking_sig", None) == _sig:

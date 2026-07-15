@@ -160,6 +160,30 @@ _SERVICE_EXTRA_KW = (
 )
 
 
+# High-precision group-booking phrases. Kept tight (no bare "couple"/"both"/
+# "пара" which collide with "a couple of questions" / "both 60 min") so the
+# code safety net doesn't spam the admin with false positives.
+_GROUP_KW = (
+    "me and my", "for me and", "and my mom", "and my mum", "and my mother",
+    "and my sister", "and my friend", "and my husband", "and my wife",
+    "and my daughter", "couple massage", "for two", "for both of us",
+    "и мам", "и мою маму", "и подруг", "и сестр", "и мужа", "и жену",
+    "для меня и", "вдвоём", "вдвоем", "на двоих", "нас двое", "нас двоих",
+)
+
+
+def _looks_like_group(text: str) -> bool:
+    """True if the client clearly asked to book MORE THAN ONE person.
+
+    Feeds the group safety net: the LLM often ignores the `guests` field and
+    books only the main client (live-caught 2026-07-15 sim). If a group was
+    requested but the booking has no guests, the admin is still alerted so the
+    extra person never silently gets no appointment.
+    """
+    t = (text or "").lower()
+    return any(k in t for k in _GROUP_KW)
+
+
 def _service_named(text: str) -> bool:
     """True if the message names a concrete service (massage/nails/lashes/facial).
 
@@ -305,7 +329,8 @@ def _booking_day_mismatch(user_text: str, booking_call):
 
 
 def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict,
-                           user_text: str = "", already_booked_sig=None) -> str:
+                           user_text: str = "", already_booked_sig=None,
+                           group_requested: bool = False) -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -313,6 +338,10 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
     2) A booking the model is about to attempt WITHOUT a location/name — the
        hard gate will block the record, so replace a false "confirmed" with the
        ask for the missing info (single client-facing reply).
+    3) Group booking — the client asked for 2+ people but the model booked only
+       the main client (no `guests` — happens often). Guarantee the client is
+       told the extra spot(s) are still being arranged, so a group is never
+       silently confirmed as "all set" for one person.
     Otherwise the model's reply is returned unchanged.
     """
     if actions is not None and getattr(actions, "reschedule_call", None) is not None:
@@ -353,6 +382,16 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
         # applies the same check so no record is created on this turn.
         if not _client_confirmed(user_text):
             return _booking_recap_question(booking_call)
+        # Confirmed booking reaches here. Group honesty: if a group was asked
+        # for but the model dropped the extra people (no guests in the call),
+        # append the team-mediated line so the client isn't told "all set" for
+        # one person. Skip if the model already said it.
+        if group_requested and not getattr(booking_call, "guests", None):
+            if not re.search(r"team|arrang|shortly|команд", response_text, re.I):
+                response_text = response_text.rstrip() + (
+                    "\n\nYour other guest's spot is being arranged by our team — "
+                    "we'll confirm it very shortly 🌸"
+                )
     return response_text
 
 
@@ -1284,6 +1323,41 @@ async def _maybe_create_booking(
             f"{booking_call.area}). Мастеру нужно взять терминал."
         )
 
+    # Group booking ("me and my mom" / couple): the primary person is booked
+    # above, but each EXTRA guest needs their OWN therapist at the same time.
+    # The agent can't safely auto-pick a 2nd free master live (2-master
+    # availability + partial-failure rollback), so extra records are
+    # TEAM-MEDIATED — same honest pattern as cancel/reschedule. Alert the admin
+    # with the exact records to add. The silent bug this fixes: one record
+    # created for two people (live-caught 2026-07-14, Annette «бронь только на
+    # одного»). The client is told their group is being finalised by the team.
+    _group_flag = bool((context.booking_data or {}).get("group_requested"))
+    if booking_call.guests or _group_flag:
+        _when = f"{booking_call.date} {_to_ampm(booking_call.time)}"
+        if booking_call.guests:
+            _body = "Каждому гостю нужен СВОЙ мастер в тот же слот:\n" + "\n".join(
+                f"• {g.get('client_name')} — "
+                f"{g.get('service') or booking_call.service} "
+                f"({g.get('duration_minutes') or booking_call.duration_minutes} min)"
+                for g in booking_call.guests
+            )
+        else:
+            # Safety net: the client asked for a group but the model booked only
+            # the main person (no guests in the tool call). Don't let the extra
+            # person silently vanish — flag it for a human to add.
+            _body = (
+                "⚠️ Клиент упоминал запись НА НЕСКОЛЬКИХ человек, но агент создал "
+                "только ОДНУ запись. Проверьте диалог и добавьте недостающие."
+            )
+        await _admin_text(
+            f"👥 <b>ГРУППОВАЯ ЗАПИСЬ — проверьте/добавьте записи вручную</b>\n\n"
+            f"Основная бронь #{booking.id}: {booking_call.client_name} — "
+            f"{booking_call.service}, {_when}, {booking_call.area}.\n"
+            f"{_body}\n\n"
+            f"⚠️ Доп. люди НЕ бронируются автоматически (нужны разные мастера, "
+            f"тот же адрес/время)."
+        )
+
     # Auto-share with driver on booking creation (FR 5.2). No-op until
     # DRIVER_TELEGRAM_CHAT_ID is configured, so safe to always call.
     # Best-effort — a driver-send failure must never break the flow.
@@ -1757,6 +1831,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _service_named(text) and not context.booking_data.get("service_named"):
             dialog_manager.update_booking_data(user_id, "service_named", True)
 
+        # Sticky group-intent flag for the booking safety net below.
+        if _looks_like_group(text) and not context.booking_data.get("group_requested"):
+            dialog_manager.update_booking_data(user_id, "group_requested", True)
+
         _svc_cat = _detect_service_category(text)
         if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
             dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
@@ -2103,6 +2181,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # it has a location/name). See _enforce_reply_wording.
         response_text = _enforce_reply_wording(
             response_text, actions, booking_call, context.client_data, user_text=text,
+            group_requested=bool((context.booking_data or {}).get("group_requested")),
             already_booked_sig=getattr(context, "last_booking_sig", None),
         )
 

@@ -89,6 +89,22 @@ client to state minutes; look it up from the service. For body massage, ask 60 o
 `service → area → slot (fits duration, 10:00–21:00, buffer clear) → LOCATION (GPS or
 text address) → NAME → payment → explicit CONFIRM`. Phone is already known (WhatsApp).
 A booking created without location + confirmation is a bug.
+- 👥 **GROUP booking is TEAM-MEDIATED for the extra people (added 2026-07-15).**
+  «для меня и мамы» / couple / friends: each person needs their OWN therapist
+  (one master can't serve two at once). `book_appointment` now has a `guests`
+  array; the agent books the MAIN client and puts extras in `guests`, and says
+  the honest line "your mom's spot is being arranged by the team". ⚠️ **The LLM
+  is UNRELIABLE at filling `guests`** (live sim 2026-07-15 dropped it), so a CODE
+  safety net backs it: `_looks_like_group()` (high-precision phrases) sets a
+  sticky `booking_data["group_requested"]`; on a booking with that flag but no
+  guests, (a) `_enforce_reply_wording` appends the honest "being arranged by the
+  team" line to the CLIENT reply, and (b) the admin ALWAYS gets a «ГРУППОВАЯ
+  ЗАПИСЬ — добавьте записи вручную» alert. This kills the silent bug where two
+  people got ONE record (live-caught 2026-07-14, Annette «бронь только на
+  одного»). Full auto multi-record (pick a 2nd free master + create it) is NOT
+  done — it needs live 2-master availability + partial-failure rollback; the
+  extra records are added by a human in YClients for now. Tests:
+  `tests/unit/test_group_booking.py`.
 - 🔑 **SERVICE-FIRST is a CODE gate (added 2026-07-15).** Slots are NOT injected /
   shown until the client has named a service — even once the area is known.
   Live-caught 2026-07-15: a client said only "записаться на завтра", the agent asked

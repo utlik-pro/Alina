@@ -131,6 +131,44 @@ BOOK_APPOINTMENT_TOOL: Dict[str, Any] = {
                         "or any special request. Null if none."
                     ),
                 },
+                "guests": {
+                    "type": ["array", "null"],
+                    "description": (
+                        "ADDITIONAL people in the SAME home visit — e.g. "
+                        "'for me and my mom', a couple, friends. One entry per "
+                        "EXTRA person; do NOT include the main client (they are "
+                        "the top-level fields). Each guest needs their OWN "
+                        "therapist at the same time — a therapist can't serve two "
+                        "people at once. Null/omit for a normal single booking."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "client_name", "service", "duration_minutes",
+                            "base_price_aed",
+                        ],
+                        "properties": {
+                            "client_name": {
+                                "type": "string",
+                                "description": "This guest's name.",
+                            },
+                            "service": {
+                                "type": "string",
+                                "description": "Service for this guest (English snake_case).",
+                            },
+                            "duration_minutes": {
+                                "type": "integer",
+                                "enum": [25, 30, 40, 45, 50, 60, 75, 80, 90, 120, 150, 180],
+                                "description": "This guest's session length.",
+                            },
+                            "base_price_aed": {
+                                "type": "number",
+                                "description": "This guest's quoted price in AED before VAT.",
+                            },
+                        },
+                    },
+                },
             },
         },
     },
@@ -158,6 +196,11 @@ class BookingCall:
     client_phone: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
+    # Extra people in the same visit ("me and my mom"). Each dict:
+    # {client_name, service, duration_minutes, base_price_aed}. Empty/None for a
+    # normal single booking. Group bookings are TEAM-MEDIATED for the extra
+    # people (each needs their own therapist — see _handle_group_guests).
+    guests: Optional[List[Dict[str, Any]]] = None
 
     @classmethod
     def from_tool_args(cls, args: Dict[str, Any]) -> "BookingCall":
@@ -178,6 +221,7 @@ class BookingCall:
             client_phone=_opt_str(args.get("client_phone")),
             address=_opt_str(args.get("address")),
             notes=_opt_str(args.get("notes")),
+            guests=_opt_guests(args.get("guests")),
         )
 
 
@@ -195,6 +239,31 @@ def _opt_str(v: Any) -> Optional[str]:
         return None
     s = str(v).strip()
     return s or None
+
+
+def _opt_guests(v: Any) -> Optional[List[Dict[str, Any]]]:
+    """Normalise the optional `guests` array; drop malformed entries.
+
+    A guest is kept only if it has a name — an unnamed guest can't be booked or
+    handed to the admin. Missing service/duration/price default softly so one bad
+    field never drops the whole group.
+    """
+    if not v or not isinstance(v, list):
+        return None
+    out: List[Dict[str, Any]] = []
+    for g in v:
+        if not isinstance(g, dict):
+            continue
+        name = _opt_str(g.get("client_name"))
+        if not name:
+            continue
+        out.append({
+            "client_name": name,
+            "service": _opt_str(g.get("service")),
+            "duration_minutes": _opt_int(g.get("duration_minutes")),
+            "base_price_aed": float(g["base_price_aed"]) if g.get("base_price_aed") else None,
+        })
+    return out or None
 
 
 CANCEL_APPOINTMENT_TOOL: Dict[str, Any] = {
