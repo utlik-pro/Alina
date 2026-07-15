@@ -347,8 +347,13 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
     if actions is not None and getattr(actions, "reschedule_call", None) is not None:
         rc = actions.reschedule_call
         newt = _to_ampm(rc.new_time) if getattr(rc, "new_time", None) else "the new time"
-        return (f"Noted dear 🌹 I've passed your reschedule to {newt} to the team — "
-                f"we'll confirm it shortly 🙏")
+        # NEUTRAL holding line only. The DEFINITIVE outcome — "passed to the team"
+        # (slot free) OR "that time isn't free, here are alternatives" (occupied) —
+        # is sent by _handle_reschedule AFTER it re-checks availability. Promising
+        # "passed to the team" here produced a contradictory double-message when
+        # the slot turned out occupied (live-caught 2026-07-15: "passed to 4:30 ✅"
+        # immediately followed by "4:30 isn't free").
+        return f"One moment dear 🌹 let me check {newt} for you 🙏"
     if booking_call is not None:
         # Duplicate: the model re-fires book_appointment when the client adds/
         # changes payment after it's already booked. Don't re-send "booked ✅".
@@ -1640,8 +1645,11 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         _dur = int(b.get("duration") or 60)
         _hhmm = f"{new_dt.hour}:{new_dt.minute:02d}"
         try:
+            # Exclude the record being moved so its OWN current slot doesn't
+            # block the move (4:00 → 4:30 must not be blocked by the 4:00 record).
             _free = await bot_module.yclients_service.is_slot_available(
-                _area, call.new_date, _hhmm, _dur)
+                _area, call.new_date, _hhmm, _dur,
+                exclude_record_id=b.get("yclients_appointment_id"))
         except Exception as e:
             logger.warning(f"Reschedule availability check failed ({e}) — allowing")
             _free = True
@@ -1716,10 +1724,20 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
         f"⏭️ Стало: {new_when}\n"
         f"{_yc_line}"
     )
-    # No extra client message here: the agent's reply is now team-mediated
-    # ("passed your reschedule to the team — we'll confirm shortly"), which is
-    # honest whether or not the YClients move succeeded. The admin alert above
-    # carries the actual sync status. A second message would contradict it.
+    # Definitive client message — sent HERE, after the availability re-check
+    # passed, so the client never gets "passed to the team" contradicted by a
+    # later "not free" (the turn's reply was only a neutral "checking…" line).
+    # Honest team-mediated wording: the YClients move may or may not have synced;
+    # the admin alert above carries the real status.
+    if wappi_client:
+        try:
+            await wappi_client.send_message(
+                phone,
+                f"Noted dear 🌹 I've passed your reschedule to {_to_ampm(call.new_time)} "
+                f"to the team — we'll confirm it shortly 🙏"
+            )
+        except Exception:
+            pass
 
 
 async def _notify_waiting_list(area, freed_date):

@@ -318,3 +318,59 @@ def test_booking_call_tolerates_missing_price():
         # base_price_aed intentionally omitted
     })
     assert bc.base_price_aed == 0
+
+
+@pytest.mark.asyncio
+async def test_is_slot_available_excludes_moved_record(yc, monkeypatch):
+    """Reschedule must not be blocked by the record being moved: is_slot_available
+    drops exclude_record_id from every master's schedule before computing free
+    slots (2026-07-15 "время есть, но не переносит" — a 4:00 booking couldn't
+    move to 4:30 because its OWN 4:00 record occupied 4:30)."""
+    seen = {}
+
+    async def staff(*a, **k):
+        return [{"id": 1, "name": "Natalia"}]  # untagged → Abu Dhabi
+
+    async def records(staff_id, date, *a, **k):
+        return [{"id": 999, "datetime": f"{date} 16:00:00"},
+                {"id": 111, "datetime": f"{date} 12:00:00"}]
+
+    async def real_slots(staff_id, date, dur, records=None):
+        seen["records"] = records or []
+        return ["16:30"]
+
+    monkeypatch.setattr(yc, "get_staff", staff)
+    monkeypatch.setattr(yc, "get_records", records)
+    monkeypatch.setattr(yc, "get_real_available_slots", real_slots)
+
+    ok = await yc.is_slot_available("abu_dhabi", "2030-01-06", "16:30", 50,
+                                    exclude_record_id=999)
+    assert ok is True
+    ids = [str(r.get("id")) for r in seen["records"]]
+    assert "999" not in ids       # the record being moved is filtered out
+    assert "111" in ids           # other bookings still count
+
+
+@pytest.mark.asyncio
+async def test_is_slot_available_without_exclude_keeps_all_records(yc, monkeypatch):
+    """Default (no exclude) leaves the schedule untouched — a normal booking gate
+    must still see every existing record."""
+    seen = {}
+
+    async def staff(*a, **k):
+        return [{"id": 1, "name": "Natalia"}]
+
+    async def records(staff_id, date, *a, **k):
+        return [{"id": 999}, {"id": 111}]
+
+    async def real_slots(staff_id, date, dur, records=None):
+        seen["records"] = records or []
+        return ["16:30"]
+
+    monkeypatch.setattr(yc, "get_staff", staff)
+    monkeypatch.setattr(yc, "get_records", records)
+    monkeypatch.setattr(yc, "get_real_available_slots", real_slots)
+
+    await yc.is_slot_available("abu_dhabi", "2030-01-06", "16:30", 50)
+    ids = [str(r.get("id")) for r in seen["records"]]
+    assert ids == ["999", "111"]

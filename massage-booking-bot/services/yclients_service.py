@@ -805,11 +805,18 @@ class YClientsService:
                 return _staff_area(s.get("name", ""))
         return None
 
-    async def is_slot_available(self, area: str, date: str, hhmm: str, duration: int = 60) -> bool:
+    async def is_slot_available(self, area: str, date: str, hhmm: str, duration: int = 60,
+                                exclude_record_id=None) -> bool:
         """True if `hhmm` (24h 'H:MM') is a genuinely free slot for ANY master
         in `area` on `date` for a `duration`-min session. Coarse guard used by
         reschedule so we never confirm an occupied/off-day/travel-conflicting
-        slot. Fails OPEN semantics are the caller's responsibility."""
+        slot. Fails OPEN semantics are the caller's responsibility.
+
+        `exclude_record_id` drops that YClients record from every master's
+        schedule before computing free slots — used by reschedule so a booking
+        can move to a time that overlaps ITS OWN current slot (moving a 50-min
+        4:00 booking to 4:30 must not be blocked by the very record being moved;
+        live-caught 2026-07-15 "время есть, но не переносит")."""
         try:
             h, m = hhmm.split(":")
             want = f"{int(h)}:{int(m):02d}"
@@ -821,6 +828,8 @@ class YClientsService:
             if "АДМИНИСТРАТОР" in nm.upper() or "ЛИСТ ОЖИДАНИЯ" in nm.upper():
                 continue
             recs = await self.get_records(s["id"], date)
+            if exclude_record_id is not None and recs:
+                recs = [r for r in recs if str(r.get("id")) != str(exclude_record_id)]
             eff_area = _marker_area_from_records(recs) or _staff_area(nm)
             if area and eff_area != area:
                 continue

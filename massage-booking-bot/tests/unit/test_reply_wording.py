@@ -16,12 +16,17 @@ def _actions(reschedule=None):
 
 
 def test_reschedule_never_says_confirmed():
+    # The turn's reply is a NEUTRAL holding line — never "confirmed/booked", and
+    # never a premature "passed to the team" (that definitive outcome is sent by
+    # _handle_reschedule AFTER the availability re-check, so an occupied slot
+    # can't get "passed ✅" contradicted by a later "not free" — 2026-07-15 bug).
     rc = types.SimpleNamespace(new_time="16:30")
     out = _enforce_reply_wording("Your booking is confirmed ✅", _actions(reschedule=rc), None, {})
     low = out.lower()
-    assert "reschedule" in low
-    assert "4:30 pm" in low                      # 24h → AM/PM
+    assert "4:30 pm" in low                      # 24h → AM/PM, echoes the new time
     assert "confirmed" not in low and "booked" not in low
+    assert "passed" not in low                   # no premature "passed to the team"
+    assert "moment" in low or "check" in low     # neutral holding line
 
 
 def test_booking_without_location_is_replaced_with_ask():

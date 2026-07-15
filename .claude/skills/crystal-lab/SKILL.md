@@ -144,6 +144,17 @@ A booking created without location + confirmation is a bug.
   on an overlapping slot (a 90-min booking can't move to a time inside its own
   tail) and the handler creates a local booking before the move → local/YClients
   desync. Treat reschedule as team-mediated until hardened.
+- 🔁 **Reschedule messaging + self-overlap fixed (2026-07-15).** Two live-caught
+  bugs from Annette's «время есть, но не переносит»: (1) the agent sent a
+  CONTRADICTORY pair — «передал перенос на 4:30 команде ✅» immediately followed by
+  «4:30 не свободно». Root cause: `_enforce_reply_wording` promised "passed to the
+  team" for ANY reschedule BEFORE `_handle_reschedule` re-checked availability.
+  Fix: the turn's reply is now a NEUTRAL "one moment, let me check {time}" line;
+  the DEFINITIVE outcome (passed-to-team OR "not free, here are alternatives") is
+  sent by `_handle_reschedule` after the check. (2) The availability check counted
+  the client's OWN booking as occupying the target → 4:00→4:30 was falsely blocked.
+  Fix: `is_slot_available(..., exclude_record_id=)` drops the record being moved
+  before computing free slots. Tests: `test_reply_wording.py`, `test_slots.py`.
 - Owner still wants full automation (2026-07-10) — blocked on: (1) DELETE
   permission, (2) loyalty scope for packages. Both = salon-side YClients token grants.
 - **HARD GUARD (do not weaken):** a record is only mutated when its client phone
