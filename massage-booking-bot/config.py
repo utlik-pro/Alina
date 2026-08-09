@@ -79,10 +79,13 @@ class Config:
     # so the current test round stays text-only; flip to true when ready.
     WAPPI_SEND_PROMO_PHOTOS: bool = os.getenv("WAPPI_SEND_PROMO_PHOTOS", "false").lower() == "true"
 
-    # Instagram (Meta Graph API) — entry point: IG DM → qualify → WhatsApp CTA
+    # Instagram (Meta Graph API) — entry point: IG DM → consult → WhatsApp CTA
     INSTAGRAM_ACCESS_TOKEN: Optional[str] = os.getenv("INSTAGRAM_ACCESS_TOKEN")
     INSTAGRAM_VERIFY_TOKEN: str = os.getenv("INSTAGRAM_VERIFY_TOKEN", "crystal_lab_ig_2026")
     INSTAGRAM_APP_SECRET: Optional[str] = os.getenv("INSTAGRAM_APP_SECRET")
+    # Default host = "Instagram API with Instagram Login" flavor (no FB Page).
+    # For the Facebook-Login/Page-token flavor set https://graph.facebook.com/v23.0
+    INSTAGRAM_GRAPH_BASE: str = os.getenv("INSTAGRAM_GRAPH_BASE", "https://graph.instagram.com/v23.0")
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

@@ -1,17 +1,31 @@
-"""Unit tests for the Instagram entry-point scaffold."""
+"""Unit tests for the Instagram entry point (consult → WhatsApp funnel)."""
+
+from unittest.mock import AsyncMock, MagicMock
 
 from services.instagram_client import (
     parse_instagram_events,
     build_handoff_reply,
     build_whatsapp_cta,
+    _graph_base,
 )
 
 
 def test_parse_basic_dm():
     payload = {"entry": [{"messaging": [
-        {"sender": {"id": "u1"}, "message": {"text": "hi, massage?"}},
+        {"sender": {"id": "u1"}, "message": {"text": "hi, massage?", "mid": "m.1"}},
     ]}]}
-    assert parse_instagram_events(payload) == [{"sender_id": "u1", "text": "hi, massage?"}]
+    assert parse_instagram_events(payload) == [
+        {"sender_id": "u1", "text": "hi, massage?", "mid": "m.1"}
+    ]
+
+
+def test_parse_without_mid_still_works():
+    payload = {"entry": [{"messaging": [
+        {"sender": {"id": "u1"}, "message": {"text": "hello"}},
+    ]}]}
+    assert parse_instagram_events(payload) == [
+        {"sender_id": "u1", "text": "hello", "mid": None}
+    ]
 
 
 def test_parse_ignores_echoes_and_receipts():
@@ -21,7 +35,9 @@ def test_parse_ignores_echoes_and_receipts():
         {"sender": {"id": "u3"}, "message": {"attachments": [{"type": "image"}]}},
         {"sender": {"id": "u4"}, "message": {"text": "real"}},
     ]}]}
-    assert parse_instagram_events(payload) == [{"sender_id": "u4", "text": "real"}]
+    assert parse_instagram_events(payload) == [
+        {"sender_id": "u4", "text": "real", "mid": None}
+    ]
 
 
 def test_handoff_reply_without_cta_number(monkeypatch):
@@ -38,3 +54,111 @@ def test_handoff_reply_with_cta_number(monkeypatch):
     link = build_whatsapp_cta("massage tomorrow")
     assert link.startswith("https://wa.me/971501234567?text=")
     assert "wa.me/971501234567" in build_handoff_reply("massage")
+
+
+def test_graph_base_defaults_to_instagram_login_flavor(monkeypatch):
+    """Recommended (free) flavor = Instagram Login → graph.instagram.com."""
+    from services import instagram_client
+    monkeypatch.setattr(
+        instagram_client.config, "INSTAGRAM_GRAPH_BASE",
+        "https://graph.instagram.com/v23.0",
+    )
+    assert _graph_base() == "https://graph.instagram.com/v23.0"
+    # Trailing slash never doubles up in the URL join
+    monkeypatch.setattr(
+        instagram_client.config, "INSTAGRAM_GRAPH_BASE",
+        "https://graph.facebook.com/v23.0/",
+    )
+    assert _graph_base() == "https://graph.facebook.com/v23.0"
+
+
+# ── consult agent ────────────────────────────────────────────────────────
+
+
+def test_duplicate_mid_detected_once():
+    from agents import instagram_agent
+    instagram_agent._seen_mids.clear()
+    instagram_agent._seen_mids_set.clear()
+    assert instagram_agent.is_duplicate("mid-1") is False
+    assert instagram_agent.is_duplicate("mid-1") is True
+    assert instagram_agent.is_duplicate("mid-2") is False
+    # Missing mid never counts as a duplicate (would eat real messages)
+    assert instagram_agent.is_duplicate(None) is False
+    assert instagram_agent.is_duplicate(None) is False
+
+
+def test_system_prompt_has_prices_cta_and_no_booking_rule():
+    from agents.instagram_agent import build_system_prompt
+    prompt = build_system_prompt("https://wa.me/971501234567?text=hi")
+    assert "SERVICES & PRICES" in prompt          # catalog from prices.py
+    assert "https://wa.me/971501234567" in prompt  # deep link passed through
+    assert "CANNOT book" in prompt                 # no availability promises
+    assert "Abu Dhabi only" in prompt              # nails/lashes area rule
+    # No-link mode still points to WhatsApp
+    assert "WhatsApp" in build_system_prompt(None)
+
+
+async def test_generate_reply_falls_back_without_api_key(monkeypatch):
+    from agents import instagram_agent
+    monkeypatch.setattr(instagram_agent.config, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(
+        instagram_agent.config, "WHATSAPP_CTA_NUMBER", "+971501234567",
+        raising=False,
+    )
+    reply = await instagram_agent.generate_ig_reply("u-fallback", "how much is massage?")
+    assert "wa.me/971501234567" in reply  # static handoff with CTA
+
+
+async def test_generate_reply_falls_back_when_llm_raises(monkeypatch):
+    from agents import instagram_agent
+    monkeypatch.setattr(instagram_agent.config, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        instagram_agent.config, "WHATSAPP_CTA_NUMBER", "+971501234567",
+        raising=False,
+    )
+    broken = MagicMock()
+    broken.chat.completions.create = AsyncMock(side_effect=RuntimeError("api down"))
+    monkeypatch.setattr(instagram_agent, "_openai", broken)
+    reply = await instagram_agent.generate_ig_reply("u-err", "price?")
+    assert "wa.me/971501234567" in reply
+
+
+async def test_generate_reply_uses_llm_answer_and_keeps_history(monkeypatch):
+    from agents import instagram_agent
+    monkeypatch.setattr(instagram_agent.config, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        instagram_agent.config, "WHATSAPP_CTA_NUMBER", "+971501234567",
+        raising=False,
+    )
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock()]
+    fake_response.choices[0].message.content = "Body massage 60 min is 350 AED 🌹"
+    fake = MagicMock()
+    fake.chat.completions.create = AsyncMock(return_value=fake_response)
+    monkeypatch.setattr(instagram_agent, "_openai", fake)
+    instagram_agent._histories.pop("u-ok", None)
+
+    reply = await instagram_agent.generate_ig_reply("u-ok", "how much is massage?")
+    assert reply == "Body massage 60 min is 350 AED 🌹"
+    # History keeps the exchange for follow-up turns
+    hist = list(instagram_agent._histories["u-ok"])
+    assert hist[-2]["role"] == "user"
+    assert hist[-1]["role"] == "assistant"
+    # The system prompt went in with the catalog and the deep link
+    sent = fake.chat.completions.create.call_args.kwargs["messages"]
+    assert sent[0]["role"] == "system"
+    assert "SERVICES & PRICES" in sent[0]["content"]
+
+
+async def test_generate_reply_trims_overlong_answer(monkeypatch):
+    from agents import instagram_agent
+    monkeypatch.setattr(instagram_agent.config, "OPENAI_API_KEY", "sk-test")
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock()]
+    fake_response.choices[0].message.content = "x" * 2000
+    fake = MagicMock()
+    fake.chat.completions.create = AsyncMock(return_value=fake_response)
+    monkeypatch.setattr(instagram_agent, "_openai", fake)
+
+    reply = await instagram_agent.generate_ig_reply("u-long", "everything please")
+    assert len(reply) <= instagram_agent.IG_TEXT_LIMIT

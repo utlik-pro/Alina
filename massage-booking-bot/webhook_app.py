@@ -2737,15 +2737,26 @@ async def instagram_verify(request: Request):
     return Response(content="forbidden", status_code=403)
 
 
+async def _instagram_consult_task(sender_id: str, text: str) -> None:
+    """One IG turn: LLM consult (prices + WhatsApp CTA), then send the DM.
+
+    Runs as a background task so the webhook ACKs Meta fast; any LLM
+    failure inside generate_ig_reply falls back to the static handoff.
+    """
+    from agents.instagram_agent import generate_ig_reply
+    from services.instagram_client import send_instagram_message
+    reply = await generate_ig_reply(sender_id, text)
+    await send_instagram_message(sender_id, reply)
+
+
 @app.post("/webhook/instagram")
 async def instagram_webhook(request: Request, background_tasks: BackgroundTasks):
-    """Receive Instagram DMs, qualify briefly, hand off to WhatsApp (CTA)."""
+    """Receive Instagram DMs, consult on services/prices, funnel to WhatsApp."""
     import hashlib
     import hmac
     import json as _json
-    from services.instagram_client import (
-        parse_instagram_events, build_handoff_reply, send_instagram_message,
-    )
+    from agents.instagram_agent import is_duplicate
+    from services.instagram_client import parse_instagram_events
 
     raw = await request.body()
 
@@ -2768,11 +2779,10 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     logger.info(f"Instagram webhook: {len(events)} event(s)")
 
     for ev in events:
-        # Lightweight qualification: pass the prospect's first line as context
-        # into the WhatsApp deep link so the agent picks up where IG left off.
-        context_hint = ev["text"][:120]
-        reply = build_handoff_reply(prefill_context=context_hint)
-        background_tasks.add_task(send_instagram_message, ev["sender_id"], reply)
+        if is_duplicate(ev.get("mid")):
+            logger.info(f"Instagram webhook: duplicate mid {ev.get('mid')}, skipped")
+            continue
+        background_tasks.add_task(_instagram_consult_task, ev["sender_id"], ev["text"])
 
     return {"status": "ok", "events": len(events)}
 

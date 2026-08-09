@@ -11,7 +11,11 @@ This is intentionally a thin scaffold:
 
 To go live you need (from the user):
 - A Meta app with Instagram messaging permissions
-- INSTAGRAM_ACCESS_TOKEN (page/IG access token)
+  (recommended flavor: "Instagram API with Instagram Login" — free, no
+  Facebook Page required; sends go via graph.instagram.com)
+- INSTAGRAM_ACCESS_TOKEN (Instagram User token; or a Page token if using
+  the Facebook-Login flavor — then set INSTAGRAM_GRAPH_BASE to
+  https://graph.facebook.com/v23.0)
 - INSTAGRAM_APP_SECRET (for payload signature verification)
 - WHATSAPP_CTA_NUMBER (the WhatsApp number to funnel clients to)
 """
@@ -26,16 +30,20 @@ from loguru import logger
 
 from config import config
 
-GRAPH_API = "https://graph.facebook.com/v19.0"
+
+def _graph_base() -> str:
+    """Graph API base URL; host depends on the Meta login flavor in use."""
+    return (config.INSTAGRAM_GRAPH_BASE or "https://graph.instagram.com/v23.0").rstrip("/")
 
 
-def parse_instagram_events(payload: Dict[str, Any]) -> List[Dict[str, str]]:
+def parse_instagram_events(payload: Dict[str, Any]) -> List[Dict[str, Optional[str]]]:
     """Extract inbound DM text events from a Meta webhook payload.
 
-    Returns a list of {"sender_id": str, "text": str}. Ignores echoes,
+    Returns a list of {"sender_id", "text", "mid"} (mid may be None on
+    exotic payloads — used for redelivery dedup). Ignores echoes,
     delivery/read receipts, and non-text messages.
     """
-    events: List[Dict[str, str]] = []
+    events: List[Dict[str, Optional[str]]] = []
     for entry in payload.get("entry", []):
         for msg in entry.get("messaging", []):
             sender = (msg.get("sender") or {}).get("id")
@@ -47,7 +55,12 @@ def parse_instagram_events(payload: Dict[str, Any]) -> List[Dict[str, str]]:
             text = message.get("text")
             if not text:
                 continue
-            events.append({"sender_id": str(sender), "text": str(text)})
+            mid = message.get("mid")
+            events.append({
+                "sender_id": str(sender),
+                "text": str(text),
+                "mid": str(mid) if mid else None,
+            })
     return events
 
 
@@ -87,7 +100,7 @@ async def send_instagram_message(recipient_id: str, text: str) -> bool:
     if not token:
         logger.info(f"[IG dev] would reply to {recipient_id}: {text}")
         return False
-    url = f"{GRAPH_API}/me/messages"
+    url = f"{_graph_base()}/me/messages"
     payload = {
         "recipient": {"id": recipient_id},
         "message": {"text": text},

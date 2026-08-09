@@ -8,8 +8,34 @@ description: Canonical business rules, gotchas and verification checklist for th
 **Read this before touching `/Users/admin/Alina/massage-booking-bot/`.** Whenever the
 client states a new rule, ADD it here in the same edit as the code change.
 
-Scope: **WhatsApp path only** — `webhook_app.py`, `agents/booking_agent.py`,
-`agents/tools.py`, `services/yclients_service.py`. `bot.py` (Telegram) is legacy.
+Scope: **WhatsApp path** — `webhook_app.py`, `agents/booking_agent.py`,
+`agents/tools.py`, `services/yclients_service.py` — plus the **Instagram entry
+point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
+`bot.py` (Telegram) is legacy.
+
+### Instagram entry point — consult & funnel ONLY (owner request 2026-08-09)
+- **Tool: official Meta "Instagram API with Instagram Login"** — free, no
+  Facebook Page needed. Wappi does NOT support Instagram (WA/TG/Max/Авито/VK
+  only), so IG runs on Meta directly. Sends via `graph.instagram.com`
+  (config `INSTAGRAM_GRAPH_BASE`; switch to `graph.facebook.com` only if the
+  Page-token flavor ends up used).
+- **IG job = 2 things:** consult on services/prices (catalog straight from
+  `prices.py`) and funnel to WhatsApp with a wa.me deep link (prefill carries
+  the client's ask). **NO booking, NO slot/availability promises in IG** —
+  the agent there has no YClients access; hard rule in the prompt.
+- Route: `/webhook/instagram` in `webhook_app.py` (GET verify + POST, HMAC
+  signature check, `mid` dedup against Meta redeliveries) → background
+  `_instagram_consult_task` → `agents/instagram_agent.generate_ig_reply`
+  (gpt via `OPENAI_MODEL`, per-sender in-memory history, ≤950 chars) →
+  fallback to the static handoff line on ANY LLM failure.
+- Same language rule as WA (English default, switch when the client can't
+  follow), prices plain "350 AED" (no VAT math), payment only when asked.
+- Go-live needs (user-side, Meta dashboard): IG professional account with
+  message access allowed, Meta app + Instagram Login, webhook subscribed
+  (verify token `INSTAGRAM_VERIFY_TOKEN`, default `crystal_lab_ig_2026`),
+  Render env: `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_APP_SECRET`,
+  `WHATSAPP_CTA_NUMBER`. Until tokens are set the code path is inert
+  (logs the would-be reply). Tests: `tests/unit/test_instagram.py`.
 
 ## ⚠️ Why the косяки happened — the hard lessons (do NOT repeat)
 1. **Drive the real conversation, not just the logic.** Slot/area/duration bugs are
