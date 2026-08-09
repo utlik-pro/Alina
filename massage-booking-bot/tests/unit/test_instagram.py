@@ -145,9 +145,12 @@ async def test_generate_reply_uses_llm_answer_and_keeps_history(monkeypatch):
     assert hist[-2]["role"] == "user"
     assert hist[-1]["role"] == "assistant"
     # The system prompt went in with the catalog and the deep link
-    sent = fake.chat.completions.create.call_args.kwargs["messages"]
+    call = fake.chat.completions.create.call_args.kwargs
+    sent = call["messages"]
     assert sent[0]["role"] == "system"
     assert "SERVICES & PRICES" in sent[0]["content"]
+    # IG path runs on its own model knob, not the WhatsApp agent's
+    assert call["model"] == instagram_agent.config.IG_OPENAI_MODEL
 
 
 async def test_generate_reply_trims_overlong_answer(monkeypatch):
@@ -162,3 +165,48 @@ async def test_generate_reply_trims_overlong_answer(monkeypatch):
 
     reply = await instagram_agent.generate_ig_reply("u-long", "everything please")
     assert len(reply) <= instagram_agent.IG_TEXT_LIMIT
+
+
+# ── ManyChat bridge ──────────────────────────────────────────────────────
+
+
+def test_manychat_endpoint_denies_without_secret(monkeypatch):
+    from fastapi.testclient import TestClient
+    import webhook_app
+    # Deny by default: secret unset → closed, even with no header at all
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "")
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat", json={"subscriber_id": "1", "text": "hi"})
+    assert r.status_code == 403
+
+
+def test_manychat_endpoint_replies_and_validates(monkeypatch):
+    from fastapi.testclient import TestClient
+    import webhook_app
+    from agents import instagram_agent
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    seen = {}
+
+    async def fake_reply(sender_id, text):
+        seen["sender"] = sender_id
+        return "Body massage 60 min — 350 AED 🌹"
+
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply", fake_reply)
+    client = TestClient(webhook_app.app)
+
+    r = client.post("/webhook/manychat", json={"subscriber_id": "42", "text": "price?"},
+                    headers={"X-Manychat-Secret": "wrong"})
+    assert r.status_code == 403
+
+    r = client.post("/webhook/manychat", json={"subscriber_id": "42", "text": "price?"},
+                    headers={"X-Manychat-Secret": "s3cret"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reply"].startswith("Body massage")
+    assert body["content"]["messages"][0]["text"] == body["reply"]
+    assert seen["sender"] == "mc:42"  # ManyChat histories are namespaced
+
+    r = client.post("/webhook/manychat", json={"text": "no id"},
+                    headers={"X-Manychat-Secret": "s3cret"})
+    assert r.status_code == 400

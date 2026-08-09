@@ -116,7 +116,7 @@ async def generate_ig_reply(sender_id: str, text: str) -> str:
     ]
     try:
         response = await _client().chat.completions.create(
-            model=config.OPENAI_MODEL,
+            model=config.IG_OPENAI_MODEL,
             messages=messages,
         )
         answer = (response.choices[0].message.content or "").strip()

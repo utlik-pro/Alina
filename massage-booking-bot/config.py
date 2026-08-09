@@ -86,6 +86,10 @@ class Config:
     # Default host = "Instagram API with Instagram Login" flavor (no FB Page).
     # For the Facebook-Login/Page-token flavor set https://graph.facebook.com/v23.0
     INSTAGRAM_GRAPH_BASE: str = os.getenv("INSTAGRAM_GRAPH_BASE", "https://graph.instagram.com/v23.0")
+    # Model for the IG/ManyChat consult path only — the WhatsApp booking agent
+    # stays on OPENAI_MODEL (gpt-5.4, bake-off-proven). Owner picked gpt-5.6-sol
+    # for the Instagram track (2026-08-09).
+    IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.6-sol")
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

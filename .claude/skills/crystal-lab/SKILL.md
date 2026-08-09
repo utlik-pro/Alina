@@ -36,6 +36,38 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   Render env: `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_APP_SECRET`,
   `WHATSAPP_CTA_NUMBER`. Until tokens are set the code path is inert
   (logs the would-be reply). Tests: `tests/unit/test_instagram.py`.
+- ⚠️ **Code lives on branch `feature/instagram-entry`** (commit 491fd82,
+  2026-08-09, local only — not pushed) so develop/prod stays untouched;
+  develop has only the old inert scaffold. Merge the branch before go-live.
+- **Comment-to-DM** (keyword in a post comment → auto private reply) is NOT
+  built yet. If wanted: embed in OUR webhook (subscribe the same Meta app to
+  the `comments` field + private-reply API call) — do NOT deploy OpenReply
+  (github.com/diwenne/openreply, MIT, comment-to-DM only, no AI/no dialogue;
+  Next.js+Postgres+Redis+worker) as a second service: one Meta app has one
+  webhook callback URL, a separate receiver risks stealing DM events from
+  our consult agent. Its repo = reference implementation only.
+- 🤝 **ManyChat = chosen IG front (owner decision 2026-08-09,** despite our
+  direct-Meta recommendation — cost accepted). Bridge endpoint
+  `/webhook/manychat` in `webhook_app.py`: ManyChat External Request POSTs
+  `{"subscriber_id","text"}` + header `X-Manychat-Secret` (=
+  `MANYCHAT_WEBHOOK_SECRET`, deny-by-default when unset) → returns flat
+  `{"reply"}` AND ManyChat v2 dynamic-block. Same consult brain
+  (`generate_ig_reply`), histories namespaced `mc:<id>`. ⚠️ When IG is
+  connected through ManyChat, ManyChat owns the Meta webhook — do NOT also
+  subscribe our direct `/webhook/instagram` app to the same account (double
+  replies); the direct path stays as the no-ManyChat fallback. Needs
+  ManyChat paid tier with External Request (Pro $29/mo; verify if Essential
+  $14 has it) + `MANYCHAT_WEBHOOK_SECRET` in Render env.
+- 🧠 **IG/ManyChat model = `gpt-5.6-sol`** via `IG_OPENAI_MODEL` (config
+  default; owner pick 2026-08-09; live smoke-tested ~3s/reply, ≈1.5¢/reply
+  at $5/$30 per 1M). **WhatsApp agent STAYS on gpt-5.4** (bake-off-proven) —
+  do not switch it without a new bake-off. Cheaper tiers if needed:
+  gpt-5.6-terra $2/$12, gpt-5.6-luna $0.20/$1.20.
+- Competitors assessed 2026-08-09: **Brevo** — no Instagram at all
+  (email/SMS/WhatsApp/site-chat only). **ChatPlace** — own AI only
+  (Creator $45/mo, ~3000 AI msgs), no documented custom-LLM webhook →
+  can't run OUR brain. (`MANYCHAT_API_KEY` in config.py is a dead
+  early-iteration stub, still unused; the bridge uses only the secret.)
 
 ## ⚠️ Why the косяки happened — the hard lessons (do NOT repeat)
 1. **Drive the real conversation, not just the logic.** Slot/area/duration bugs are

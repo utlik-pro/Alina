@@ -2787,6 +2787,44 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     return {"status": "ok", "events": len(events)}
 
 
+@app.post("/webhook/manychat")
+async def manychat_webhook(request: Request):
+    """ManyChat External Request bridge — same consult brain, ManyChat front.
+
+    When Instagram is connected through ManyChat, ManyChat owns the Meta
+    webhook; its flow calls this endpoint with the subscriber's message and
+    delivers whatever we return. Contract:
+      POST {"subscriber_id": "...", "text": "..."}
+      header X-Manychat-Secret = MANYCHAT_WEBHOOK_SECRET
+    The response carries a flat {"reply": ...} (for External Request field
+    mapping) plus the ManyChat v2 dynamic-block format so a flow can render
+    the messages directly without mapping.
+    """
+    from agents.instagram_agent import generate_ig_reply
+
+    # Deny by default: never open when the secret is unset (admin-endpoint rule).
+    secret = request.headers.get("X-Manychat-Secret", "")
+    if not config.MANYCHAT_WEBHOOK_SECRET or secret != config.MANYCHAT_WEBHOOK_SECRET:
+        return Response(content="forbidden", status_code=403)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return Response(content="bad request", status_code=400)
+    subscriber_id = str(payload.get("subscriber_id") or "").strip()
+    text = str(payload.get("text") or "").strip()
+    if not subscriber_id or not text:
+        return Response(content="bad request", status_code=400)
+
+    # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
+    reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
+    return {
+        "reply": reply,
+        "version": "v2",
+        "content": {"type": "instagram", "messages": [{"type": "text", "text": reply}]},
+    }
+
+
 @app.post("/admin/share-with-driver/{booking_id}")
 async def admin_share_with_driver(booking_id: int, request: Request):
     """(Re)send a logistics notification to the driver group for a booking
