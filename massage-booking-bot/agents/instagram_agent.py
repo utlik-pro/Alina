@@ -37,6 +37,12 @@ MAX_TURNS = 12       # messages kept per sender (≈6 exchanges)
 MAX_SENDERS = 500    # conversations kept in memory
 IG_TEXT_LIMIT = 950  # Instagram DM hard cap is 1000 chars — stay under
 
+# Shadow-mode marker for the ManyChat bridge. ManyChat's response mapper
+# refuses EMPTY strings ("Invalid value type in json path", live-caught
+# 2026-08-11), so shadow turns return this sentinel instead; the flow's
+# Condition node (ai_reply is not [SHADOW]) stops it from reaching clients.
+SHADOW_SENTINEL = "[SHADOW]"
+
 # Turn log for prod QA (live AND shadow turns). NOTE: on Render the file is
 # ephemeral (gone on redeploy) — the loguru [IG-SHADOW]/[IG-LIVE] lines in the
 # Render log stream are the durable channel; this file is for local review.

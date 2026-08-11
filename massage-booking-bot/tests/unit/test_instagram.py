@@ -206,7 +206,8 @@ def test_manychat_endpoint_replies_and_validates(monkeypatch, tmp_path):
     assert r.status_code == 200
     body = r.json()
     assert body["reply"].startswith("Body massage")
-    assert body["content"]["messages"][0]["text"] == body["reply"]
+    # Mapping-only contract — no v2 content (ManyChat could render it = double send)
+    assert "content" not in body
     assert seen["sender"] == "mc:42"  # ManyChat histories are namespaced
 
     r = client.post("/webhook/manychat", json={"text": "no id"},
@@ -277,7 +278,9 @@ def test_manychat_endpoint_shadow_outside_window(monkeypatch, tmp_path):
     assert r.status_code == 200
     body = r.json()
     assert body["shadow"] is True
-    assert body["reply"] == ""
-    assert body["content"]["messages"] == []
+    # ManyChat's mapper rejects "" → shadow returns a non-empty sentinel the
+    # flow's Condition node filters out before the client sees anything
+    assert body["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert "content" not in body
     # The would-be reply is still logged for QA
     assert "would-be answer" in (tmp_path / "t.jsonl").read_text()

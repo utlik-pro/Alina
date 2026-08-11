@@ -2837,28 +2837,17 @@ async def manychat_webhook(request: Request):
         return Response(content="bad request", status_code=400)
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
+    from agents.instagram_agent import SHADOW_SENTINEL
     reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
     live = ig_live_now()
     log_ig_turn("manychat", subscriber_id, text, reply, live)
+    # Mapping-only contract: the flow maps $.reply → ai_reply and a Condition
+    # node drops the shadow sentinel (ManyChat's mapper rejects empty strings,
+    # and returning v2 dynamic content could double-send if ManyChat renders
+    # it — so the response carries ONLY the reply field).
     if not live:
-        # SHADOW mode: empty reply + no messages → ManyChat sends nothing;
-        # the client sees silence, we see the would-be answer in the logs.
-        return {
-            "reply": "",
-            "shadow": True,
-            "version": "v2",
-            "content": {"type": "instagram", "messages": []},
-        }
-    return {
-        "reply": reply,
-        "version": "v2",
-        "content": {
-            "type": "instagram",
-            "messages": [{"type": "text", "text": reply}],
-            # Tag lets the team filter agent-handled chats in the ManyChat inbox
-            "actions": [{"action": "add_tag", "tag_name": "bot_responded"}],
-        },
-    }
+        return {"reply": SHADOW_SENTINEL, "shadow": True}
+    return {"reply": reply}
 
 
 @app.post("/admin/share-with-driver/{booking_id}")
