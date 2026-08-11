@@ -2805,17 +2805,30 @@ async def manychat_webhook(request: Request):
     mapping) plus the ManyChat v2 dynamic-block format so a flow can render
     the messages directly without mapping.
     """
+    import hmac as _hmac
     from agents.instagram_agent import generate_ig_reply, ig_live_now, log_ig_turn
-
-    # Deny by default: never open when the secret is unset (admin-endpoint rule).
-    secret = request.headers.get("X-Manychat-Secret", "")
-    if not config.MANYCHAT_WEBHOOK_SECRET or secret != config.MANYCHAT_WEBHOOK_SECRET:
-        return Response(content="forbidden", status_code=403)
 
     try:
         payload = await request.json()
     except Exception:
         return Response(content="bad request", status_code=400)
+
+    # Deny by default: never open when the secret is unset (admin-endpoint rule).
+    # Header is canonical; body "secret" and ?secret= are equal fallbacks
+    # because the ManyChat UI silently drops saved header VALUES and even
+    # hand-typed body edits (live-caught 2026-08-11: Settings→Logs
+    # "Forbidden" — the header arrived empty). The request URL field is the
+    # one input ManyChat persists reliably, so the query param is the one
+    # that actually carries auth in prod.
+    secret = (
+        request.headers.get("X-Manychat-Secret", "")
+        or str(payload.get("secret") or "")
+        or request.query_params.get("secret", "")
+    )
+    if not config.MANYCHAT_WEBHOOK_SECRET or not _hmac.compare_digest(
+        secret, config.MANYCHAT_WEBHOOK_SECRET
+    ):
+        return Response(content="forbidden", status_code=403)
     subscriber_id = str(payload.get("subscriber_id") or "").strip()
     # Accept both our contract field ("text") and ManyChat's system-field
     # naming ("last_input_text") so either flow mapping works.

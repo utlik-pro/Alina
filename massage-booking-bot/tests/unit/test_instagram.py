@@ -213,6 +213,20 @@ def test_manychat_endpoint_replies_and_validates(monkeypatch, tmp_path):
                     headers={"X-Manychat-Secret": "s3cret"})
     assert r.status_code == 400
 
+    # ManyChat's UI drops saved header values — body secret is an equal path
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "42", "text": "price?", "secret": "s3cret"})
+    assert r.status_code == 200
+
+    # ...and so is ?secret= (the URL field is what ManyChat persists reliably)
+    r = client.post("/webhook/manychat?secret=s3cret",
+                    json={"subscriber_id": "42", "text": "price?"})
+    assert r.status_code == 200
+
+    r = client.post("/webhook/manychat?secret=wrong",
+                    json={"subscriber_id": "42", "text": "price?", "secret": "also-wrong"})
+    assert r.status_code == 403
+
 
 # ── live window (owner: live from 21:00 Minsk, shadow otherwise) ─────────
 
