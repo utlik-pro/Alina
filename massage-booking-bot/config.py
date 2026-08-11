@@ -90,6 +90,12 @@ class Config:
     # stays on OPENAI_MODEL (gpt-5.4, bake-off-proven). Owner picked gpt-5.6-sol
     # for the Instagram track (2026-08-09).
     IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.6-sol")
+    # Live-reply window for the IG track (owner, 2026-08-09): agent SENDS to
+    # clients only from 21:00 Minsk (admins offline); outside the window it
+    # runs in SHADOW mode — generates + logs the reply but sends nothing.
+    IG_ACTIVE_FROM: str = os.getenv("IG_ACTIVE_FROM", "21:00")
+    IG_ACTIVE_TO: str = os.getenv("IG_ACTIVE_TO", "09:00")
+    IG_ACTIVE_TZ: str = os.getenv("IG_ACTIVE_TZ", "Europe/Minsk")
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

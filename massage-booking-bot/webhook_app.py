@@ -2742,11 +2742,16 @@ async def _instagram_consult_task(sender_id: str, text: str) -> None:
 
     Runs as a background task so the webhook ACKs Meta fast; any LLM
     failure inside generate_ig_reply falls back to the static handoff.
+    Outside the live window (owner: from 21:00 Minsk) the turn is SHADOW:
+    generated + logged, not sent.
     """
-    from agents.instagram_agent import generate_ig_reply
+    from agents.instagram_agent import generate_ig_reply, ig_live_now, log_ig_turn
     from services.instagram_client import send_instagram_message
     reply = await generate_ig_reply(sender_id, text)
-    await send_instagram_message(sender_id, reply)
+    live = ig_live_now()
+    log_ig_turn("instagram", sender_id, text, reply, live)
+    if live:
+        await send_instagram_message(sender_id, reply)
 
 
 @app.post("/webhook/instagram")
@@ -2800,7 +2805,7 @@ async def manychat_webhook(request: Request):
     mapping) plus the ManyChat v2 dynamic-block format so a flow can render
     the messages directly without mapping.
     """
-    from agents.instagram_agent import generate_ig_reply
+    from agents.instagram_agent import generate_ig_reply, ig_live_now, log_ig_turn
 
     # Deny by default: never open when the secret is unset (admin-endpoint rule).
     secret = request.headers.get("X-Manychat-Secret", "")
@@ -2812,16 +2817,34 @@ async def manychat_webhook(request: Request):
     except Exception:
         return Response(content="bad request", status_code=400)
     subscriber_id = str(payload.get("subscriber_id") or "").strip()
-    text = str(payload.get("text") or "").strip()
+    # Accept both our contract field ("text") and ManyChat's system-field
+    # naming ("last_input_text") so either flow mapping works.
+    text = str(payload.get("text") or payload.get("last_input_text") or "").strip()
     if not subscriber_id or not text:
         return Response(content="bad request", status_code=400)
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
     reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
+    live = ig_live_now()
+    log_ig_turn("manychat", subscriber_id, text, reply, live)
+    if not live:
+        # SHADOW mode: empty reply + no messages → ManyChat sends nothing;
+        # the client sees silence, we see the would-be answer in the logs.
+        return {
+            "reply": "",
+            "shadow": True,
+            "version": "v2",
+            "content": {"type": "instagram", "messages": []},
+        }
     return {
         "reply": reply,
         "version": "v2",
-        "content": {"type": "instagram", "messages": [{"type": "text", "text": reply}]},
+        "content": {
+            "type": "instagram",
+            "messages": [{"type": "text", "text": reply}],
+            # Tag lets the team filter agent-handled chats in the ManyChat inbox
+            "actions": [{"action": "add_tag", "tag_name": "bot_responded"}],
+        },
     }
 
 
@@ -2896,38 +2919,5 @@ async def admin_logs(request: Request):
     return {"path": LOG_PATH, "count": None, "logs": read_recent(min(max(n, 1), 500))}
 
 
-@app.post("/webhook/manychat")
-async def manychat_webhook(request: Request):
-    """Receive ManyChat External Request.
-
-    ManyChat sends subscriber data + message, we process through AI agent
-    and return v2 Dynamic Content JSON.
-    """
-    data = await request.json()
-    logger.info(f"ManyChat webhook: {data}")
-
-    # TODO: implement full ManyChat processing (Task #14)
-    # For now, return a simple acknowledgement
-    subscriber_id = data.get("subscriber_id", "unknown")
-    message_text = data.get("last_input_text", "")
-    channel = data.get("channel", "unknown")
-
-    logger.info(f"ManyChat [{channel}] from {subscriber_id}: {message_text}")
-
-    return {
-        "version": "v2",
-        "content": {
-            "messages": [
-                {
-                    "type": "text",
-                    "text": "Thank you for your message! Our team will get back to you shortly. 💎"
-                }
-            ],
-            "actions": [
-                {
-                    "action": "add_tag",
-                    "tag_name": "bot_responded"
-                }
-            ]
-        }
-    }
+# (The old canned-reply ManyChat stub from Task #14 lived here — replaced by
+# the authenticated consult bridge above; one route, one handler.)

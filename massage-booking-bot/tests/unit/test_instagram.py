@@ -180,12 +180,14 @@ def test_manychat_endpoint_denies_without_secret(monkeypatch):
     assert r.status_code == 403
 
 
-def test_manychat_endpoint_replies_and_validates(monkeypatch):
+def test_manychat_endpoint_replies_and_validates(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
     import webhook_app
     from agents import instagram_agent
 
     monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
     seen = {}
 
     async def fake_reply(sender_id, text):
@@ -210,3 +212,58 @@ def test_manychat_endpoint_replies_and_validates(monkeypatch):
     r = client.post("/webhook/manychat", json={"text": "no id"},
                     headers={"X-Manychat-Secret": "s3cret"})
     assert r.status_code == 400
+
+
+# ── live window (owner: live from 21:00 Minsk, shadow otherwise) ─────────
+
+
+def test_live_window_wraps_midnight_minsk():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from agents.instagram_agent import ig_live_now
+    minsk = ZoneInfo("Europe/Minsk")
+    assert ig_live_now(datetime(2026, 8, 9, 21, 0, tzinfo=minsk)) is True
+    assert ig_live_now(datetime(2026, 8, 9, 23, 30, tzinfo=minsk)) is True
+    assert ig_live_now(datetime(2026, 8, 10, 3, 0, tzinfo=minsk)) is True
+    assert ig_live_now(datetime(2026, 8, 9, 20, 59, tzinfo=minsk)) is False
+    assert ig_live_now(datetime(2026, 8, 9, 9, 0, tzinfo=minsk)) is False
+    assert ig_live_now(datetime(2026, 8, 9, 14, 0, tzinfo=minsk)) is False
+    # tz conversion: 18:05 UTC = 21:05 Minsk (UTC+3) → live
+    assert ig_live_now(datetime(2026, 8, 9, 18, 5, tzinfo=ZoneInfo("UTC"))) is True
+
+
+def test_log_ig_turn_writes_jsonl(tmp_path, monkeypatch):
+    import json as _json
+    from agents import instagram_agent
+    log_file = tmp_path / "ig_turns.jsonl"
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", log_file)
+    instagram_agent.log_ig_turn("manychat", "42", "price?", "350 AED", live=False)
+    rec = _json.loads(log_file.read_text().strip())
+    assert rec["live"] is False
+    assert rec["channel"] == "manychat"
+    assert rec["reply"] == "350 AED"
+
+
+def test_manychat_endpoint_shadow_outside_window(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    import webhook_app
+    from agents import instagram_agent
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
+
+    async def fake_reply(sender_id, text):
+        return "would-be answer"
+
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply", fake_reply)
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat", json={"subscriber_id": "7", "text": "hi"},
+                    headers={"X-Manychat-Secret": "s3cret"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["shadow"] is True
+    assert body["reply"] == ""
+    assert body["content"]["messages"] == []
+    # The would-be reply is still logged for QA
+    assert "would-be answer" in (tmp_path / "t.jsonl").read_text()

@@ -19,8 +19,12 @@ Design constraints:
 
 from __future__ import annotations
 
+import json
 from collections import deque
+from datetime import datetime, time as dtime, timezone
+from pathlib import Path
 from typing import Deque, Dict, Optional
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 from openai import AsyncOpenAI
@@ -32,6 +36,60 @@ from services.instagram_client import build_handoff_reply, build_whatsapp_cta
 MAX_TURNS = 12       # messages kept per sender (≈6 exchanges)
 MAX_SENDERS = 500    # conversations kept in memory
 IG_TEXT_LIMIT = 950  # Instagram DM hard cap is 1000 chars — stay under
+
+# Turn log for prod QA (live AND shadow turns). NOTE: on Render the file is
+# ephemeral (gone on redeploy) — the loguru [IG-SHADOW]/[IG-LIVE] lines in the
+# Render log stream are the durable channel; this file is for local review.
+IG_TURNS_LOG = Path(__file__).resolve().parent.parent / "logs" / "ig_turns.jsonl"
+
+
+def _parse_hhmm(value: str, fallback: dtime) -> dtime:
+    try:
+        h, m = value.strip().split(":")
+        return dtime(int(h), int(m))
+    except Exception:
+        return fallback
+
+
+def ig_live_now(now: Optional[datetime] = None) -> bool:
+    """True when the IG agent may actually SEND replies to clients.
+
+    Owner rule (2026-08-09): live only from IG_ACTIVE_FROM to IG_ACTIVE_TO
+    in IG_ACTIVE_TZ (default 21:00→09:00 Europe/Minsk — the night window
+    while admins are offline). The window wraps midnight. Outside it the
+    agent runs in SHADOW mode: replies are generated and logged, nothing
+    is sent, so the system can be QA'd on real prod traffic.
+    """
+    tz = ZoneInfo(config.IG_ACTIVE_TZ)
+    now = (now or datetime.now(tz)).astimezone(tz)
+    start = _parse_hhmm(config.IG_ACTIVE_FROM, dtime(21, 0))
+    end = _parse_hhmm(config.IG_ACTIVE_TO, dtime(9, 0))
+    t = now.time()
+    if start == end:
+        return True  # degenerate config = always live
+    if start < end:
+        return start <= t < end
+    return t >= start or t < end  # wraps midnight
+
+
+def log_ig_turn(channel: str, sender_id: str, text: str, reply: str, live: bool) -> None:
+    """Append one turn to the QA log; never let logging break the turn."""
+    mode = "IG-LIVE" if live else "IG-SHADOW"
+    logger.info(f"[{mode}] {channel}:{sender_id} | in: {text[:120]!r} | out: {reply[:200]!r}")
+    try:
+        IG_TURNS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "channel": channel,
+            "sender": sender_id,
+            "live": live,
+            "text": text,
+            "reply": reply,
+        }
+        with IG_TURNS_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.error(f"IG turn log failed: {e}")
 
 _histories: Dict[str, Deque[dict]] = {}
 _seen_mids: Deque[str] = deque(maxlen=500)
