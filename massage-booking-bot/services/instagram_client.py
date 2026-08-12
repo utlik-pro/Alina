@@ -94,6 +94,37 @@ def build_handoff_reply(prefill_context: str = "") -> str:
     )
 
 
+async def fetch_manychat_last_text(subscriber_id: str) -> str:
+    """Pull the contact's last message text via the ManyChat API.
+
+    Needed because ManyChat's External Request body template breaks on
+    multiline/quoted client text ("Invalid payload json", live-caught on
+    the first night 2026-08-12) — so the flow sends only ids and we fetch
+    the text server-side. Returns "" when the key is missing or the call
+    fails (the endpoint then 400s, same as before).
+    """
+    key = config.MANYCHAT_API_KEY
+    if not key:
+        return ""
+    url = "https://api.manychat.com/fb/subscriber/getInfo"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params={"subscriber_id": subscriber_id},
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=8,
+            ) as resp:
+                if resp.status >= 400:
+                    logger.error(f"ManyChat getInfo {resp.status} for {subscriber_id}")
+                    return ""
+                data = await resp.json()
+                return str((data.get("data") or {}).get("last_input_text") or "").strip()
+    except Exception as e:
+        logger.error(f"ManyChat getInfo failed for {subscriber_id}: {e}")
+        return ""
+
+
 async def send_instagram_message(recipient_id: str, text: str) -> bool:
     """Send a DM via the Graph API. No-op (logs) if token absent."""
     token = config.INSTAGRAM_ACCESS_TOKEN

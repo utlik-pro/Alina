@@ -229,6 +229,42 @@ def test_manychat_endpoint_replies_and_validates(monkeypatch, tmp_path):
     assert r.status_code == 403
 
 
+async def _fake_last_text(subscriber_id):
+    return "multiline\nquestion" if subscriber_id == "77" else ""
+
+
+def test_manychat_endpoint_fetches_text_when_absent(monkeypatch, tmp_path):
+    """Flow sends only ids (raw text breaks ManyChat's body template on
+    newlines/quotes) — the endpoint pulls the text via the ManyChat API."""
+    from fastapi.testclient import TestClient
+    import webhook_app
+    from agents import instagram_agent
+    from services import instagram_client
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    monkeypatch.setattr(instagram_client, "fetch_manychat_last_text", _fake_last_text)
+    seen = {}
+
+    async def fake_reply(sender_id, text):
+        seen["text"] = text
+        return "ok"
+
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply", fake_reply)
+    client = TestClient(webhook_app.app)
+
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "77", "secret": "s3cret"})
+    assert r.status_code == 200
+    assert seen["text"] == "multiline\nquestion"
+
+    # Unknown contact / API failure → still a clean 400, not a crash
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "unknown", "secret": "s3cret"})
+    assert r.status_code == 400
+
+
 # ── live window (owner: live from 21:00 Minsk, shadow otherwise) ─────────
 
 

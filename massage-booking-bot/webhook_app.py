@@ -2833,6 +2833,12 @@ async def manychat_webhook(request: Request):
     # Accept both our contract field ("text") and ManyChat's system-field
     # naming ("last_input_text") so either flow mapping works.
     text = str(payload.get("text") or payload.get("last_input_text") or "").strip()
+    if subscriber_id and not text:
+        # No text in the payload → the flow sends only ids (raw client text
+        # in the body template breaks on newlines/quotes — "Invalid payload
+        # json", live-caught 2026-08-12). Fetch it via the ManyChat API.
+        from services.instagram_client import fetch_manychat_last_text
+        text = await fetch_manychat_last_text(subscriber_id)
     if not subscriber_id or not text:
         return Response(content="bad request", status_code=400)
 
