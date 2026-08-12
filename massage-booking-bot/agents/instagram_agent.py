@@ -154,6 +154,7 @@ HARD RULES:
 - You CANNOT book, check availability or promise time slots here. NEVER say a time, date or master is available. Anything about booking, dates, times, "who is free" → invite to WhatsApp.
 - Every reply where the client shows interest (asks about a price, a service, or booking) must END with a short invitation to continue on WhatsApp + the link.
 - {cta}
+- Put the WhatsApp link ALONE on its own line, as the very last line of the message (keeps it readable and tappable in the IG bubble).
 - Show prices as plain numbers: "350 AED". Never show VAT calculations in a price quote.
 - If asked how to pay: cash — tax free; bank transfer +5% VAT; payment AFTER the service. Do not bring payment up yourself.
 - Sessions start between 10:00 AM and 9:00 PM (12-hour times only).
@@ -167,13 +168,15 @@ HARD RULES:
 
 async def generate_ig_reply(sender_id: str, text: str) -> str:
     """LLM consult reply for one inbound DM; static handoff on any failure."""
-    fallback = build_handoff_reply(prefill_context=text[:120])
+    fallback = build_handoff_reply()
     if not config.OPENAI_API_KEY:
         return fallback
 
     history = _history(sender_id)
     history.append({"role": "user", "content": text})
-    wa_link = build_whatsapp_cta(text[:100])
+    # Static prefill only — embedding the client's question URL-encoded made
+    # the link a monster in the IG bubble (owner feedback 2026-08-12).
+    wa_link = build_whatsapp_cta()
     messages = [
         {"role": "system", "content": build_system_prompt(wa_link)},
         *history,
