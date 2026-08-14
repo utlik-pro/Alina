@@ -186,21 +186,11 @@ SPECIAL_OFFERS = {
         "was": 770,
         "description": "2h treatment + FREE facial massage + FREE hand massage",
     },
-    "winter_nails_japanese": {
-        "name": "OFFER - Japanese mani + pedi",
-        "price": 330,
-        "was": 380,
-    },
-    "winter_nails_russian": {
-        "name": "OFFER - Russian gellish mani + pedi",
-        "price": 380,
-        "was": 420,
-    },
-    "winter_lamination": {
-        "name": "OFFER - Eyelash lifting + Eyebrow lamination",
-        "price": 350,
-        "was": 400,
-    },
+    # REMOVED 2026-08-14 (client rule, Tatyana 2026-07-28 thread): «цены те же,
+    # кроме маникюра и ламинирования — НЕТ СКИДОК. Этих офферов НЕТ!» —
+    # discounted nails/lamination offers are cancelled; regular catalog
+    # prices apply (russian_combo 420, japanese_combo 380, lash_brow_combo 400).
+    # Do not re-add without an explicit current offer list from the client.
     "lymphatic_cupping_combo": {
         "name": "NEW OFFER - Lymphatic drainage massage + Cupping + Head spa",
         "price": 275,
