@@ -86,10 +86,12 @@ class Config:
     # Default host = "Instagram API with Instagram Login" flavor (no FB Page).
     # For the Facebook-Login/Page-token flavor set https://graph.facebook.com/v23.0
     INSTAGRAM_GRAPH_BASE: str = os.getenv("INSTAGRAM_GRAPH_BASE", "https://graph.instagram.com/v23.0")
-    # Model for the IG/ManyChat consult path only — the WhatsApp booking agent
-    # stays on OPENAI_MODEL (gpt-5.4, bake-off-proven). Owner picked gpt-5.6-sol
-    # for the Instagram track (2026-08-09).
-    IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.6-sol")
+    # Model for the IG/ManyChat consult path. Unified to gpt-5.4 (owner
+    # decision 2026-08-14): one brain across consult + booking. Note:
+    # gpt-5.6-sol can NOT drive the booking tools at all — OpenAI 400s
+    # "function tools with reasoning_effort are not supported ... use
+    # /v1/responses or reasoning_effort='none'" (bake-off 2026-08-14).
+    IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.4")
     # Live-reply window for the IG track. Client's (Tatyana's) explicit rule
     # from the 2026-07-28 thread: agent works 21:00→08:00 Minsk (=22:00→09:00
     # Abu Dhabi), admins take over in the morning. Outside the window the
