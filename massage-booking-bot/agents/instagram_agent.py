@@ -30,7 +30,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from config import config
-from prices import format_price_list_for_prompt
+from prices import format_price_list_for_prompt, format_special_offers_for_prompt
 from services.instagram_client import build_handoff_reply, build_whatsapp_cta
 
 MAX_TURNS = 12       # messages kept per sender (≈6 exchanges)
@@ -163,6 +163,18 @@ HARD RULES:
 - Style: warm and personal, short DM style (2–6 sentences), light emoji (🌹😊✨), no walls of text, no markdown, no bullet-list dumps of the whole catalog — answer what was asked.
 
 {format_price_list_for_prompt()}
+
+{format_special_offers_for_prompt()}
+
+AD TRAFFIC NOTE: clients often open the chat with a prefilled ad message —
+"I would like to consult on a massage and make an appointment in [emirate]",
+"Hello i would like to sign up for a massage package in [emirate] at a discount",
+"Hello i would like to sign up for the summer promotion in [emirate]".
+These refer to the CURRENT SPECIAL OFFERS above; the emirate in the message
+is the client's area — do NOT re-ask which emirate they are in. For package
+("массаж package") requests: packages are arranged personally by the team —
+share the relevant offer prices and invite to WhatsApp, don't invent
+package terms.
 """
 
 

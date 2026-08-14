@@ -180,29 +180,36 @@ SERVICE_CATALOG = {
 # SPECIAL OFFERS
 # ═══════════════════════════════════════════════════════════
 
+# The FOUR advertised offers below match the client's current ad creatives
+# (photos from Tatyana, 2026-08-14) — ads (and IG prefill texts like
+# "summer promotion") point at exactly these. Nails/lamination discounts
+# are cancelled (client rule 2026-07-28: «этих офферов НЕТ»).
 SPECIAL_OFFERS = {
-    "winter_body_combo": {
-        "name": "OFFER - BODY COMBO",
-        "price": 499,
-        "was": 720,
-        "duration": 100,
-        "description": "Lymphatic drainage body massage + Facial lifting massage + Head spa treatment + Alginate mask",
-    },
-    "ramadan_facial": {
-        "name": "OFFER - Deep Facial Cleansing",
+    "offer_deep_cleansing": {
+        "name": "NEW OFFER - Deep Facial Cleansing (8 steps, 2 hours)",
         "price": 420,
         "was": 770,
-        "description": "2h treatment + FREE facial massage + FREE hand massage",
+        "duration": 120,
+        "description": "8-step deep facial cleansing, 2h treatment, specialist with medical education",
     },
-    # REMOVED 2026-08-14 (client rule, Tatyana 2026-07-28 thread): «цены те же,
-    # кроме маникюра и ламинирования — НЕТ СКИДОК. Этих офферов НЕТ!» —
-    # discounted nails/lamination offers are cancelled; regular catalog
-    # prices apply (russian_combo 420, japanese_combo 380, lash_brow_combo 400).
-    # Do not re-add without an explicit current offer list from the client.
+    "offer_body_60": {
+        "name": "NEW OFFER - Body massage 60 min",
+        "price": 350,
+        "was": 500,
+        "duration": 60,
+        "description": "Combination of massage techniques, individual approach, free transportation",
+    },
+    "offer_face_50": {
+        "name": "NEW OFFER - Facial massage 50 min",
+        "price": 370,
+        "was": 550,
+        "duration": 50,
+        "description": "Combination of facial massage techniques, individual approach, free transportation",
+    },
     "lymphatic_cupping_combo": {
         "name": "NEW OFFER - Lymphatic drainage massage + Cupping + Head spa",
         "price": 275,
-        "was": 480,
+        "was": 430,
         "duration": 45,
         "description": "Lymphatic drainage body massage + Cupping + Head spa treatment",
     },
@@ -364,7 +371,7 @@ Eyebrow: {p('wax_eyebrow'):.0f} | Upper lip: {p('wax_upper_lip'):.0f} | Chin: {p
 def format_special_offers_for_prompt() -> str:
     """Generate the SPECIAL OFFERS section for the system prompt."""
     p = get_price  # shorthand
-    lines = ["CURRENT SPECIAL OFFERS (Feb 2026)", "═══════════════════════════════════"]
+    lines = ["CURRENT SPECIAL OFFERS (August 2026 — these are the advertised ones)", "═══════════════════════════════════"]
 
     for key, offer in SPECIAL_OFFERS.items():
         if offer["price"] is None:
