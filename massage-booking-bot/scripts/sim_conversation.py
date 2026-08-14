@@ -129,12 +129,27 @@ async def run(scenario):
 
         await _inject_slots(yc, ctx, date)
 
+        # Instagram channel: mirror the webhook — same brief, same phone gate.
+        is_ig = scenario.get("channel") == "instagram"
+        if is_ig:
+            ctx.extra_system_info = (ctx.extra_system_info or "") + wh._ig_channel_brief(
+                (ctx.client_data.get("phone") or "").strip()
+            )
+
         ctx.recent_messages.append({"role": "user", "content": msg})
         resp, actions = await agent.process_message_with_tools(msg, ctx)
+        _bc = actions.booking_call
+        _needs_phone = False
+        if is_ig and _bc is not None:
+            import re as _re
+            _known = (getattr(_bc, "client_phone", None)
+                      or ctx.client_data.get("phone") or "")
+            _needs_phone = len(_re.sub(r"\D", "", str(_known))) < 9
         final = wh._enforce_reply_wording(
             resp, actions, actions.booking_call, ctx.client_data, user_text=msg,
             already_booked_sig=getattr(ctx, "last_booking_sig", None),
-            group_requested=bool(ctx.booking_data.get("group_requested")))
+            group_requested=bool(ctx.booking_data.get("group_requested")),
+            needs_phone=_needs_phone)
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call
@@ -149,9 +164,13 @@ async def run(scenario):
                 tag = " [duplicate — suppressed]"
             elif wh._booking_day_mismatch(msg, bc):
                 tag = " [gate: wrong-day — blocked]"
+            elif _needs_phone:
+                tag = " [gate: NO record — PHONE missing (IG)]"
             elif has_loc and has_name:
                 tag = " [✅ RECORD CREATED]"
                 ctx.last_booking_sig = _sig
+                if is_ig and getattr(bc, "client_phone", None):
+                    ctx.client_data["phone"] = bc.client_phone
             else:
                 tag = " [gate: NO record — missing info]"
         if actions.reschedule_call is not None:

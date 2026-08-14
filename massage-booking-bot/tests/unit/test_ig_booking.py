@@ -99,6 +99,31 @@ def test_manychat_bridge_routes_to_booking_pipeline(monkeypatch, tmp_path):
     assert routed["args"] == (f"{IG_KEY_PREFIX}77", "book me a massage", None)
 
 
+def test_whitelisted_tester_books_at_any_hour(monkeypatch, tmp_path):
+    """IG_TEST_SUBSCRIBERS bypasses both the flag and the night window."""
+    from fastapi.testclient import TestClient
+    from agents import instagram_agent
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(webhook_app.config, "IG_BOOKING_ENABLED", False)
+    monkeypatch.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272, 111")
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_API_KEY", "mc-key", raising=False)
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)  # daytime
+    routed = {}
+
+    async def fake_buffer(phone, text, sender_name):
+        routed["args"] = (phone, text, sender_name)
+
+    monkeypatch.setattr(webhook_app, "_buffer_and_process_wappi", fake_buffer)
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "868311272", "text": "test booking",
+                          "secret": "s3cret"})
+    assert r.status_code == 200
+    assert r.json()["queued"] is True
+    assert routed["args"][0] == "ig:868311272"
+
+
 def test_manychat_bridge_shadow_bypasses_booking(monkeypatch, tmp_path):
     """Outside the live window the booking path must NOT engage."""
     from fastapi.testclient import TestClient

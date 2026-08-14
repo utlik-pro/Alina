@@ -105,6 +105,10 @@ class Config:
     # SAME booking pipeline as WhatsApp (gates, YClients, alerts) with an
     # ig:<subscriber> identity. OFF until stage-3 shadow night passes.
     IG_BOOKING_ENABLED: bool = os.getenv("IG_BOOKING_ENABLED", "false").lower() == "true"
+    # Test whitelist (csv of ManyChat subscriber ids): these contacts run the
+    # FULL booking pipeline at any hour regardless of the flags above, and
+    # their YClients records are created with the [TEST] prefix.
+    IG_TEST_SUBSCRIBERS: str = os.getenv("IG_TEST_SUBSCRIBERS", "")
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

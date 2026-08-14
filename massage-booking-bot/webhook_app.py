@@ -103,6 +103,41 @@ def _is_ig_key(phone: str) -> bool:
     return isinstance(phone, str) and phone.startswith(IG_KEY_PREFIX)
 
 
+def _is_ig_test_subscriber(subscriber_id: str) -> bool:
+    """Whitelisted testers run the full IG booking pipeline at any hour;
+    their YClients records get the [TEST] prefix."""
+    ids = {s.strip() for s in (config.IG_TEST_SUBSCRIBERS or "").split(",") if s.strip()}
+    return str(subscriber_id).strip() in ids
+
+
+def _ig_channel_brief(known_phone: str = "") -> str:
+    """Instagram-channel system-prompt addendum (shared by prod and the sim).
+
+    Tatyana's rules (2026-07-28): collect the phone before the final
+    confirm, close with her verbatim template, no wa.me links — the whole
+    booking happens inside Instagram Direct.
+    """
+    return (
+        "\n\n📸 INSTAGRAM CHANNEL RULES:\n"
+        "- This client writes from Instagram Direct — their phone number "
+        "is NOT known automatically.\n"
+        + (
+            f"- Client's phone on file: {known_phone} (don't re-ask).\n"
+            if known_phone
+            else "- Before the FINAL confirmation, ask for their phone "
+                 "number (WhatsApp number) — the booking cannot be "
+                 "created without it. Pass it as client_phone in "
+                 "book_appointment.\n"
+        )
+        + "- After the booking is created, close with EXACTLY this "
+        "style: 'Your booking is confirmed ✔ [service, date, time]. "
+        "Tomorrow our administrator will contact you to confirm the "
+        "details 🌹'\n"
+        "- Do NOT send wa.me links in this conversation — the whole "
+        "booking happens right here in Instagram."
+    )
+
+
 async def _send_to_client(phone: str, text: str) -> bool:
     """Channel-aware outbound: Wappi for real numbers, ManyChat for ig: keys.
 
@@ -1400,6 +1435,9 @@ async def _maybe_create_booking(
 
             if yc_service_id and yc_staff_id:
                 _is_test = _os.getenv("YCLIENTS_TEST_BOOKINGS", "false").lower() == "true"
+                # Whitelisted IG testers always create [TEST]-prefixed records.
+                if _is_ig_key(phone) and _is_ig_test_subscriber(phone[len(IG_KEY_PREFIX):]):
+                    _is_test = True
                 yc_result = await bot_module.yclients_service.create_booking(
                     staff_id=yc_staff_id,
                     service_ids=[yc_service_id],
@@ -2351,25 +2389,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # collected before the final confirm, and the closing line follows
         # Tatyana's verbatim template (2026-07-28 agreement).
         if _is_ig_key(phone):
-            _ig_known_phone = (client.phone or "").strip()
-            context.extra_system_info = (getattr(context, "extra_system_info", "") or "") + (
-                "\n\n📸 INSTAGRAM CHANNEL RULES:\n"
-                "- This client writes from Instagram Direct — their phone number "
-                "is NOT known automatically.\n"
-                + (
-                    f"- Client's phone on file: {_ig_known_phone} (don't re-ask).\n"
-                    if _ig_known_phone
-                    else "- Before the FINAL confirmation, ask for their phone "
-                         "number (WhatsApp number) — the booking cannot be "
-                         "created without it. Pass it as client_phone in "
-                         "book_appointment.\n"
-                )
-                + "- After the booking is created, close with EXACTLY this "
-                "style: 'Your booking is confirmed ✔ [service, date, time]. "
-                "Tomorrow our administrator will contact you to confirm the "
-                "details 🌹'\n"
-                "- Do NOT send wa.me links in this conversation — the whole "
-                "booking happens right here in Instagram."
+            context.extra_system_info = (
+                (getattr(context, "extra_system_info", "") or "")
+                + _ig_channel_brief((client.phone or "").strip())
             )
 
         # LLM timeout — OpenAI hangs cost us background-task slots and
@@ -2977,7 +2999,10 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
     from agents.instagram_agent import SHADOW_SENTINEL, ig_live_now
-    if config.IG_BOOKING_ENABLED and config.MANYCHAT_API_KEY and ig_live_now():
+    if config.MANYCHAT_API_KEY and (
+        (config.IG_BOOKING_ENABLED and ig_live_now())
+        or _is_ig_test_subscriber(subscriber_id)
+    ):
         # Variant A (full IG booking): live-window DMs run through the SAME
         # booking pipeline as WhatsApp — buffering, gates, YClients record —
         # under an ig:<subscriber> identity; replies return via the Sending
