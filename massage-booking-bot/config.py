@@ -101,6 +101,10 @@ class Config:
     # webhook ACKs instantly and replies go out via the ManyChat Sending
     # API — required for long LLM+YClients turns. OFF until live-verified.
     IG_ASYNC_SEND: bool = os.getenv("IG_ASYNC_SEND", "false").lower() == "true"
+    # Full Instagram booking (variant A): route live-window DMs through the
+    # SAME booking pipeline as WhatsApp (gates, YClients, alerts) with an
+    # ig:<subscriber> identity. OFF until stage-3 shadow night passes.
+    IG_BOOKING_ENABLED: bool = os.getenv("IG_BOOKING_ENABLED", "false").lower() == "true"
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

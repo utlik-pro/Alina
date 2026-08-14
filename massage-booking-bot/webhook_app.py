@@ -94,6 +94,30 @@ def _phone_lock(phone: str) -> "asyncio.Lock":
         _wappi_locks[phone] = lock
     return lock
 
+
+IG_KEY_PREFIX = "ig:"
+
+
+def _is_ig_key(phone: str) -> bool:
+    """True for synthetic Instagram identities ("ig:<ManyChat subscriber id>")."""
+    return isinstance(phone, str) and phone.startswith(IG_KEY_PREFIX)
+
+
+async def _send_to_client(phone: str, text: str) -> bool:
+    """Channel-aware outbound: Wappi for real numbers, ManyChat for ig: keys.
+
+    Every client-facing send in the booking turn goes through here, so the
+    SAME pipeline (gates, cancel/reschedule, fallbacks) serves WhatsApp and
+    Instagram identities. For WhatsApp numbers this is byte-for-byte the
+    old behavior.
+    """
+    if _is_ig_key(phone):
+        from services.instagram_client import manychat_send_text
+        return await manychat_send_text(phone[len(IG_KEY_PREFIX):], text)
+    if wappi_client:
+        return await wappi_client.send_message(phone, text)
+    return False
+
 # Reset/clear commands (WhatsApp + Telegram). The team kept typing "/clean"
 # (not "/clear"); both + bare/RU variants are accepted.
 _RESET_COMMANDS = frozenset({
@@ -403,7 +427,8 @@ def _booking_day_mismatch(user_text: str, booking_call):
 
 def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict,
                            user_text: str = "", already_booked_sig=None,
-                           group_requested: bool = False) -> str:
+                           group_requested: bool = False,
+                           needs_phone: bool = False) -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -452,6 +477,12 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
                 return ("Almost done dear 🌹 please share your location 📍 (or type your "
                         "address) so the therapist can reach you 🙏")
             return "Almost done dear 🌹 may I have your name for the booking?"
+        # Phone gate (Instagram channel): the YClients record needs a real
+        # number and the admin confirms by phone in the morning (client's
+        # rule) — never claim "booked" while the number is missing.
+        if needs_phone:
+            return ("Almost done dear 🌹 may I have your phone number please? "
+                    "Our administrator will confirm your booking with you 🙏")
         # Explicit-confirm gate (ТЗ: …→ payment → explicit CONFIRM). The prompt
         # asks for a recap + "yes", but the model sometimes books straight off
         # the payment answer ("cash") — caught in the 2026-07-10 live test.
@@ -650,7 +681,7 @@ async def lifespan(application: FastAPI):
             if str(user_id).startswith("wappi_"):
                 phone = str(user_id)[len("wappi_"):]
                 if wappi_client:
-                    await wappi_client.send_message(phone, text)
+                    await _send_to_client(phone, text)
                 else:
                     logger.error(f"Follow-up: no wappi_client for {user_id}")
                 return
@@ -700,7 +731,7 @@ async def lifespan(application: FastAPI):
     # Sends WhatsApp via Wappi; falls back to Telegram if Wappi is absent.
     async def _scheduler_send(phone: str, text: str):
         if wappi_client:
-            await wappi_client.send_message(phone, text)
+            await _send_to_client(phone, text)
         else:
             # Telegram fallback (dev): phone is "wappi_<n>" stripped → not a
             # chat id, so only attempt when it's numeric.
@@ -830,7 +861,7 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
             # air (the webhook already ACKed Wappi, nothing retries).
             try:
                 if wappi_client:
-                    await wappi_client.send_message(
+                    await _send_to_client(
                         phone, "Sorry dear, one moment 🙏 Please repeat your message 🌹"
                     )
             except Exception:
@@ -896,7 +927,7 @@ async def _drain_wappi_turns():
         try:
             if wappi_client and p.isdigit():
                 await asyncio.wait_for(
-                    wappi_client.send_message(
+                    _send_to_client(
                         p, "Sorry dear, one moment 🙏 Please repeat your message 🌹"
                     ),
                     timeout=5,
@@ -1143,6 +1174,22 @@ async def _maybe_create_booking(
         )
         return
 
+    # Phone gate (Instagram channel, binding record block): the identity key
+    # is not a number — without a real client phone the YClients record can't
+    # be created and the morning admin couldn't call to confirm (client's
+    # rule). The reply override already asked the client for the number.
+    if _is_ig_key(phone):
+        _real_phone = (getattr(booking_call, "client_phone", None) or "").strip()
+        if not _real_phone:
+            try:
+                _db_client = await bot_module.client_service.get_or_create_client(telegram_id)
+                _real_phone = (_db_client.phone or "").strip()
+            except Exception:
+                _real_phone = ""
+        if len(re.sub(r"\D", "", _real_phone)) < 9:
+            logger.info(f"IG booking deferred for {telegram_id} — no client phone yet")
+            return
+
     # Avoid-master guard: the client asked NOT to be sent this therapist, but the
     # model picked them anyway (the injected prompt note is advisory — the LLM
     # skips it). Don't create the record — re-offer with a different master and
@@ -1158,7 +1205,7 @@ async def _maybe_create_booking(
         )
         if wappi_client:
             try:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone, "Let me find you another therapist dear 🌹 one moment 🙏")
             except Exception:
                 pass
@@ -1195,7 +1242,7 @@ async def _maybe_create_booking(
                     pass
             if wappi_client:
                 try:
-                    await wappi_client.send_message(
+                    await _send_to_client(
                         phone,
                         f"Sorry dear, {_to_ampm(booking_call.time)} isn't free 🙏 "
                         "let me offer you the real times — one moment 🌹")
@@ -1207,7 +1254,11 @@ async def _maybe_create_booking(
     try:
         client = await bot_module.client_service.get_or_create_client(telegram_id)
         if not client.phone:
-            await bot_module.client_service.update_client(telegram_id, phone=phone)
+            # For IG identities the key is NOT a phone — store the real number
+            # the client dictated (booking_call.client_phone), never the key.
+            real_phone = booking_call.client_phone if _is_ig_key(phone) else phone
+            if real_phone and not _is_ig_key(str(real_phone)):
+                await bot_module.client_service.update_client(telegram_id, phone=real_phone)
         if booking_call.client_name and not client.name:
             await bot_module.client_service.update_client(
                 telegram_id, name=booking_call.client_name
@@ -1339,7 +1390,13 @@ async def _maybe_create_booking(
                 or sender_name
                 or "WhatsApp Client"
             )
-            client_phone = booking_call.client_phone or fresh_client.phone or phone
+            # For IG identities the key must never leak into YClients as a
+            # "phone" — the phone gate above guarantees a real number exists.
+            client_phone = (
+                booking_call.client_phone
+                or fresh_client.phone
+                or ("" if _is_ig_key(phone) else phone)
+            )
 
             if yc_service_id and yc_staff_id:
                 _is_test = _os.getenv("YCLIENTS_TEST_BOOKINGS", "false").lower() == "true"
@@ -1351,8 +1408,13 @@ async def _maybe_create_booking(
                     client_name=client_name,
                     client_phone=client_phone,
                     comment=(
-                        f"WhatsApp (Wappi) bot booking #{booking.id}. "
-                        f"Area: {booking_call.area}. "
+                        (
+                            f"Instagram agent booking (night) #{booking.id}. "
+                            f"Phone: {client_phone}. "
+                            if _is_ig_key(phone)
+                            else f"WhatsApp (Wappi) bot booking #{booking.id}. "
+                        )
+                        + f"Area: {booking_call.area}. "
                         + (f"Notes: {booking_call.notes}. " if booking_call.notes else "")
                         + (f"Address: {booking_call.address}." if booking_call.address else "")
                     ),
@@ -1562,7 +1624,7 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
                 f"Ничего не отменял — уточните у клиента и обработайте вручную."
             )
             if wappi_client:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone,
                     "You have more than one upcoming appointment dear 🌹 "
                     "Which one would you like to cancel — please tell me its "
@@ -1698,7 +1760,7 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                 f"Ничего не переносил — уточните у клиента."
             )
             if wappi_client:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone,
                     "You have more than one upcoming appointment dear 🌹 "
                     "Which one shall I move — please tell me its time "
@@ -1764,7 +1826,7 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                 f"но это время НЕ свободно. Ничего не переносил — предложите другое."
             )
             if wappi_client:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone,
                     f"Sorry dear, {_to_ampm(_hhmm)} on that day isn't free 🙏 "
                     "Could you pick another time? I'll send you what's available 🌹"
@@ -1834,7 +1896,7 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     # the admin alert above carries the real status.
     if wappi_client:
         try:
-            await wappi_client.send_message(
+            await _send_to_client(
                 phone,
                 f"Noted dear 🌹 I've passed your reschedule to {_to_ampm(call.new_time)} "
                 f"to the team — we'll confirm it shortly 🙏"
@@ -1860,7 +1922,7 @@ async def _notify_waiting_list(area, freed_date):
     first = matches[0]
     if first.get("phone") and wappi_client:
         try:
-            await wappi_client.send_message(
+            await _send_to_client(
                 first["phone"],
                 "Good news dear 🌹 a slot just opened up for your preferred time! "
                 "Would you like to book it? 😊",
@@ -1890,7 +1952,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
     try:
         import bot as bot_module
 
-        user_id = f"wappi_{phone}"
+        # Channel-aware identity: Instagram turns arrive with an "ig:<id>"
+        # key and must never look like a WhatsApp number downstream (the
+        # wappi_ prefix is stripped back into a phone in scheduler paths).
+        if _is_ig_key(phone):
+            user_id = f"ig_{phone[len(IG_KEY_PREFIX):]}"
+        else:
+            user_id = f"wappi_{phone}"
         telegram_id = user_id
 
         # Check for reset commands (also handled pre-buffer in the webhook so a
@@ -1898,7 +1966,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _is_reset_command(text):
             await _reset_user(user_id, telegram_id)
             if wappi_client:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone,
                     _RESET_GREETING
                 )
@@ -2278,6 +2346,32 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "Ask explicitly."
                     )
 
+        # Instagram-channel brief for the SAME booking brain: the client came
+        # from IG Direct (no phone in the identity), so the number must be
+        # collected before the final confirm, and the closing line follows
+        # Tatyana's verbatim template (2026-07-28 agreement).
+        if _is_ig_key(phone):
+            _ig_known_phone = (client.phone or "").strip()
+            context.extra_system_info = (getattr(context, "extra_system_info", "") or "") + (
+                "\n\n📸 INSTAGRAM CHANNEL RULES:\n"
+                "- This client writes from Instagram Direct — their phone number "
+                "is NOT known automatically.\n"
+                + (
+                    f"- Client's phone on file: {_ig_known_phone} (don't re-ask).\n"
+                    if _ig_known_phone
+                    else "- Before the FINAL confirmation, ask for their phone "
+                         "number (WhatsApp number) — the booking cannot be "
+                         "created without it. Pass it as client_phone in "
+                         "book_appointment.\n"
+                )
+                + "- After the booking is created, close with EXACTLY this "
+                "style: 'Your booking is confirmed ✔ [service, date, time]. "
+                "Tomorrow our administrator will contact you to confirm the "
+                "details 🌹'\n"
+                "- Do NOT send wa.me links in this conversation — the whole "
+                "booking happens right here in Instagram."
+            )
+
         # LLM timeout — OpenAI hangs cost us background-task slots and
         # leave clients silent indefinitely. 30s is well above p99 for
         # GPT-4o-class models; anything longer is a hang, not a slow run.
@@ -2359,10 +2453,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Guarantee honest client-facing wording at the CODE level — the LLM is
         # not reliable about it (it says "confirmed" on a reschedule, or before
         # it has a location/name). See _enforce_reply_wording.
+        # IG channel: a real phone must be collected before the record exists
+        # (the identity key is not a number there).
+        _needs_phone = False
+        if _is_ig_key(phone) and booking_call is not None:
+            _known_phone = (getattr(booking_call, "client_phone", None) or client.phone or "")
+            _needs_phone = len(re.sub(r"\D", "", str(_known_phone))) < 9
         response_text = _enforce_reply_wording(
             response_text, actions, booking_call, context.client_data, user_text=text,
             group_requested=bool((context.booking_data or {}).get("group_requested")),
             already_booked_sig=getattr(context, "last_booking_sig", None),
+            needs_phone=_needs_phone,
         )
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
@@ -2384,7 +2485,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             for i, part in enumerate(parts):
                 if i > 0:
                     await asyncio.sleep(0.4)
-                await wappi_client.send_message(phone, part)
+                await _send_to_client(phone, part)
 
             # Promo photo: attach a relevant offer/service image (cupping,
             # manicure, body/face massage, book-a-friend). Sent once per phone
@@ -2396,7 +2497,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 from services.promo_photos import get_promo_photo
                 photo_path = (
                     get_promo_photo(text, response_text)
-                    if config.WAPPI_SEND_PROMO_PHOTOS else None
+                    if config.WAPPI_SEND_PROMO_PHOTOS and not _is_ig_key(phone) else None
                 )
                 if photo_path:
                     sent = _wappi_sent_promos.setdefault(phone, set())
@@ -2456,7 +2557,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             pass
         if wappi_client:
             try:
-                await wappi_client.send_message(
+                await _send_to_client(
                     phone,
                     "Sorry dear, technical issue 🙏 Please try again in a moment 🌹"
                 )
@@ -2679,7 +2780,7 @@ async def _reset_and_greet(phone: str, user_id: str):
         async with _phone_lock(phone):
             await _reset_user(user_id, user_id)
         if wappi_client:
-            await wappi_client.send_message(phone, _RESET_GREETING)
+            await _send_to_client(phone, _RESET_GREETING)
     except Exception as e:
         logger.error(f"Reset-and-greet failed for {phone}: {e}")
 
@@ -2875,7 +2976,17 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         return {"reply": IG_MEDIA_FALLBACK}
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
-    from agents.instagram_agent import SHADOW_SENTINEL
+    from agents.instagram_agent import SHADOW_SENTINEL, ig_live_now
+    if config.IG_BOOKING_ENABLED and config.MANYCHAT_API_KEY and ig_live_now():
+        # Variant A (full IG booking): live-window DMs run through the SAME
+        # booking pipeline as WhatsApp — buffering, gates, YClients record —
+        # under an ig:<subscriber> identity; replies return via the Sending
+        # API through _send_to_client. ACK instantly with the sentinel so
+        # the ManyChat flow itself stays silent.
+        background_tasks.add_task(
+            _buffer_and_process_wappi, f"{IG_KEY_PREFIX}{subscriber_id}", text, None
+        )
+        return {"reply": SHADOW_SENTINEL, "queued": True}
     if config.IG_ASYNC_SEND and config.MANYCHAT_API_KEY:
         # Stage-0 async path: ACK instantly, deliver via the Sending API.
         # The sentinel keeps the flow's Condition from sending anything.
