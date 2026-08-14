@@ -277,6 +277,9 @@ def test_live_window_wraps_midnight_minsk():
     assert ig_live_now(datetime(2026, 8, 9, 23, 30, tzinfo=minsk)) is True
     assert ig_live_now(datetime(2026, 8, 10, 3, 0, tzinfo=minsk)) is True
     assert ig_live_now(datetime(2026, 8, 9, 20, 59, tzinfo=minsk)) is False
+    # Tatyana's rule (2026-07-28): live until 08:00 Minsk, admins from morning
+    assert ig_live_now(datetime(2026, 8, 9, 7, 59, tzinfo=minsk)) is True
+    assert ig_live_now(datetime(2026, 8, 9, 8, 0, tzinfo=minsk)) is False
     assert ig_live_now(datetime(2026, 8, 9, 9, 0, tzinfo=minsk)) is False
     assert ig_live_now(datetime(2026, 8, 9, 14, 0, tzinfo=minsk)) is False
     # tz conversion: 18:05 UTC = 21:05 Minsk (UTC+3) → live
