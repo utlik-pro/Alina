@@ -259,10 +259,71 @@ def test_manychat_endpoint_fetches_text_when_absent(monkeypatch, tmp_path):
     assert r.status_code == 200
     assert seen["text"] == "multiline\nquestion"
 
-    # Unknown contact / API failure → still a clean 400, not a crash
+    # Unknown contact / media message → polite text nudge in the live window
     r = client.post("/webhook/manychat",
                     json={"subscriber_id": "unknown", "secret": "s3cret"})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert "type it as text" in r.json()["reply"]
+
+
+def test_manychat_media_fallback_shadow_and_live(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    import webhook_app
+    from agents import instagram_agent
+    from services import instagram_client
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+
+    async def no_text(subscriber_id):
+        return ""
+
+    monkeypatch.setattr(instagram_client, "fetch_manychat_last_text", no_text)
+    client = TestClient(webhook_app.app)
+
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
+    r = client.post("/webhook/manychat", json={"subscriber_id": "9", "secret": "s3cret"})
+    assert r.json()["shadow"] is True  # silent by day
+
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    r = client.post("/webhook/manychat", json={"subscriber_id": "9", "secret": "s3cret"})
+    assert r.json()["reply"] == webhook_app.IG_MEDIA_FALLBACK
+
+
+def test_manychat_async_send_path(monkeypatch, tmp_path):
+    """IG_ASYNC_SEND=on → instant ACK with sentinel, delivery via Sending API."""
+    from fastapi.testclient import TestClient
+    import webhook_app
+    from agents import instagram_agent
+    from services import instagram_client
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(webhook_app.config, "IG_ASYNC_SEND", True)
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_API_KEY", "mc-key", raising=False)
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    sent = {}
+
+    async def fake_reply(sender_id, text):
+        return "night booking answer"
+
+    async def fake_send(subscriber_id, text):
+        sent["to"] = subscriber_id
+        sent["text"] = text
+        return True
+
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply", fake_reply)
+    monkeypatch.setattr(instagram_client, "manychat_send_text", fake_send)
+    client = TestClient(webhook_app.app)
+
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "55", "text": "book me", "secret": "s3cret"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["queued"] is True
+    assert body["reply"] == instagram_agent.SHADOW_SENTINEL  # flow stays silent
+    # BackgroundTasks ran after the response: reply went out via the API
+    assert sent == {"to": "55", "text": "night booking answer"}
 
 
 # ── live window (owner: live from 21:00 Minsk, shadow otherwise) ─────────

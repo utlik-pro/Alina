@@ -125,6 +125,46 @@ async def fetch_manychat_last_text(subscriber_id: str) -> str:
         return ""
 
 
+async def manychat_send_text(subscriber_id: str, text: str) -> bool:
+    """Send an IG DM via the ManyChat Sending API (24h-window replies).
+
+    This is the async delivery path for the booking flow: the External
+    Request bridge ACKs instantly and the real reply goes out through this
+    call, so long YClients/LLM turns can't hit ManyChat's request timeout.
+    """
+    key = config.MANYCHAT_API_KEY
+    if not key:
+        logger.info(f"[MC dev] would send to {subscriber_id}: {text[:120]}")
+        return False
+    url = "https://api.manychat.com/fb/sending/sendContent"
+    payload = {
+        "subscriber_id": int(subscriber_id) if str(subscriber_id).isdigit() else subscriber_id,
+        "data": {
+            "version": "v2",
+            "content": {
+                "type": "instagram",
+                "messages": [{"type": "text", "text": text}],
+            },
+        },
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=15,
+            ) as resp:
+                body = await resp.text()
+                if resp.status >= 400 or '"status":"error"' in body.replace(" ", ""):
+                    logger.error(f"ManyChat send failed {resp.status} for {subscriber_id}: {body[:300]}")
+                    return False
+                return True
+    except Exception as e:
+        logger.error(f"ManyChat send error for {subscriber_id}: {e}")
+        return False
+
+
 async def send_instagram_message(recipient_id: str, text: str) -> bool:
     """Send a DM via the Graph API. No-op (logs) if token absent."""
     token = config.INSTAGRAM_ACCESS_TOKEN

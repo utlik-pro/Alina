@@ -2792,8 +2792,31 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     return {"status": "ok", "events": len(events)}
 
 
+# Client saw a photo/voice/sticker we can't read (or the text fetch failed).
+# Friendly nudge instead of silence — sent only in the live window.
+IG_MEDIA_FALLBACK = (
+    "Sorry dear, I couldn't view that message 🌹 "
+    "Could you type it as text, please?"
+)
+
+
+async def _manychat_async_turn(subscriber_id: str, text: str) -> None:
+    """Full IG turn in the background: generate → (live?) send via ManyChat API.
+
+    Used when IG_ASYNC_SEND is on so the webhook ACKs ManyChat instantly —
+    long LLM/YClients turns can't hit their External Request timeout.
+    """
+    from agents.instagram_agent import generate_ig_reply, ig_live_now, log_ig_turn
+    from services.instagram_client import manychat_send_text
+    reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
+    live = ig_live_now()
+    log_ig_turn("manychat", subscriber_id, text, reply, live)
+    if live:
+        await manychat_send_text(subscriber_id, reply)
+
+
 @app.post("/webhook/manychat")
-async def manychat_webhook(request: Request):
+async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
     """ManyChat External Request bridge — same consult brain, ManyChat front.
 
     When Instagram is connected through ManyChat, ManyChat owns the Meta
@@ -2839,11 +2862,25 @@ async def manychat_webhook(request: Request):
         # json", live-caught 2026-08-12). Fetch it via the ManyChat API.
         from services.instagram_client import fetch_manychat_last_text
         text = await fetch_manychat_last_text(subscriber_id)
-    if not subscriber_id or not text:
+    if not subscriber_id:
         return Response(content="bad request", status_code=400)
+    if not text:
+        # Still nothing → the client sent media (photo/voice/sticker) we
+        # can't read. Nudge politely in the live window, stay silent in shadow.
+        from agents.instagram_agent import ig_live_now, log_ig_turn, SHADOW_SENTINEL
+        live = ig_live_now()
+        log_ig_turn("manychat", subscriber_id, "[media/unreadable]", IG_MEDIA_FALLBACK, live)
+        if not live:
+            return {"reply": SHADOW_SENTINEL, "shadow": True}
+        return {"reply": IG_MEDIA_FALLBACK}
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
     from agents.instagram_agent import SHADOW_SENTINEL
+    if config.IG_ASYNC_SEND and config.MANYCHAT_API_KEY:
+        # Stage-0 async path: ACK instantly, deliver via the Sending API.
+        # The sentinel keeps the flow's Condition from sending anything.
+        background_tasks.add_task(_manychat_async_turn, subscriber_id, text)
+        return {"reply": SHADOW_SENTINEL, "queued": True}
     reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
     live = ig_live_now()
     log_ig_turn("manychat", subscriber_id, text, reply, live)

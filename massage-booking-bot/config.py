@@ -97,6 +97,10 @@ class Config:
     IG_ACTIVE_FROM: str = os.getenv("IG_ACTIVE_FROM", "21:00")
     IG_ACTIVE_TO: str = os.getenv("IG_ACTIVE_TO", "08:00")
     IG_ACTIVE_TZ: str = os.getenv("IG_ACTIVE_TZ", "Europe/Minsk")
+    # Async delivery for the ManyChat bridge (stage 0 of IG booking): the
+    # webhook ACKs instantly and replies go out via the ManyChat Sending
+    # API — required for long LLM+YClients turns. OFF until live-verified.
+    IG_ASYNC_SEND: bool = os.getenv("IG_ASYNC_SEND", "false").lower() == "true"
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 
