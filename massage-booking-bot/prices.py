@@ -140,15 +140,22 @@ SERVICE_CATALOG = {
     "brow_lamination": {"name": "Eyebrow lamination (shaping included)", "duration": None, "price": 200.0, "category": "lashes_brows"},
     "brow_tinting": {"name": "Brow tinting", "duration": None, "price": 80.0, "category": "lashes_brows"},
     "lash_tinting": {"name": "Eyelash tinting", "duration": None, "price": 50.0, "category": "lashes_brows"},
-    "brow_shaping": {"name": "Brow shaping", "duration": None, "price": 40.0, "category": "lashes_brows"},
+    "brow_shaping": {"name": "Brow shaping", "duration": None, "price": 80.0, "category": "lashes_brows"},
     "upper_lip_threading": {"name": "Upper lip threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
     "chin_threading": {"name": "Chin threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
     "lash_brow_combo": {"name": "Combo eyelash lifting + eyebrow lamination", "duration": None, "price": 350.0, "category": "lashes_brows"},
 
     # ── Permanent Makeup ──────────────────────────────────
-    "pmu_lips": {"name": "Permanent makeup - Lips", "duration": None, "price": 900.0, "category": "pmu"},
-    "pmu_eyebrows": {"name": "Permanent makeup - Eyebrows", "duration": None, "price": 900.0, "category": "pmu"},
-    "pmu_eyeliner": {"name": "Permanent makeup - Eyeliner", "duration": None, "price": 800.0, "category": "pmu"},
+    # PMU prices updated 2026-08-14 from the client's current price cards
+    "pmu_lips": {"name": "Permanent makeup - Lips (new)", "duration": None, "price": 1000.0, "category": "pmu"},
+    "pmu_lips_correction": {"name": "Permanent makeup - Lips correction", "duration": None, "price": 500.0, "category": "pmu"},
+    "pmu_eyebrows": {"name": "Permanent makeup - Eyebrows (new)", "duration": None, "price": 1000.0, "category": "pmu"},
+    "pmu_eyebrows_correction": {"name": "Permanent makeup - Eyebrows correction", "duration": None, "price": 500.0, "category": "pmu"},
+    "pmu_eyeliner": {"name": "Permanent makeup - Eyeliner (new)", "duration": None, "price": 1000.0, "category": "pmu"},
+    "pmu_eyeliner_correction": {"name": "Permanent makeup - Eyeliner correction", "duration": None, "price": 500.0, "category": "pmu"},
+    "pmu_lashliner": {"name": "Permanent makeup - Lashliner (new)", "duration": None, "price": 800.0, "category": "pmu"},
+    "pmu_lashliner_correction": {"name": "Permanent makeup - Lashliner correction", "duration": None, "price": 400.0, "category": "pmu"},
+    "pmu_recovery": {"name": "Recovery of old permanent", "duration": None, "price": 1200.0, "category": "pmu"},
 
     # ── Hair and Makeup ───────────────────────────────────
     "wavy_blow_dry": {"name": "Wavy blow dry", "duration": None, "price": 250.0, "category": "hair_makeup"},
@@ -159,12 +166,13 @@ SERVICE_CATALOG = {
     "kids_makeup": {"name": "Kids make up", "duration": None, "price": 250.0, "category": "hair_makeup"},
 
     # ── Face Waxing ───────────────────────────────────────
-    "wax_eyebrow": {"name": "Eyebrow waxing", "duration": None, "price": 40.0, "category": "face_waxing"},
-    "wax_upper_lip": {"name": "Upper lip waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
-    "wax_chin": {"name": "Chin waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
-    "wax_sideburn": {"name": "Sideburn waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
-    "wax_forehead": {"name": "Forehead waxing", "duration": None, "price": 35.0, "category": "face_waxing"},
-    "wax_full_face": {"name": "Full face waxing", "duration": None, "price": 110.0, "category": "face_waxing"},
+    # Waxing prices updated 2026-08-14 from the client's current price cards
+    "wax_eyebrow": {"name": "Eyebrow waxing", "duration": None, "price": 80.0, "category": "face_waxing"},
+    "wax_upper_lip": {"name": "Upper lip waxing", "duration": None, "price": 50.0, "category": "face_waxing"},
+    "wax_chin": {"name": "Chin waxing", "duration": None, "price": 50.0, "category": "face_waxing"},
+    "wax_sideburn": {"name": "Sideburn waxing", "duration": None, "price": 50.0, "category": "face_waxing"},
+    "wax_forehead": {"name": "Forehead waxing", "duration": None, "price": 50.0, "category": "face_waxing"},
+    "wax_full_face": {"name": "Full face waxing", "duration": None, "price": 200.0, "category": "face_waxing"},
 }
 
 
@@ -342,7 +350,8 @@ LASHES AND BROWS:
 - Combo eyelash lifting + eyebrow lamination: {p('lash_brow_combo'):.0f} AED
 
 PERMANENT MAKE UP:
-Lips: {p('pmu_lips'):.0f} AED | Eyebrows: {p('pmu_eyebrows'):.0f} AED | Eyeliner: {p('pmu_eyeliner'):.0f} AED
+New: Lips {p('pmu_lips'):.0f} | Eyebrows {p('pmu_eyebrows'):.0f} | Eyeliner {p('pmu_eyeliner'):.0f} | Lashliner {p('pmu_lashliner'):.0f} AED
+Correction: Lips/Eyebrows/Eyeliner {p('pmu_lips_correction'):.0f} | Lashliner {p('pmu_lashliner_correction'):.0f} AED | Recovery of old permanent: {p('pmu_recovery'):.0f} AED
 
 HAIR AND MAKE UP:
 - Wavy blow dry: {p('wavy_blow_dry'):.0f} | Hairstyles: from {p('hairstyle'):.0f} | Make up: {p('makeup'):.0f}
