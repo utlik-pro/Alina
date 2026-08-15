@@ -988,6 +988,11 @@ async def health():
             "manychat": bool(config.MANYCHAT_API_KEY),
             "testers": len([t for t in config.IG_TEST_SUBSCRIBERS.split(",") if t.strip()]),
         },
+        # Which Telegram group the lead alerts go to. Only the tail is shown —
+        # enough to tell the configured group apart from a stale one without
+        # publishing the id. The old group silently stopped existing and
+        # nobody noticed until 2026-08-15.
+        "leads_group_tail": (str(config.ADMIN_GROUP_CHAT_ID or "")[-5:] or "unset"),
     }
 
 
