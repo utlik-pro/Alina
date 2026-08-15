@@ -389,6 +389,47 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   not stored at creation. It must be removed by hand in YClients. Consider
   persisting `record_hash` from the create response — it may unlock
   `DELETE /user/records/{id}/{hash}` without a new token grant.
+- 🔴 **REAL LEAD HIT THREE BUGS AT ONCE (2026-08-15, 23:14 Abu Dhabi,
+  subscriber 135906395)** — the night's most valuable evidence, caught only
+  because a snapshot happened to be taken. He arrived on the PACKAGE ad
+  prefill ("sign up for a massage package in Abu Dhabi at a discount"), asked
+  "tell me about both", and was answered with **1,550 / 3,000 / 2,590 / 1,650
+  in one dump plus the payment menu** — never seeing the 275 combo he came
+  for. No booking. Whether he replied after 23:15:33 is unknowable: three
+  deploys wiped the ring. Fixes, all live:
+  · **Unverified package prices can no longer be spoken** (`afd1f85`).
+    `PACKAGES` entries now carry `quotable`; only 5×60 = 1,550 and 5×50 face =
+    1,650 (the two the admins quote daily) reach the prompt, followed by "any
+    other course length is arranged personally by the team". 3,000 / 2,590 /
+    2,200 stay in the file as data, unspoken, until the client confirms them.
+    ⚠️ Root cause worth remembering: `include_packages=False` on the CONSULT
+    path was never enough — IG **booking** runs on the WhatsApp
+    `booking_agent` prompt, which carried the full list.
+  · **The ad creative is now detected and remembered** (`83427b8`,
+    `_detect_ad_prefill` → sticky `booking_data["ad_prefill"]`). The prefill
+    lands in message #1 while the price question comes two turns later, so a
+    per-turn read was useless. On the package prefill the cupping combo (275,
+    was 430, 60 min) is injected as the offer to lead with. `summer` is
+    detected but has NO content — the client's summer-promotion prices still
+    have not reached us.
+  · **A merged slot offer is presentation, not truth** (`62a5787`). The agent
+    told a client 7:00 PM was unavailable on a day it was free (verified:
+    `is_slot_available` → True, Nina) because the "merge everything into 3–4
+    times" rule made anything outside its own short list read as non-existent.
+    When the client names a concrete time and the date is known, that exact
+    time is now checked against YClients on the same turn and the verdict is
+    injected as ground truth.
+  · ⚠️ **A prompt line that says HOW without saying WHEN moves the step**
+    (`07509d8`). Two "wording only" additions (type the address / how the
+    payment menu reads) made the model ask for the address instead of showing
+    times, and offer payment next to the price list. Any new wording rule must
+    name the step it belongs to and say it is not a new step.
+- ⚠️ **DO NOT DEPLOY WHILE THE WINDOW IS LIVE unless the fix is worth it.**
+  Every push restarts Render: the night-log ring dies (evidence gone) and an
+  in-flight ManyChat request can be dropped, so a real client's message
+  vanishes without a trace. On 2026-08-15 five pushes landed between 21:40 and
+  23:00 Minsk. If a push is unavoidable, snapshot first —
+  `python3.11 scripts/night_report.py --full > logs/night_snapshots/<date>_<tag>.json`.
 - 👁️ **Watch a shift live:** `python3.11 scripts/watch_night_log.py --who
   <subscriber> [--seconds N]` tails `/admin/night-log` and prints only new
   turns (stops on `booking_created`). `night_report.py` stays the morning
