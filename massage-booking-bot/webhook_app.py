@@ -902,6 +902,24 @@ def _booking_recap_question(booking_call) -> str:
     return f"So dear — {', '.join(bits)} 🌹 Shall I confirm?"
 
 
+def _detect_ad_prefill(text: str) -> Optional[str]:
+    """Which advertising creative sent this client, from the prefilled text
+    Instagram puts in their first message. None when they wrote by themselves.
+
+    The nine prefills are three templates × three emirates (see the crystal-lab
+    SKILL). They matter because the creative decides which OFFER the client
+    came for — the ad they tapped is invisible to us otherwise.
+    """
+    t = (text or "").lower()
+    if "package" in t and ("discount" in t or "sign up" in t):
+        return "package"
+    if "summer promotion" in t:
+        return "summer"
+    if "consult" in t and "massage" in t:
+        return "consult"
+    return None
+
+
 _TIME_COLON_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?", re.I)
 _TIME_MERIDIEM_RE = re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.I)
 
@@ -2544,6 +2562,16 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _looks_like_group(text) and not context.booking_data.get("group_requested"):
             dialog_manager.update_booking_data(user_id, "group_requested", True)
 
+        # Which ad creative sent this client — STICKY, because the prefill
+        # arrives in the very first message while the price question comes two
+        # turns later. Live-caught 2026-08-15: a client from the cupping/package
+        # creative was quoted the regular 350/460 per-session prices and never
+        # saw the 275 offer he had actually tapped on.
+        _ad_prefill = _detect_ad_prefill(text)
+        if _ad_prefill and not context.booking_data.get("ad_prefill"):
+            dialog_manager.update_booking_data(user_id, "ad_prefill", _ad_prefill)
+            logger.info(f"ad prefill detected: {_ad_prefill}")
+
         # Master preference / replacement — persist to the client record so it
         # survives across sessions ("same as last time" works; an avoided master
         # is never offered again). Injected into the agent context below + a hard
@@ -2933,6 +2961,26 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # in which case we get a structured BookingCall alongside the
         # reply text and create the YClients record directly from those
         # fields — no regex parsing of the reply.
+        # The creative the client tapped decides which offer they must hear
+        # FIRST. "Massage package at a discount" belongs to the cupping ad, so
+        # the honest answer is that combo — not the regular per-session prices,
+        # and never a course price list (the client complained about exactly
+        # that dump on 2026-08-15).
+        _ad = (context.booking_data or {}).get("ad_prefill")
+        if _ad == "package":
+            from prices import SPECIAL_OFFERS as _OFFERS
+            _combo = _OFFERS["lymphatic_cupping_combo"]
+            context.extra_system_info += (
+                f"\n\n🎯 THIS CLIENT CAME FROM THE PACKAGE/CUPPING AD "
+                f"('massage package at a discount'). Lead with THAT offer: "
+                f"{_combo['description']} — {int(_combo['price'])} AED "
+                f"(was {int(_combo['was'])}), {_combo['duration']} min. "
+                "Quote it as soon as they say what they want, BEFORE the plain "
+                "per-session prices. NEVER quote course/abonement prices on "
+                "this prefill — say courses are arranged personally by the "
+                "team. The emirate is already in their message: never re-ask it."
+            )
+
         response_text: str = ""
         actions = AgentActions()
         try:

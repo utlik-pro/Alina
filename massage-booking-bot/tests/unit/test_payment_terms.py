@@ -107,3 +107,18 @@ def test_requested_time_parser_ignores_numbers_that_are_not_times():
     assert _detect_requested_time("350 AED") is None
     assert _detect_requested_time("22 August") is None
     assert _detect_requested_time("+971501234567") is None
+
+
+def test_ad_prefill_is_recognised_per_creative():
+    from webhook_app import _detect_ad_prefill
+
+    assert _detect_ad_prefill(
+        "Hello i would like to sign up for a massage package in Dubai at a discount"
+    ) == "package"
+    assert _detect_ad_prefill(
+        "Hello i would like to sign up for the summer promotion in Al Ain"
+    ) == "summer"
+    assert _detect_ad_prefill(
+        "I would like to consult on a massage and make an appointment in Abu Dhabi"
+    ) == "consult"
+    assert _detect_ad_prefill("hi, how much is a back massage?") is None
