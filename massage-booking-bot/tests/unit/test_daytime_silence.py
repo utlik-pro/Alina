@@ -205,3 +205,35 @@ def test_11_specialist_role_must_match_the_service():
     # the waiting-list service record is never a bookable master
     for out in (massage, lashes, run("manicure")):
         assert "АДМИНИСТРАТОР" not in out.upper()
+
+
+# 12 — a client may spell the date out instead of naming a weekday
+def test_12_explicit_date_is_understood():
+    """'20 August' / '22/08' / 'the 20th' must resolve to a real date.
+
+    Before this the agent replied "I don't have the schedule for 20 August
+    yet" while that day was wide open (date-phrase battery, 2026-08-15).
+    """
+    import datetime as _dt
+
+    import webhook_app as wh
+
+    now = _dt.datetime(2026, 8, 15, 18, 0)  # Saturday
+    assert wh._detect_explicit_date("on 20 August", now) == "2026-08-20"
+    assert wh._detect_explicit_date("August 20 please", now) == "2026-08-20"
+    assert wh._detect_explicit_date("book 22 aug at 7pm", now) == "2026-08-22"
+    assert wh._detect_explicit_date("20/08", now) == "2026-08-20"
+    assert wh._detect_explicit_date("on the 20th", now) == "2026-08-20"
+
+    # must NOT mistake prices, durations, flat numbers or times for a date
+    for noise in ("60 min massage 350 AED", "apt 1204", "5 pm works",
+                  "0501234567", "90 min"):
+        assert wh._detect_explicit_date(noise, now) is None, noise
+
+    # a date that already passed is never resolved into the past …
+    assert wh._detect_explicit_date("14 August", now) is None
+    # … and anything beyond the ~6-month booking horizon is ignored too,
+    # so "3 March" (200 days out) is not treated as a booking date
+    assert wh._detect_explicit_date("3 March", now) is None
+    # a date later this year inside the horizon still resolves
+    assert wh._detect_explicit_date("2 October", now) == "2026-10-02"

@@ -513,6 +513,66 @@ _WEEKDAYS = {
 }
 
 
+_MONTHS_EN = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+    "январ": 1, "феврал": 2, "март": 3, "апрел": 4, "мая": 5, "июн": 6,
+    "июл": 7, "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12,
+}
+
+
+def _detect_explicit_date(text: str, now) -> Optional[str]:
+    """Resolve a date the client spelled out: '20 August', 'Aug 20', '20/08',
+    '20.08', 'the 20th'. Returns YYYY-MM-DD or None.
+
+    Weekday names were handled, but a plain date was not: the agent answered
+    "I don't have the schedule for 20 August yet" while the day was open
+    (caught by the date-phrase battery 2026-08-15). Only future dates within
+    the next ~6 months are accepted, so prices ("350 AED"), durations
+    ("60 min") and flat numbers ("apt 1204") can't be mistaken for a day.
+    """
+    from datetime import timedelta as _td2
+
+    t = (text or "").lower()
+    day = month = None
+
+    m = re.search(r"\b([0-3]?\d)\s*(?:st|nd|rd|th)?\s+([a-zа-я]{3,9})\b", t)
+    if m and m.group(2)[:5] in _MONTHS_EN or (m and m.group(2) in _MONTHS_EN):
+        for key, num in _MONTHS_EN.items():
+            if m.group(2).startswith(key):
+                day, month = int(m.group(1)), num
+                break
+    if day is None:
+        m = re.search(r"\b([a-zа-я]{3,9})\s+([0-3]?\d)(?:st|nd|rd|th)?\b", t)
+        if m:
+            for key, num in _MONTHS_EN.items():
+                if m.group(1).startswith(key):
+                    day, month = int(m.group(2)), num
+                    break
+    if day is None:
+        m = re.search(r"\b([0-3]?\d)[./-]([01]?\d)(?![./-]?\d{2,})\b", t)
+        if m:
+            day, month = int(m.group(1)), int(m.group(2))
+    if day is None:
+        # "on the 20th" — nearest future day-of-month
+        m = re.search(r"\bthe\s+([0-3]?\d)(?:st|nd|rd|th)\b", t)
+        if m:
+            day, month = int(m.group(1)), now.month
+
+    if not day or not month or not (1 <= day <= 31) or not (1 <= month <= 12):
+        return None
+    for year in (now.year, now.year + 1):
+        try:
+            cand = now.replace(year=year, month=month, day=day)
+        except ValueError:
+            continue
+        if cand.date() >= now.date() and (cand - now) < _td2(days=190):
+            return cand.strftime("%Y-%m-%d")
+    return None
+
+
 def _booking_day_mismatch(user_text: str, booking_call):
     """If the client's message says "tomorrow"/"today"/"next Saturday" but the
     booking's date is a different day, return (spoken_day, the_real_YYYY-MM-DD)
@@ -2372,6 +2432,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
                     # Detect specific date mentioned in message (e.g. "Sunday", "26 april", "sat")
                     extra_dates = []
+                    # A client may spell the date out ("20 August", "22/08",
+                    # "the 20th") instead of naming a weekday — without this
+                    # the day's slots were never loaded and the agent said it
+                    # had no schedule for a day that was wide open.
+                    _explicit = _detect_explicit_date(_text_lower, _now)
+                    if _explicit and _explicit not in (today, tomorrow):
+                        extra_dates.append(_explicit)
+                        dialog_manager.update_booking_data(user_id, "date", _explicit)
                     logger.info(
                         f"weekday_detect: text_low={_text_lower!r} "
                         f"today={today} tomorrow={tomorrow} "

@@ -63,8 +63,12 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = ""):
         "пятниц": 4, "суббот": 5, "воскрес": 6,
     }
     _low = (last_user_text or "").lower()
-    _named = None
+    # explicit dates first ("20 August", "22/08"), then weekday names
+    _named = wh._detect_explicit_date(_low, now)
+
     for _kw, _wd in _day_kw.items():
+        if _named:
+            break  # an explicit date wins over a weekday word
         if re.search(r"\b" + _kw, _low):
             _ahead = (_wd - now.weekday()) % 7
             if _ahead == 0 and ("next" in _low or "следующ" in _low):
