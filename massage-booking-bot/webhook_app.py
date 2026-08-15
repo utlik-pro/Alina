@@ -902,6 +902,35 @@ def _booking_recap_question(booking_call) -> str:
     return f"So dear — {', '.join(bits)} 🌹 Shall I confirm?"
 
 
+_TIME_COLON_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?", re.I)
+_TIME_MERIDIEM_RE = re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.I)
+
+
+def _detect_requested_time(text: str) -> Optional[str]:
+    """The concrete clock time the client just named ('7pm', '19:00',
+    '5:30 PM'), as 24h 'HH:MM' — or None when they named no time.
+
+    Deliberately narrow: a bare number is NOT a time ("60 min", "22 August",
+    "350 AED", a phone number), so a match needs either a colon or an am/pm.
+    """
+    t = text or ""
+    m = _TIME_COLON_RE.search(t)
+    if m:
+        hour, minute, mer = int(m.group(1)), int(m.group(2)), (m.group(3) or "").lower()
+    else:
+        m = _TIME_MERIDIEM_RE.search(t)
+        if not m:
+            return None
+        hour, minute, mer = int(m.group(1)), 0, m.group(2).lower()
+    if mer == "pm" and hour < 12:
+        hour += 12
+    elif mer == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 _PAYMENT_MENU_RE = re.compile(
     r"^(\s*(?:[-•*]\s*)?(?:💵|🏦|💳)?\s*)(cash|bank transfer)\s*$", re.IGNORECASE)
 _PRICE_RE = re.compile(r"\b(\d{2,5})\s*AED\b", re.IGNORECASE)
@@ -2814,6 +2843,48 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
                         f"{area_note}{_pref_note}"
                     )
+
+                    # The client named a CONCRETE time — check that exact time
+                    # against the calendar and hand the model the verdict.
+                    # Live-caught 2026-08-15: the Instagram rule "merge every
+                    # therapist's windows into ONE list of 3–4 times" made the
+                    # model read "not in my short list" as "not available", so
+                    # it refused 7:00 PM on a day a therapist was free — a
+                    # booking lost to a slot we actually had. The short list is
+                    # a PRESENTATION choice; it must never become the truth
+                    # about what exists.
+                    _asked_time = _detect_requested_time(text)
+                    _asked_date = ((context.booking_data or {}).get("date")
+                                   or (extra_dates[0] if extra_dates else ""))
+                    if _asked_time and _asked_date:
+                        try:
+                            _time_free = await bot_module.yclients_service.is_slot_available(
+                                _client_area, _asked_date, _asked_time,
+                                _service_duration or 60)
+                        except Exception as _e:
+                            logger.warning(f"requested-time check failed: {_e}")
+                            _time_free = None
+                        if _time_free is not None:
+                            _pretty = _to_ampm(_asked_time)
+                            logger.info(
+                                f"requested_time_check: {_asked_date} {_asked_time} "
+                                f"area={_client_area!r} free={_time_free}"
+                            )
+                            context.extra_system_info += (
+                                f"\n\n🎯 THE CLIENT ASKED FOR {_pretty} on "
+                                f"{_label(_asked_date)} — CHECKED AGAINST THE "
+                                f"CALENDAR JUST NOW: "
+                                + (
+                                    f"that time IS FREE. Confirm {_pretty} and move "
+                                    "to the next step. NEVER tell them it is "
+                                    "unavailable — the short list you offer is a "
+                                    "presentation choice, not the whole schedule."
+                                    if _time_free else
+                                    f"that time is NOT free. Say so honestly and "
+                                    "offer the nearest real alternatives from the "
+                                    "schedule above."
+                                )
+                            )
                 except Exception as e:
                     logger.warning(f"Wappi: failed to fetch slots: {e}")
             else:

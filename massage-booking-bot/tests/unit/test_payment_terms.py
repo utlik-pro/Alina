@@ -92,3 +92,18 @@ def test_confirmation_quotes_the_price_the_client_agreed_to():
     assert "350 AED" in out
     assert "368" not in out
     assert "+5% VAT" in out
+
+
+def test_requested_time_parser_ignores_numbers_that_are_not_times():
+    from webhook_app import _detect_requested_time
+
+    assert _detect_requested_time("22 August 19pm") == "19:00"
+    assert _detect_requested_time("3pm") == "15:00"
+    assert _detect_requested_time("5:30 PM") == "17:30"
+    assert _detect_requested_time("19:00") == "19:00"
+    assert _detect_requested_time("12am") == "00:00"
+    # Not times: duration, price, a date, a phone number.
+    assert _detect_requested_time("60 min") is None
+    assert _detect_requested_time("350 AED") is None
+    assert _detect_requested_time("22 August") is None
+    assert _detect_requested_time("+971501234567") is None
