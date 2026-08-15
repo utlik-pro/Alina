@@ -449,10 +449,19 @@ def _booking_has_location_and_name(booking_call, client_data: dict) -> tuple:
     return has_loc, has_name
 
 
+_WEEKDAYS = {
+    "monday": 0, "понедельник": 0, "tuesday": 1, "вторник": 1,
+    "wednesday": 2, "среда": 2, "среду": 2, "thursday": 3, "четверг": 3,
+    "friday": 4, "пятница": 4, "пятницу": 4, "saturday": 5, "суббота": 5,
+    "субботу": 5, "sunday": 6, "воскресенье": 6,
+}
+
+
 def _booking_day_mismatch(user_text: str, booking_call):
-    """If the client's message says "tomorrow"/"today" but the booking's date is
-    a different day, return ("tomorrow"|"today", the_real_YYYY-MM-DD) so we can
-    confirm the day instead of silently booking a wrong-day home visit. Else None."""
+    """If the client's message says "tomorrow"/"today"/"next Saturday" but the
+    booking's date is a different day, return (spoken_day, the_real_YYYY-MM-DD)
+    so we can confirm the day instead of silently booking a wrong-day home
+    visit. Else None."""
     if booking_call is None or not getattr(booking_call, "date", None):
         return None
     t = (user_text or "").lower()
@@ -468,6 +477,19 @@ def _booking_day_mismatch(user_text: str, booking_call):
         return ("tomorrow", tomorrow.isoformat())
     if (("today" in t or "сегодня" in t) and "tomorrow" not in t and "завтра" not in t) and bd != today:
         return ("today", today.isoformat())
+    # Weekday names: "on Saturday" = the NEXT such day, strictly in the future;
+    # "next Saturday" said ON a Saturday means +7 days, never today. Caught
+    # live 2026-08-15: "next Saturday at 7 pm" was booked for the same evening.
+    for word, idx in _WEEKDAYS.items():
+        if not re.search(rf"\b{word}\b", t):
+            continue
+        delta = (idx - today.weekday()) % 7
+        if delta == 0:  # the named day IS today
+            delta = 7 if re.search(r"\bnext\b|\bследующ", t) else 0
+        expected = today + _td(days=delta)
+        if bd != expected:
+            return (f"{'next ' if delta == 7 else ''}{word}", expected.isoformat())
+        break
     return None
 
 

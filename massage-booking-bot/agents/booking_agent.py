@@ -184,6 +184,12 @@ HOW TO ADAPT:
 - If client writes "Body" → don't write a 5-line response. Reply with prices shortly.
 - If client sends just a number like "3" → understand it means 3pm
 - If client says "tomorrow" → they mean tomorrow, don't ask which date
+- WEEKDAY NAMES ARE ALWAYS IN THE FUTURE: "on Saturday" = the nearest coming
+  Saturday; "NEXT Saturday" said ON a Saturday = 7 days later, NEVER today.
+  Compute the real date from the Current UAE time note and state the day AND
+  the date back to the client ("Saturday 22 Aug") so a week-long mistake
+  cannot slip through. Live incident 2026-08-15: "next Saturday at 7 pm" was
+  booked for the same evening.
 - If client says "same time" → check their previous booking time from context
 
 ═══════════════════════════════════════

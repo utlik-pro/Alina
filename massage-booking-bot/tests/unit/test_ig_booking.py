@@ -196,3 +196,47 @@ def test_ig_closing_line_not_duplicated():
         user_text="yes", is_ig=True,
     )
     assert out.lower().count("administrator") == 1
+
+
+def test_next_weekday_never_books_today():
+    """'next Saturday' said on a Saturday must mean +7 days, not tonight.
+
+    Live incident 2026-08-15: the model booked the same evening.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import datetime as _dt
+
+    import webhook_app as wh
+
+    class _FixedNow(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 15, 12, 0, tzinfo=tz)  # Saturday
+
+    with patch.object(_dt, "datetime", _FixedNow):
+        call_today = SimpleNamespace(date="2026-08-15", service="body", time="19:00")
+        call_next = SimpleNamespace(date="2026-08-22", service="body", time="19:00")
+        assert wh._booking_day_mismatch("next Saturday at 7 pm", call_today) == (
+            "next saturday", "2026-08-22")
+        assert wh._booking_day_mismatch("next Saturday at 7 pm", call_next) is None
+        # a plain weekday name resolves to the nearest coming one
+        assert wh._booking_day_mismatch("on Monday at 5 pm", SimpleNamespace(
+            date="2026-08-17", service="body", time="17:00")) is None
+        assert wh._booking_day_mismatch("on Monday at 5 pm", SimpleNamespace(
+            date="2026-08-24", service="body", time="17:00")) == ("monday", "2026-08-17")
+
+
+def test_area_spelling_never_hides_availability():
+    """'Abu Dhabi' from the model must match the canonical abu_dhabi key.
+
+    An unmatched area silently filtered out every master, so the agent
+    reported "no availability" on a wide-open day (caught 2026-08-15).
+    """
+    from services.yclients_service import _normalize_area
+
+    for spelling in ("Abu Dhabi", "abu dhabi", "ABU-DHABI", "AbuDhabi", "abu_dhabi"):
+        assert _normalize_area(spelling) == "abu_dhabi", spelling
+    assert _normalize_area("Al Ain") == "al_ain"
+    assert _normalize_area("Dubai") == "dubai"
+    assert _normalize_area("") == ""

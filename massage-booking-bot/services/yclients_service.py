@@ -58,6 +58,26 @@ def _display_first_name(staff_name: str) -> str:
     return STAFF_NAMES_RU_EN.get(token, token)
 
 
+def _normalize_area(area: str) -> str:
+    """Accept any spelling of an emirate and return the canonical key.
+
+    The tool schema asks for abu_dhabi / al_ain / dubai, but the model may
+    pass "Abu Dhabi", "Abu-Dhabi" or "ABU DHABI" — and an unmatched value
+    silently filtered out EVERY master, so the agent told the client there
+    was no availability when the day was in fact wide open.
+    """
+    if not area:
+        return ""
+    a = re.sub(r"[\s\-]+", "_", str(area).strip().lower())
+    if a in ("abudhabi", "abu_dhabi", "ad", "аbu_dhabi"):
+        return "abu_dhabi"
+    if a in ("alain", "al_ain", "аль_айн"):
+        return "al_ain"
+    if a in ("dubai", "дубай"):
+        return "dubai"
+    return a
+
+
 def _staff_area(staff_name: str) -> str:
     """Classify a therapist's service area from the tag in their YClients name.
 
@@ -372,7 +392,7 @@ class YClientsService:
             if isinstance(recs, Exception):
                 recs = None
             eff_area = _marker_area_from_records(recs) or _staff_area(staff.get("name", "") or "")
-            if area and eff_area != area:
+            if area and eff_area != _normalize_area(area):
                 continue
             candidates.append((staff, is_nail_tech, recs, eff_area))
 
@@ -831,7 +851,7 @@ class YClientsService:
             if exclude_record_id is not None and recs:
                 recs = [r for r in recs if str(r.get("id")) != str(exclude_record_id)]
             eff_area = _marker_area_from_records(recs) or _staff_area(nm)
-            if area and eff_area != area:
+            if area and eff_area != _normalize_area(area):
                 continue
             slots = await self.get_real_available_slots(s["id"], date, int(duration or 60), records=recs)
             if slots is None:
