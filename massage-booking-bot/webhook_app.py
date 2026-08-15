@@ -164,6 +164,15 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "details 🌹'\n"
         "- Do NOT send wa.me links in this conversation — the whole "
         "booking happens right here in Instagram.\n"
+        "- 📍 NEVER ask the client to 'share your location' here — a shared "
+        "pin does not reach us from Instagram, it only earns them a 'please "
+        "type it' nudge. Ask them to TYPE the address (area, building, "
+        "apartment).\n"
+        "- 💵 Payment terms always travel with the price: the menu reads "
+        "'💵 Cash (tax free)' / '🏦 Bank transfer (+5% VAT)', and once the "
+        "client has chosen, every price you quote keeps that footnote. Always "
+        "quote the BASE price — never do the VAT arithmetic for them, and "
+        "never let the number change between the recap and the confirmation.\n"
         "- PREGNANCY: if the client says she is pregnant — reassure her: "
         "our therapists have medical education, we offer prenatal "
         "massage (available after 4 months of pregnancy, 350 AED / "
@@ -755,12 +764,20 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
                     f"I want to make sure the therapist comes on the correct day.")
         has_loc, has_name = _booking_has_location_and_name(booking_call, client_data)
         if not (has_loc and has_name):
+            # Instagram can't hand us a shared location: an attachment never
+            # reaches the bridge (ManyChat passes text), so inviting a 📍 pin
+            # only earns the client a "please type it" nudge. Ask for the
+            # address in words there; WhatsApp keeps the pin, which works.
             if not has_loc and not has_name:
-                return ("Almost done dear 🌹 may I have your name, and please share your "
-                        "location 📍 so the therapist can reach you?")
+                return ("Almost done dear 🌹 may I have your name, and please type your "
+                        "address so the therapist can reach you?") if is_ig else (
+                       "Almost done dear 🌹 may I have your name, and please share your "
+                       "location 📍 so the therapist can reach you?")
             if not has_loc:
-                return ("Almost done dear 🌹 please share your location 📍 (or type your "
-                        "address) so the therapist can reach you 🙏")
+                return ("Almost done dear 🌹 please type your address (area, building, "
+                        "apartment) so the therapist can reach you 🙏") if is_ig else (
+                       "Almost done dear 🌹 please share your location 📍 (or type your "
+                       "address) so the therapist can reach you 🙏")
             return "Almost done dear 🌹 may I have your name for the booking?"
         # Phone gate (Instagram channel): the YClients record needs a real
         # number and the admin confirms by phone in the morning (client's
@@ -877,6 +894,63 @@ def _booking_recap_question(booking_call) -> str:
     if price:
         bits.append(f"{int(price)} AED ({'cash — tax free' if pay == 'cash' else 'bank transfer +5% VAT'})")
     return f"So dear — {', '.join(bits)} 🌹 Shall I confirm?"
+
+
+_PAYMENT_MENU_RE = re.compile(
+    r"^(\s*(?:[-•*]\s*)?(?:💵|🏦|💳)?\s*)(cash|bank transfer)\s*$", re.IGNORECASE)
+_PRICE_RE = re.compile(r"\b(\d{2,5})\s*AED\b", re.IGNORECASE)
+
+
+def _detect_payment_method(text: str) -> Optional[str]:
+    """The payment method the client just named, or None if they didn't."""
+    t = (text or "").lower()
+    if re.search(r"bank transfer|transfer|перевод|банковск", t):
+        return "bank_transfer"
+    if re.search(r"\bcash\b|наличн", t):
+        return "cash"
+    return None
+
+
+def _payment_label(payment_method: str) -> str:
+    return "cash — tax free" if payment_method == "cash" else "bank transfer +5% VAT"
+
+
+def _enforce_payment_terms(text: str, payment_method: Optional[str]) -> str:
+    """Guarantee the client is never quoted a price whose payment terms are
+    hidden — the rule is "base price + footnote", never VAT arithmetic.
+
+    Live-caught 2026-08-15 (IG booking test): the brevity rules stripped the
+    "(tax free)" / "(+5% VAT)" labels off the payment menu, and the model's own
+    recap quoted a bare "350 AED" for a BANK TRANSFER booking — the client
+    agreed to 350 and the confirmation then said 368. Prompt guidance is
+    advisory; this is the binding version.
+
+    Two repairs, both idempotent:
+      1. a bare "💵 Cash" / "🏦 Bank transfer" menu line regains its label;
+      2. once the client HAS chosen a method, the last price in the reply
+         carries that method's footnote (prices quoted before the choice stay
+         clean — that is the consult phase).
+    """
+    if not text:
+        return text
+
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        m = _PAYMENT_MENU_RE.match(line)
+        if m:
+            option = m.group(2).lower()
+            label = "(tax free)" if option == "cash" else "(+5% VAT)"
+            lines[i] = f"{m.group(1)}{m.group(2)} {label}".rstrip()
+    text = "\n".join(lines)
+
+    if payment_method and not re.search(r"VAT|tax free", text, re.I):
+        matches = list(_PRICE_RE.finditer(text))
+        if matches:
+            last = matches[-1]
+            text = (text[:last.end()]
+                    + f" ({_payment_label(payment_method)})"
+                    + text[last.end():])
+    return text
 
 
 def _detect_service_duration(text_lower: str) -> Optional[int]:
@@ -1778,6 +1852,14 @@ async def _maybe_create_booking(
                             else f"WhatsApp (Wappi) bot booking #{booking.id}. "
                         )
                         + f"Area: {booking_call.area}. "
+                        # The admin calls this client in the morning to confirm
+                        # (IG rule) — they must see how the client is paying, or
+                        # they quote the wrong sum. Cash and transfer differ by 5%.
+                        + (
+                            f"Payment: {_payment_label(booking_call.payment_method)}. "
+                            if getattr(booking_call, "payment_method", None)
+                            else ""
+                        )
                         + (f"Notes: {booking_call.notes}. " if booking_call.notes else "")
                         + (f"Address: {booking_call.address}." if booking_call.address else "")
                     ),
@@ -1790,13 +1872,27 @@ async def _maybe_create_booking(
                         f"✅ YClients booking created from WhatsApp: "
                         f"#{yc_result.get('id', '?')}"
                     )
+                    # Who is actually driving to the client. `staff_name` never
+                    # existed on the tool call (the field is master_name), and
+                    # IG replies deliberately never name a therapist — so the
+                    # morning retro used to show an empty master on every IG
+                    # booking. Resolve it from the id we just booked with.
+                    _master_log = (getattr(booking_call, "master_name", "") or "").strip()
+                    if not _master_log and yc_staff_id:
+                        try:
+                            _all_staff = await bot_module.yclients_service.get_staff()
+                            _master_log = next(
+                                (str(s.get("name", "")) for s in (_all_staff or [])
+                                 if str(s.get("id")) == str(yc_staff_id)), "")
+                        except Exception:
+                            _master_log = ""
                     _night_event(
                         "booking_created", who=phone,
                         record=str(yc_result.get("id", "?")),
                         service=str(getattr(booking_call, "service", "")),
                         date=str(getattr(booking_call, "date", "")),
                         time=str(getattr(booking_call, "time", "")),
-                        master=str(getattr(booking_call, "staff_name", "") or ""),
+                        master=_master_log,
                     )
                     # Persist the record id — cancel/reschedule mutate YClients
                     # directly and target the record through this.
@@ -2846,6 +2942,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             needs_phone=_needs_phone,
             is_ig=_is_ig_key(phone),
         )
+
+        # Payment terms are a money-facing promise: a quoted price must always
+        # carry its footnote once the client has picked how they pay. The chosen
+        # method is sticky — the client names it once ("bank transfer") and every
+        # later price (recap, confirmation) must still say +5% VAT.
+        _pay_known = (context.booking_data or {}).get("payment_method")
+        _pay_now = (getattr(booking_call, "payment_method", None)
+                    or _detect_payment_method(text))
+        if _pay_now and _pay_now != _pay_known:
+            dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
+        response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)

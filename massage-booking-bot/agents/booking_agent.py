@@ -1071,8 +1071,12 @@ the client understands you, switching to their language when they need it."""
                 master = ""
             base = getattr(bc, "base_price_aed", None) or 0
             pay = getattr(bc, "payment_method", "cash")
-            total = base if pay == "cash" else round(base * 1.05)
-            price = f"{int(total)} AED ({'cash — tax free' if pay == 'cash' else 'bank transfer +5% VAT'})" if base else ""
+            # The BASE price, never the VAT arithmetic: the client agreed to a
+            # recap that says "350 AED (bank transfer +5% VAT)", so confirming
+            # with a computed "368 AED" reads as a price change at the finish
+            # line (live-caught in the 2026-08-15 IG booking test). The rule is
+            # one number + the footnote, everywhere.
+            price = f"{int(base)} AED ({'cash — tax free' if pay == 'cash' else 'bank transfer +5% VAT'})" if base else ""
             head = f"Your {svc} is booked ✅"
             detail = " — ".join(x for x in [master, f"{when} {t}".strip(), price] if x)
             return f"{head}\n{detail} 🌹" if detail else f"{head} 🌹"
