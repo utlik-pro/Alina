@@ -83,19 +83,33 @@ async def main() -> None:
                     area=area, service_duration=60)
             except Exception as e:
                 s = f"ERROR {e}"
-            has = "Available on" in str(s)
-            n_masters = str(s).count(":") - 1 if has else 0
-            counts[area] = max(n_masters, 0) if has else 0
-        if sum(counts.values()) == 0:
+            # Count what actually matters: how many therapists are free and
+            # how many DISTINCT start times exist. Counting colons (the first
+            # version of this script) produced nonsense like "144 free slots"
+            # — that was 138 half-hour marks across 6 masters plus 6 colons
+            # after their names, not 144 openings.
+            txt = str(s)
+            lines = [l for l in txt.splitlines()
+                     if ":" in l and "Available on" not in l]
+            times = set()
+            for line in lines:
+                _, _, tail = line.partition(":")
+                times.update(t.strip() for t in tail.split(",") if t.strip())
+            counts[area] = (len(lines), len(times))
+        if sum(m for m, _ in counts.values()) == 0:
             empty_days.append(f"{iso} ({d:%a})")
         rows.append((iso, d.strftime("%a"), counts, "ok" if not bad_forms else "PARSE"))
 
-    print(f"{'date':12} {'day':4} {'AD':>3} {'AlAin':>6} {'Dubai':>6}  parser")
-    print("-" * 46)
+    print("masters free / distinct start times, per emirate\n")
+    print(f"{'date':12} {'day':4} {'AbuDhabi':>10} {'AlAin':>8} {'Dubai':>8}  parser")
+    print("-" * 60)
     for iso, wd, c, st in rows:
         flag = "" if st == "ok" else "  ❌"
-        mark = "" if sum(c.values()) else "   ← no slots"
-        print(f"{iso:12} {wd:4} {c['abu_dhabi']:>3} {c['al_ain']:>6} {c['dubai']:>6}{flag}{mark}")
+        total = sum(m for m, _ in c.values())
+        mark = "" if total else "   ← nobody free"
+        cells = "".join(f"{m}/{t:<3}".rjust(10 if a == 'abu_dhabi' else 9)
+                        for a, (m, t) in c.items())
+        print(f"{iso:12} {wd:4}{cells}{flag}{mark}")
 
     print("\n" + "=" * 60)
     n_forms = len(parser_forms(now))
