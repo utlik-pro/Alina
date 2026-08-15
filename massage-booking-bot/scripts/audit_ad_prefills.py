@@ -44,8 +44,12 @@ CAMPAIGNS = {
 # The follow-ups exist to FORCE a price out of the agent: without them a
 # well-behaved reply is just a clarifying question and nothing is auditable.
 # "Tell me about both please" is the real phrase that made the agent dump the
-# banned course prices to a live lead on 2026-08-15.
-FOLLOW_UPS = ["how much?", "Tell me about both please"]
+# banned course prices to a live lead on 2026-08-15. The tail then walks into
+# a concrete date so the offered TIMES become auditable against YClients too.
+FOLLOW_UPS = ["how much?", "Tell me about both please",
+              "body massage", "60 min", "20 August"]
+SLOT_DATE = "2026-08-20"  # the date the client names above
+SLOT_DURATION = 60
 
 BANNED = {3000, 2590, 2200}
 PRICE_RE = re.compile(r"(\d[\d,\s]{1,7})\s*(?:AED|aed|дирхам)")
@@ -111,6 +115,72 @@ def agent_text(transcript: str) -> str:
     return "\n".join(out)
 
 
+_AMPM_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b", re.I)
+
+
+def _times_ampm(text: str) -> set[str]:
+    """Every clock time the text mentions, as 24h 'HH:MM'."""
+    out = set()
+    for h, m, mer in _AMPM_RE.findall(text):
+        hour, minute = int(h), int(m or 0)
+        if mer.upper() == "PM" and hour < 12:
+            hour += 12
+        elif mer.upper() == "AM" and hour == 12:
+            hour = 0
+        out.add(f"{hour:02d}:{minute:02d}")
+    return out
+
+
+async def real_slots(emirate: str) -> set[str]:
+    """The genuinely free times for SLOT_DATE in `emirate`, straight from
+    YClients — the ground truth the agent's offers are judged against."""
+    from services.yclients_service import YClientsService
+    area = {"Abu Dhabi": "abu_dhabi", "Al Ain": "al_ain", "Dubai": "dubai"}[emirate]
+    yc = YClientsService()
+    summary = await yc.get_available_slots_summary(
+        date=SLOT_DATE, service_category="massage",
+        area=area, service_duration=SLOT_DURATION)
+    if not summary or "TEMPORARILY UNAVAILABLE" in summary:
+        return None  # outage — judge nothing rather than judge against a lie
+    return _times_ampm(summary)
+
+
+def audit_slots(result: dict, truth) -> list[str]:
+    """The times the agent offered for SLOT_DATE must exist in the calendar.
+
+    Only the turns AFTER the client named the date are judged — earlier turns
+    legitimately talk about tomorrow. Offering a taken time sends a therapist
+    into an overlap; claiming a free day has nothing loses the booking.
+    """
+    if truth is None:
+        return ["⚠ SLOTS NOT JUDGED — YClients was rate-limited/unreachable "
+                "while fetching the ground truth"]
+    problems = []
+    turns = agent_turns(result["transcript"])
+    dated = turns[len(FOLLOW_UPS):] if len(turns) > len(FOLLOW_UPS) else turns[-1:]
+    dated_text = " ".join(dated)
+    offered = set()
+    for t in dated:
+        offered |= _times_ampm(t)
+    # The honest empty-day answer ("fully booked … the nearest we have is
+    # <other day>: times") carries times that belong to the ALTERNATIVE day —
+    # the runtime slot-reality gate built them from the calendar itself, so
+    # judging them against SLOT_DATE's truth flags honesty as a ghost.
+    honest_alt = re.search(r"fully booked|nearest we have", dated_text, re.I)
+    ghost = offered - truth
+    if ghost and not honest_alt:
+        problems.append(
+            f"✗ GHOST SLOT — offered {sorted(ghost)} on {SLOT_DATE}, "
+            f"not free in YClients (real: {sorted(truth)[:8]}…)")
+    if truth and not offered:
+        tail = " ".join(dated).lower()
+        if re.search(r"not available|no availab|fully booked|нет свободн", tail):
+            problems.append(
+                f"✗ FALSE 'NO AVAILABILITY' — {len(truth)} real openings on "
+                f"{SLOT_DATE} were denied")
+    return problems
+
+
 def agent_turns(transcript: str) -> list[str]:
     """Each AGENT reply as one string (bubble separators removed)."""
     turns, current = [], None
@@ -166,7 +236,8 @@ def audit(result: dict, ok: dict[int, str]) -> list[str]:
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(CAMPAIGNS), help="one campaign only")
-    ap.add_argument("--jobs", type=int, default=3, help="parallel simulations")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="parallel simulations (default 1 — YClients rate-limits bursts)")
     ap.add_argument("--save", default="logs/ad_prefill_audit.md")
     args = ap.parse_args()
 
@@ -178,10 +249,13 @@ async def main() -> None:
     results = await asyncio.gather(*tasks)
 
     ok = allowed_prices()
+    truth_by_emirate = {e: await real_slots(e) for e in EMIRATES}
     failed = 0
-    report = ["# Ad-prefill price audit\n"]
+    report = [f"# Ad-prefill price audit (slots vs YClients, {SLOT_DATE})\n"]
+    for e, t in truth_by_emirate.items():
+        report.append(f"- real {SLOT_DATE} openings, {e}: {sorted(t)}\n")
     for r in results:
-        problems = audit(r, ok)
+        problems = audit(r, ok) + audit_slots(r, truth_by_emirate[r["emirate"]])
         mark = "✅" if not problems else "❌"
         if problems:
             failed += 1

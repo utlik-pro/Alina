@@ -37,6 +37,7 @@ _UAE = timezone(timedelta(hours=4))
 
 async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = False):
     """Mirror the webhook's slot injection into ctx.extra_system_info."""
+    ctx.slot_truth = {}  # mirror prod: reset every turn, stale truth is worse than none
     area = ctx.client_data.get("area")
     if not area:
         ctx.extra_system_info = ""
@@ -96,6 +97,7 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = F
         if d and d not in dates:
             dates.append(d)
     blocks = []
+    ctx.slot_truth = {}  # mirror prod: ground truth for the outgoing slot gate
     for d in dates[:3]:
         try:
             s = await yc.get_available_slots_summary(
@@ -104,6 +106,7 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = F
             s = f"(slots unavailable: {e})"
         wd = datetime.strptime(d, "%Y-%m-%d").strftime("%A")
         blocks.append(f"{wd} ({d}):\n{s}")
+        ctx.slot_truth[d] = wh._times_from_summary(s)
     note = {"al_ain": "Client in AL AIN — only Al Ain therapists.",
             "dubai": "Client in DUBAI — only Dubai therapists.",
             "abu_dhabi": "Client in ABU DHABI — only Abu Dhabi therapists."}.get(area, "")
@@ -177,10 +180,19 @@ async def run(scenario):
         if _pr:
             ctx.client_data["preferred_therapist"] = _pr
         cat = wh._detect_service_category(msg)
-        if cat and cat != ctx.booking_data.get("service_type"):
+        cur = ctx.booking_data.get("service_type") or None
+        # Mirror prod: never downgrade body_massage/face_massage → 'massage'.
+        if (cat and cat != cur
+                and not (cat == "massage" and wh._massage_kind_known(cur or ""))):
             ctx.booking_data["service_type"] = cat
             if ctx.booking_data.get("service_duration"):
                 ctx.booking_data["service_duration"] = None
+        # Mirror prod: the client's "body massage" answer upgrades the kind
+        # (same category — the duration survives).
+        kind = wh._massage_kind_from_text(msg)
+        cur = ctx.booking_data.get("service_type") or ""
+        if kind and wh._is_massage_service(cur) and not wh._massage_kind_known(cur):
+            ctx.booking_data["service_type"] = f"{kind}_massage"
         # Use the SAME detector prod uses, so the sim can't drift from the
         # webhook (it used to only know "abu dhabi" and missed "Абу-Даби").
         _ar = wh.detect_area(msg)
@@ -244,6 +256,8 @@ async def run(scenario):
             already_booked_sig=getattr(ctx, "last_booking_sig", None),
             group_requested=bool(ctx.booking_data.get("group_requested")),
             needs_phone=_needs_phone, is_ig=is_ig)
+        # Mirror prod: no invented times survive to the client.
+        final = wh._enforce_slot_reality(final, ctx, actions.booking_call)
         # Mirror prod's binding payment-terms pass (labels on the menu, the
         # chosen method's footnote on every later price).
         _pay = (getattr(actions.booking_call, "payment_method", None)

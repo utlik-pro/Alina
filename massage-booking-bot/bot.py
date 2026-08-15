@@ -1058,7 +1058,7 @@ async def main() -> None:
         # Test connection
         try:
             staff = await yclients_service.get_staff()
-            logger.info(f"✅ YClients connected: {len(staff)} staff members loaded")
+            logger.info(f"✅ YClients connected: {len(staff or [])} staff members loaded")
         except Exception as e:
             logger.error(f"❌ YClients connection failed: {e}")
             yclients_service = None

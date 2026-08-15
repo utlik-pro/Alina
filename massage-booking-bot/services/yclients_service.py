@@ -7,6 +7,7 @@ CRITICAL SAFETY RULE:
     ⚠️ Test bookings must be marked with [TEST] comment.
 """
 
+import asyncio
 import re
 import time
 import aiohttp
@@ -230,30 +231,51 @@ class YClientsService:
         url = f"{self.BASE_URL}/{endpoint}"
         try:
             session = await self._get_session()
-            async with session.get(url, headers=self._headers, params=params) as resp:
-                try:
-                    data = await resp.json()
-                except Exception as e:
-                    logger.error(
-                        f"YClients GET {endpoint}: non-JSON response "
-                        f"(status={resp.status}): {e}"
-                    )
-                    return None
+            for attempt in (1, 2):
+                async with session.get(url, headers=self._headers, params=params) as resp:
+                    try:
+                        data = await resp.json()
+                    except Exception as e:
+                        logger.error(
+                            f"YClients GET {endpoint}: non-JSON response "
+                            f"(status={resp.status}): {e}"
+                        )
+                        return None
 
-                if resp.status >= 400 or not data.get("success"):
-                    msg = (data.get("meta") or {}).get("message", "Unknown error")
-                    logger.error(
-                        f"YClients GET {endpoint} failed "
-                        f"(status={resp.status}, success={data.get('success')}): {msg}"
-                    )
-                    return None
-                return data
+                    if resp.status == 429 and attempt == 1:
+                        # Rate limit. The message names the wait («попробуйте
+                        # повторить запрос через N секунд») — honour it once.
+                        # Without the retry a burst of parallel slot fetches
+                        # turns into a fake "day is empty" for a live client
+                        # (seen 2026-08-15 during the prefill audit).
+                        msg = (data.get("meta") or {}).get("message", "")
+                        m = re.search(r"через (\d+)", msg)
+                        wait = min(int(m.group(1)) if m else 2, 15) or 1
+                        logger.warning(
+                            f"YClients GET {endpoint}: 429, retrying in {wait}s")
+                        await asyncio.sleep(wait)
+                        continue
+
+                    if resp.status >= 400 or not data.get("success"):
+                        msg = (data.get("meta") or {}).get("message", "Unknown error")
+                        logger.error(
+                            f"YClients GET {endpoint} failed "
+                            f"(status={resp.status}, success={data.get('success')}): {msg}"
+                        )
+                        return None
+                    return data
         except Exception as e:
             logger.error(f"YClients GET {endpoint} exception: {e}")
             return None
+        return None
 
-    async def get_staff(self) -> List[Dict]:
-        """Get list of therapists/staff (cached 5 min)."""
+    async def get_staff(self) -> Optional[List[Dict]]:
+        """Get list of therapists/staff (cached 5 min).
+
+        None = API failure (outage), [] = genuinely empty roster. Callers
+        must not read an outage as "the salon has no staff" — that used to
+        surface as "No available slots" during a 429 burst.
+        """
         cached = self._cache.get("staff")
         if cached is not None:
             return cached
@@ -263,7 +285,7 @@ class YClientsService:
             self._cache.set("staff", staff)
             logger.info(f"YClients: loaded {len(staff)} staff members")
             return staff
-        return []
+        return None
 
     async def get_services(self) -> List[Dict]:
         """Get list of services (cached 5 min)."""
@@ -367,6 +389,16 @@ class YClientsService:
         now_minute = now_uae.minute if is_today else 0
 
         staff_list = await self.get_staff()
+        if staff_list is None:
+            # Outage ≠ day-off: a 429/network blip on the roster call must not
+            # read as "the day is empty" (live-caught 2026-08-15, rate-limit
+            # burst turned into a fake "No available slots" for Abu Dhabi).
+            return (
+                "SCHEDULE TEMPORARILY UNAVAILABLE (YClients did not respond). Do "
+                "NOT tell the client the day is fully booked and do NOT invent "
+                "times — tell them warmly you're checking with the team and will "
+                "confirm a time shortly."
+            )
         if not staff_list:
             return "No available slots for this date"
 
@@ -410,13 +442,26 @@ class YClientsService:
         #     emirate marker wins, else the name tag. A client only ever sees
         #     masters actually in their emirate that day — no cross-emirate drive.
         candidates = []
+        _recs_outage = False
         for (staff, is_nail_tech), recs in zip(roster, _recs_list):
             if isinstance(recs, Exception):
                 recs = None
+            if recs is None:
+                _recs_outage = True
             eff_area = _marker_area_from_records(recs) or _staff_area(staff.get("name", "") or "")
             if area and eff_area != _normalize_area(area):
                 continue
             candidates.append((staff, is_nail_tech, recs, eff_area))
+        if not candidates and _recs_outage:
+            # The area filter ran on unreadable markers (records call failed):
+            # a floating master's real emirate was unknowable, so an empty
+            # candidate list here is an OUTAGE symptom, not a schedule fact.
+            return (
+                "SCHEDULE TEMPORARILY UNAVAILABLE (YClients did not respond). Do "
+                "NOT tell the client the day is fully booked and do NOT invent "
+                "times — tell them warmly you're checking with the team and will "
+                "confirm a time shortly."
+            )
 
         # Nails are offered in Abu Dhabi ONLY (no nail tech works Al Ain/Dubai).
         # Without this, a Dubai client asking for a manicure got the generic

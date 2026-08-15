@@ -475,6 +475,25 @@ def _massage_kind_known(name: str) -> bool:
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
 
 
+def _massage_kind_from_text(text: str) -> Optional[str]:
+    """'body' | 'face' | None — the kind the client just named.
+
+    The category detector only yields the generic 'massage', so without this
+    upgrade service_type stays kind-less forever and the body-or-face gate
+    NEVER releases (found 2026-08-15: every Al Ain prefill run looped on the
+    gate, slots were never injected, and the model invented times for an
+    empty day). Face wins when both stems appear ('facial with body oils').
+    """
+    t = (text or "").lower()
+    has_face = any(k in t for k in ("face", "facial", "лиц"))
+    has_body = any(k in t for k in ("body", "тел", "спин", "back"))
+    if has_face:
+        return "face"
+    if has_body:
+        return "body"
+    return None
+
+
 def _kind_gate_msg() -> str:
     """Body-or-face gate, with the prices to hand.
 
@@ -972,6 +991,101 @@ def _detect_requested_time(text: str) -> Optional[str]:
     return f"{hour:02d}:{minute:02d}"
 
 
+_AMPM_TIMES_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b", re.I)
+
+
+def _ampm_times_set(text: str) -> set:
+    """Every AM/PM clock time in `text`, as 24h 'HH:MM'."""
+    out = set()
+    for h, m, mer in _AMPM_TIMES_RE.findall(text or ""):
+        hour, minute = int(h), int(m or 0)
+        if mer.upper() == "PM" and hour < 12:
+            hour += 12
+        elif mer.upper() == "AM" and hour == 12:
+            hour = 0
+        out.add(f"{hour:02d}:{minute:02d}")
+    return out
+
+
+def _times_from_summary(summary) -> Optional[set]:
+    """Free times promised by a slots summary. None = outage (judge nothing) —
+    'temporarily unavailable' must never be read as 'the day is empty'."""
+    if not summary or "TEMPORARILY UNAVAILABLE" in summary:
+        return None
+    return _ampm_times_set(summary)
+
+
+def _enforce_slot_reality(response_text: str, context, booking_call,
+                          _label=None) -> str:
+    """No time reaches a client unless YClients actually has it free.
+
+    Live-caught 2026-08-15 (prefill audit, Al Ain): the day's block said "No
+    slots available… do NOT invent times" and the model still offered four
+    times for it. An invented slot is a therapist who never arrives — so the
+    promise is enforced on the OUTGOING text, not just requested in the
+    prompt. If the reply names times that exist on none of the injected
+    dates, it is replaced by the honest answer built from the ground truth:
+    the chosen day's real times, or "fully booked" plus the nearest real day.
+    A YClients outage (truth None) judges nothing — fail open, never block a
+    reply because the backend hiccuped.
+    """
+    truth = getattr(context, "slot_truth", None) or {}
+    if not truth or not response_text:
+        return response_text
+    said = _ampm_times_set(response_text)
+    if not said:
+        return response_text
+
+    def _nice(d):
+        from datetime import datetime as _dtg
+        try:
+            return _dtg.strptime(d, "%Y-%m-%d").strftime("%A %-d %B")
+        except (ValueError, TypeError):
+            return str(d)
+
+    def _honest(target):
+        real = truth.get(target)
+        if real:
+            shown = ", ".join(_to_ampm(t) for t in sorted(real)[:4])
+            return (f"On {_nice(target)} we have {shown} 🌹\nWhich suits you?")
+        days = sorted(d for d, v in truth.items() if v)
+        head = (f"On {_nice(target)} we're fully booked dear 🙏"
+                if target else "That time isn't available dear 🙏")
+        if days:
+            alt = days[0]
+            shown = ", ".join(_to_ampm(t) for t in sorted(truth[alt])[:4])
+            return f"{head}\nThe nearest we have is {_nice(alt)}: {shown}\nWhich suits you?"
+        return f"{head}\nThe team will check further days for you 🌹"
+
+    # A concrete chosen day (tool call or the sticky client-named date) is
+    # judged strictly against THAT day's calendar.
+    target = (getattr(booking_call, "date", None)
+              or (context.booking_data or {}).get("date"))
+    if target and target in truth:
+        real = truth[target]
+        if real is None:
+            return response_text  # outage — never judge
+        if said - real:
+            logger.warning(
+                f"slot-reality gate: reply offered {sorted(said - real)} for "
+                f"{target}, real={sorted(real)} — rewritten")
+            return _honest(target)
+        return response_text
+
+    # No chosen day: a time is legitimate if ANY injected day has it.
+    if any(v is None for v in truth.values()):
+        return response_text  # partial outage — fail open
+    union = set()
+    for v in truth.values():
+        union |= v
+    if said - union:
+        logger.warning(
+            f"slot-reality gate: reply offered {sorted(said - union)} not free "
+            f"on any injected day — rewritten")
+        return _honest(None)
+    return response_text
+
+
 _PAYMENT_MENU_RE = re.compile(
     r"^(\s*(?:[-•*]\s*)?(?:💵|🏦|💳)?\s*)(cash|bank transfer)\s*$", re.IGNORECASE)
 _PRICE_RE = re.compile(r"\b(\d{2,5})\s*AED\b", re.IGNORECASE)
@@ -1184,7 +1298,7 @@ async def lifespan(application: FastAPI):
         bot_module.yclients_service = YClientsService()
         try:
             staff = await bot_module.yclients_service.get_staff()
-            logger.info(f"✅ YClients connected: {len(staff)} staff members")
+            logger.info(f"✅ YClients connected: {len(staff or [])} staff members")
         except Exception as e:
             logger.error(f"❌ YClients connection failed: {e}")
             bot_module.yclients_service = None
@@ -2621,7 +2735,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 logger.warning(f"couldn't persist preferred_therapist: {_e}")
 
         _svc_cat = _detect_service_category(text)
-        if _svc_cat and _svc_cat != (context.booking_data.get("service_type") or None):
+        _cur_svc = context.booking_data.get("service_type") or None
+        # Never DOWNGRADE a kind-specific type back to the generic one: the
+        # detector only knows 'massage', so a later "massage tomorrow?" must
+        # not erase the body/face answer already given (that re-arms the
+        # body-or-face gate and re-asks a settled question).
+        if (_svc_cat and _svc_cat != _cur_svc
+                and not (_svc_cat == "massage" and _massage_kind_known(_cur_svc or ""))):
             dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
             # A category switch invalidates any previously-stated duration: a
             # 90-min massage length must not keep over-filtering slots for a
@@ -2629,12 +2749,24 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # from THIS/next message if the client names a new length.
             if context.booking_data.get("service_duration"):
                 dialog_manager.update_booking_data(user_id, "service_duration", None)
+        # Upgrade the generic 'massage' with the kind the client just named
+        # ("body massage" → body_massage). Same category, so the duration is
+        # NOT reset — this is the client answering the gate's own question,
+        # and without the upgrade the gate never releases.
+        _kind_now = _massage_kind_from_text(text)
+        _svc_after = context.booking_data.get("service_type") or ""
+        if (_kind_now and _is_massage_service(_svc_after)
+                and not _massage_kind_known(_svc_after)):
+            dialog_manager.update_booking_data(
+                user_id, "service_type", f"{_kind_now}_massage")
+            logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
 
         # Reset the injected-slots block EVERY turn before rebuilding it. It is
         # per-turn ground truth (dated "TODAY — <date>"); if this turn's fetch is
         # skipped or fails, a leftover block from a previous turn would re-inject
         # STALE slots with an outdated date. Start clean.
         context.extra_system_info = ""
+        context.slot_truth = {}  # reset with it — same staleness argument
 
         # Inject YClients slots if we know the area
         logger.info(
@@ -2824,6 +2956,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                             and chosen_date != today and chosen_date != tomorrow:
                         extra_dates.insert(0, chosen_date)
 
+                    # Ground truth for the outgoing-reply slot gate: date →
+                    # set of genuinely free times (None = YClients outage,
+                    # judge nothing). The model has been caught reading times
+                    # off nowhere for a day whose block says "No slots
+                    # available… do NOT invent times" (Al Ain, 2026-08-15).
+                    _slot_truth = {
+                        today: _times_from_summary(slots_today),
+                        tomorrow: _times_from_summary(slots_tomorrow),
+                    }
                     extra_slots_text = ""
                     for d in extra_dates[:2]:  # chosen date + at most 1 mentioned extra
                         try:
@@ -2831,8 +2972,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                                 date=d, service_name=service_name, area=_client_area,
                                 service_duration=_service_duration)
                             extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
+                            _slot_truth[d] = _times_from_summary(slots)
                         except Exception:
                             pass
+                    context.slot_truth = _slot_truth
 
                     area_note = ""
                     if _client_area == "al_ain":
@@ -3105,6 +3248,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             needs_phone=_needs_phone,
             is_ig=_is_ig_key(phone),
         )
+
+        # No invented times reach the client — every offered time must exist
+        # in the YClients truth captured this turn (see _enforce_slot_reality).
+        response_text = _enforce_slot_reality(response_text, context, booking_call)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen
