@@ -97,6 +97,35 @@ def _phone_lock(phone: str) -> "asyncio.Lock":
 
 IG_KEY_PREFIX = "ig:"
 
+# ── Night log ────────────────────────────────────────────────────────
+# Render's log stream needs a CLI token we no longer have, and the
+# ig_turns.jsonl file lives inside an ephemeral container. Without an
+# outside-readable trail a night shift can only be reconstructed by hand
+# from the ManyChat inbox. This in-memory ring is served by
+# /admin/night-log (auth: MANYCHAT_WEBHOOK_SECRET) so the night can be
+# reviewed the next morning: every inbound DM, every outbound reply,
+# every booking and every failure.
+NIGHT_LOG: "deque" = None  # initialised below (deque import is local)
+
+
+def _night_event(kind: str, **data) -> None:
+    """Append one event to the night log; never let logging break a turn."""
+    global NIGHT_LOG
+    try:
+        from collections import deque
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+        if NIGHT_LOG is None:
+            NIGHT_LOG = deque(maxlen=1000)
+        # Abu Dhabi wall clock — the same reference the salon uses
+        ts = _dt.now(_tz(_td(hours=4))).isoformat(timespec="seconds")
+        for k, v in list(data.items()):
+            if isinstance(v, str) and len(v) > 400:
+                data[k] = v[:400] + "…"
+        NIGHT_LOG.append({"ts": ts, "kind": kind, **data})
+    except Exception:  # observability must never break the pipeline
+        pass
+
 
 def _is_ig_key(phone: str) -> bool:
     """True for synthetic Instagram identities ("ig:<ManyChat subscriber id>")."""
@@ -169,9 +198,12 @@ async def _send_to_client(phone: str, text: str) -> bool:
             logger.warning(
                 f"IG send BLOCKED (outside live window) for {phone}: {text[:80]!r}"
             )
+            _night_event("send_blocked_daytime", who=phone, text=text)
             return False
         from services.instagram_client import manychat_send_text
-        return await manychat_send_text(phone[len(IG_KEY_PREFIX):], text)
+        _ok = await manychat_send_text(phone[len(IG_KEY_PREFIX):], text)
+        _night_event("sent" if _ok else "send_failed", who=phone, text=text)
+        return _ok
     if wappi_client:
         return await wappi_client.send_message(phone, text)
     return False
@@ -1577,6 +1609,14 @@ async def _maybe_create_booking(
                     logger.info(
                         f"✅ YClients booking created from WhatsApp: "
                         f"#{yc_result.get('id', '?')}"
+                    )
+                    _night_event(
+                        "booking_created", who=phone,
+                        record=str(yc_result.get("id", "?")),
+                        service=str(getattr(booking_call, "service", "")),
+                        date=str(getattr(booking_call, "date", "")),
+                        time=str(getattr(booking_call, "time", "")),
+                        master=str(getattr(booking_call, "staff_name", "") or ""),
                     )
                     # Persist the record id — cancel/reschedule mutate YClients
                     # directly and target the record through this.
@@ -3133,6 +3173,7 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
     # tester bypass existed to rehearse booking before the flag was on, and
     # its only remaining effect was answering during the day (owner request
     # 2026-08-15 — the client must see complete daytime silence).
+    _night_event("inbound", who=subscriber_id, text=text, live=ig_live_now())
     if config.MANYCHAT_API_KEY and ig_live_now() and (
         config.IG_BOOKING_ENABLED or _is_ig_test_subscriber(subscriber_id)
     ):
@@ -3144,6 +3185,7 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         background_tasks.add_task(
             _buffer_and_process_wappi, f"{IG_KEY_PREFIX}{subscriber_id}", text, None
         )
+        _night_event("routed_to_booking", who=subscriber_id)
         return {"reply": SHADOW_SENTINEL, "queued": True}
     if config.IG_ASYNC_SEND and config.MANYCHAT_API_KEY:
         # Stage-0 async path: ACK instantly, deliver via the Sending API.
@@ -3167,6 +3209,42 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
     # and returning v2 dynamic content could double-send if ManyChat renders
     # it — so the response carries ONLY the reply field).
     return {"reply": reply}
+
+
+@app.get("/admin/night-log")
+async def admin_night_log(request: Request, limit: int = 200, kind: str = ""):
+    """Read the night's trail from outside the container.
+
+    Auth uses MANYCHAT_WEBHOOK_SECRET (the one secret shared with the
+    bridge) because the Render log stream and WEBHOOK_SECRET aren't
+    available to whoever reviews the shift in the morning.
+    """
+    import hmac as _hmac
+
+    secret = (
+        request.headers.get("X-Manychat-Secret", "")
+        or request.query_params.get("secret", "")
+    )
+    if not config.MANYCHAT_WEBHOOK_SECRET or not _hmac.compare_digest(
+        secret, config.MANYCHAT_WEBHOOK_SECRET
+    ):
+        return Response(content="forbidden", status_code=403)
+
+    events = list(NIGHT_LOG or [])
+    if kind:
+        wanted = {k.strip() for k in kind.split(",") if k.strip()}
+        events = [e for e in events if e.get("kind") in wanted]
+    summary: dict = {}
+    for e in events:
+        summary[e["kind"]] = summary.get(e["kind"], 0) + 1
+    clients = {e.get("who") for e in events if e.get("who")}
+    return {
+        "summary": summary,
+        "unique_contacts": len(clients),
+        "bookings": [e for e in events if e["kind"] == "booking_created"],
+        "total_kept": len(NIGHT_LOG or []),
+        "events": events[-limit:],
+    }
 
 
 @app.post("/admin/share-with-driver/{booking_id}")

@@ -128,3 +128,35 @@ def test_8_reminder_to_ig_client_blocked_in_daytime(daytime):
             "ig:99", "Reminder: your massage is tomorrow at 5 PM"))
     assert ok is False
     assert not send.called
+
+
+# 9 — the night log records the trail and is protected by the secret
+def test_9_night_log_records_and_requires_secret(daytime):
+    daytime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    webhook_app.NIGHT_LOG = None  # start clean
+
+    # a blocked daytime send must leave a trace
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)):
+        asyncio.run(webhook_app._send_to_client("ig:4242", "hello"))
+
+    client = TestClient(webhook_app.app)
+    assert client.get("/admin/night-log").status_code == 403
+    assert client.get("/admin/night-log?secret=wrong").status_code == 403
+
+    r = client.get("/admin/night-log?secret=s3cret")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"].get("send_blocked_daytime") == 1
+    assert body["unique_contacts"] == 1
+    assert body["events"][-1]["who"] == "ig:4242"
+
+
+# 10 — logging must never break a turn, even on bad input
+def test_10_night_log_never_raises():
+    webhook_app.NIGHT_LOG = None
+    webhook_app._night_event("weird", who=None, text=object())  # unserialisable
+    webhook_app._night_event("ok", who="ig:1", text="x" * 5000)
+    events = list(webhook_app.NIGHT_LOG)
+    assert len(events) == 2
+    assert events[-1]["text"].endswith("…"), "long text must be truncated"
