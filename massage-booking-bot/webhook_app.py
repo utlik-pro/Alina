@@ -158,6 +158,18 @@ async def _send_to_client(phone: str, text: str) -> bool:
     old behavior.
     """
     if _is_ig_key(phone):
+        # HARD DAYTIME SILENCE (owner rule, reinforced 2026-08-15 after a
+        # stale reply reached a client at 14:58). Every outbound path to an
+        # Instagram client — booking turns, reminders, alerts, resets — goes
+        # through here, so this single check makes a daytime send impossible
+        # regardless of which code path produced the text.
+        from agents.instagram_agent import ig_live_now
+
+        if not ig_live_now():
+            logger.warning(
+                f"IG send BLOCKED (outside live window) for {phone}: {text[:80]!r}"
+            )
+            return False
         from services.instagram_client import manychat_send_text
         return await manychat_send_text(phone[len(IG_KEY_PREFIX):], text)
     if wappi_client:
@@ -3117,9 +3129,12 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # "mc:" prefix keeps ManyChat histories separate from direct-IG senders.
     from agents.instagram_agent import SHADOW_SENTINEL, ig_live_now
-    if config.MANYCHAT_API_KEY and (
-        (config.IG_BOOKING_ENABLED and ig_live_now())
-        or _is_ig_test_subscriber(subscriber_id)
+    # The live window is now MANDATORY for everyone, testers included: the
+    # tester bypass existed to rehearse booking before the flag was on, and
+    # its only remaining effect was answering during the day (owner request
+    # 2026-08-15 — the client must see complete daytime silence).
+    if config.MANYCHAT_API_KEY and ig_live_now() and (
+        config.IG_BOOKING_ENABLED or _is_ig_test_subscriber(subscriber_id)
     ):
         # Variant A (full IG booking): live-window DMs run through the SAME
         # booking pipeline as WhatsApp — buffering, gates, YClients record —

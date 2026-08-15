@@ -29,8 +29,11 @@ async def test_send_router_routes_ig_to_manychat(monkeypatch):
         sent["mc"] = (subscriber_id, text)
         return True
 
+    from agents import instagram_agent
     from services import instagram_client
     monkeypatch.setattr(instagram_client, "manychat_send_text", fake_mc)
+    # routing is what's under test here — put the clock inside the live window
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
     ok = await _send_to_client("ig:555", "hello")
     assert ok is True
     assert sent["mc"] == ("555", "hello")  # prefix stripped
@@ -99,8 +102,16 @@ def test_manychat_bridge_routes_to_booking_pipeline(monkeypatch, tmp_path):
     assert routed["args"] == (f"{IG_KEY_PREFIX}77", "book me a massage", None)
 
 
+async def _noop_reply():
+    return "shadow text"
+
+
 def test_whitelisted_tester_books_at_any_hour(monkeypatch, tmp_path):
-    """IG_TEST_SUBSCRIBERS bypasses both the flag and the night window."""
+    """IG_TEST_SUBSCRIBERS bypasses the FLAG but no longer the window.
+
+    The daytime bypass was removed 2026-08-15 at the owner's request: the
+    client must see complete silence during the day, testers included.
+    """
     from fastapi.testclient import TestClient
     from agents import instagram_agent
 
@@ -108,7 +119,8 @@ def test_whitelisted_tester_books_at_any_hour(monkeypatch, tmp_path):
     monkeypatch.setattr(webhook_app.config, "IG_BOOKING_ENABLED", False)
     monkeypatch.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272, 111")
     monkeypatch.setattr(webhook_app.config, "MANYCHAT_API_KEY", "mc-key", raising=False)
-    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)  # daytime
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply",
+                        lambda *a, **kw: _noop_reply())
     routed = {}
 
     async def fake_buffer(phone, text, sender_name):
@@ -116,10 +128,21 @@ def test_whitelisted_tester_books_at_any_hour(monkeypatch, tmp_path):
 
     monkeypatch.setattr(webhook_app, "_buffer_and_process_wappi", fake_buffer)
     client = TestClient(webhook_app.app)
+
+    # daytime: the tester gets the sentinel and NO booking pipeline
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
     r = client.post("/webhook/manychat",
                     json={"subscriber_id": "868311272", "text": "test booking",
                           "secret": "s3cret"})
     assert r.status_code == 200
+    assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert "args" not in routed
+
+    # night: the tester runs the full booking pipeline even with the flag off
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    r = client.post("/webhook/manychat",
+                    json={"subscriber_id": "868311272", "text": "test booking",
+                          "secret": "s3cret"})
     assert r.json()["queued"] is True
     assert routed["args"][0] == "ig:868311272"
 

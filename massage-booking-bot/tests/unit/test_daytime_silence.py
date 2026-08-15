@@ -1,0 +1,130 @@
+"""Daytime silence: NOTHING may reach an Instagram client outside the window.
+
+The client (salon owner) demanded complete silence during the day after a
+stale reply reached a lead at 14:58 on 2026-08-15. These tests walk every
+outbound path that can end at an Instagram DM and assert it is blocked.
+"""
+
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+import webhook_app
+from agents import instagram_agent
+
+
+@pytest.fixture
+def daytime(monkeypatch):
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
+    return monkeypatch
+
+
+@pytest.fixture
+def nighttime(monkeypatch):
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    return monkeypatch
+
+
+# 1 — the shared router used by booking turns, reminders, alerts, resets
+def test_1_send_to_client_blocked_in_daytime(daytime):
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client("ig:868311272", "hello"))
+    assert ok is False
+    assert not send.called
+
+
+# 2 — the same router must still work at night
+def test_2_send_to_client_allowed_at_night(nighttime):
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client("ig:868311272", "hello"))
+    assert ok is True
+    assert send.called
+
+
+# 3 — WhatsApp clients are never affected by the IG window
+def test_3_whatsapp_send_unaffected_by_window(daytime):
+    fake = SimpleNamespace(send_message=AsyncMock(return_value=True))
+    with patch.object(webhook_app, "wappi_client", fake):
+        ok = asyncio.run(webhook_app._send_to_client("971501234567", "hi"))
+    assert ok is True
+    assert fake.send_message.called
+
+
+# 4 — lowest-level funnel blocks even if a caller forgets the window
+def test_4_manychat_send_text_blocks_itself_in_daytime(daytime):
+    from services.instagram_client import manychat_send_text
+
+    with patch("aiohttp.ClientSession") as session:
+        ok = asyncio.run(manychat_send_text("868311272", "hello"))
+    assert ok is False
+    assert not session.called, "no HTTP call may leave during the day"
+
+
+# 5 — a tester (whitelist) gets NO booking pipeline during the day
+def test_5_tester_gets_no_daytime_booking(daytime):
+    daytime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    daytime.setattr(webhook_app.config, "MANYCHAT_API_KEY", "key")
+    daytime.setattr(webhook_app.config, "IG_BOOKING_ENABLED", True)
+    daytime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272")
+    daytime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+
+    async def never(*a, **kw):
+        raise AssertionError("booking pipeline must not run during the day")
+
+    daytime.setattr(webhook_app, "_buffer_and_process_wappi", never)
+    daytime.setattr(instagram_agent, "generate_ig_reply",
+                    AsyncMock(return_value="would-be"))
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat",
+                    json={"secret": "s3cret", "subscriber_id": "868311272",
+                          "text": "book me today"})
+    assert r.status_code == 200
+    assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert r.json().get("shadow") is True
+
+
+# 6 — a normal client during the day: instant sentinel, no generation awaited
+def test_6_regular_client_daytime_is_instant_sentinel(daytime):
+    daytime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    daytime.setattr(webhook_app.config, "MANYCHAT_API_KEY", "key")
+    daytime.setattr(webhook_app.config, "IG_BOOKING_ENABLED", True)
+    daytime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "")
+    daytime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+
+    slow = AsyncMock(side_effect=lambda *a, **kw: asyncio.sleep(5))
+    daytime.setattr(instagram_agent, "generate_ig_reply", slow)
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat",
+                    json={"secret": "s3cret", "subscriber_id": "555", "text": "price?"})
+    assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert r.json()["shadow"] is True
+
+
+# 7 — unreadable media during the day must not trigger the nudge
+def test_7_media_nudge_silent_in_daytime(daytime, tmp_path):
+    daytime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    daytime.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    daytime.setattr("services.instagram_client.fetch_manychat_last_text",
+                    AsyncMock(return_value=""))
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat",
+                    json={"secret": "s3cret", "subscriber_id": "777", "text": ""})
+    body = r.json()
+    assert body["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert body.get("shadow") is True
+    assert webhook_app.IG_MEDIA_FALLBACK not in str(body)
+
+
+# 8 — a reminder for an IG client is blocked too (scheduler path)
+def test_8_reminder_to_ig_client_blocked_in_daytime(daytime):
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client(
+            "ig:99", "Reminder: your massage is tomorrow at 5 PM"))
+    assert ok is False
+    assert not send.called

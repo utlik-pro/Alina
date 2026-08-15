@@ -132,6 +132,18 @@ async def manychat_send_text(subscriber_id: str, text: str) -> bool:
     Request bridge ACKs instantly and the real reply goes out through this
     call, so long YClients/LLM turns can't hit ManyChat's request timeout.
     """
+    # Second, lowest-level daytime guard. _send_to_client already checks the
+    # window, but this is the single funnel every ManyChat delivery passes
+    # through — so no future code path can accidentally break the silence
+    # the client demanded (owner request 2026-08-15).
+    from agents.instagram_agent import ig_live_now
+
+    if not ig_live_now():
+        logger.warning(
+            f"ManyChat send BLOCKED (outside live window) to {subscriber_id}: "
+            f"{text[:80]!r}"
+        )
+        return False
     key = config.MANYCHAT_API_KEY
     if not key:
         logger.info(f"[MC dev] would send to {subscriber_id}: {text[:120]}")
