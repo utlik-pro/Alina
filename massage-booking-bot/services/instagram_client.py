@@ -157,7 +157,18 @@ async def manychat_send_text(subscriber_id: str, text: str) -> bool:
             ) as resp:
                 body = await resp.text()
                 if resp.status >= 400 or '"status":"error"' in body.replace(" ", ""):
-                    logger.error(f"ManyChat send failed {resp.status} for {subscriber_id}: {body[:300]}")
+                    # 3031 = Meta's 24h messaging window is closed (the client
+                    # hasn't written for over a day). Not a fault of ours — it
+                    # must be distinguishable from a real breakage at 3am.
+                    if '"code":3031' in body.replace(" ", ""):
+                        logger.warning(
+                            f"ManyChat 24h window CLOSED for {subscriber_id} — "
+                            f"reply not delivered (client silent >24h)"
+                        )
+                    else:
+                        logger.error(
+                            f"ManyChat send failed {resp.status} for {subscriber_id}: {body[:300]}"
+                        )
                     return False
                 return True
     except Exception as e:
