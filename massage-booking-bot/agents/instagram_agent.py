@@ -20,6 +20,7 @@ Design constraints:
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
@@ -97,6 +98,34 @@ def log_ig_turn(channel: str, sender_id: str, text: str, reply: str, live: bool)
     except Exception as e:
         logger.error(f"IG turn log failed: {e}")
 
+_WA_LINK_RE = re.compile(r"https?://wa\.me/\S+")
+_ASKS_FOR_LINK_RE = re.compile(r"link|whats\s?app|contact|number", re.IGNORECASE)
+
+
+def _dedupe_wa_link(answer: str, history, client_text: str) -> str:
+    """Strip a repeated wa.me link from a consult reply.
+
+    Live finding 2026-08-15 (jwrrrrrry dialogue): the model appended the
+    link to all four replies in a row despite the once-per-conversation
+    prompt rule. Prompt rules bend; this doesn't. The link stays when it's
+    the first one in the conversation or the client explicitly asked for
+    the link/contact again.
+    """
+    if not _WA_LINK_RE.search(answer):
+        return answer
+    sent_before = any(
+        m["role"] == "assistant" and _WA_LINK_RE.search(m["content"])
+        for m in history
+    )
+    if not sent_before or _ASKS_FOR_LINK_RE.search(client_text):
+        return answer
+    stripped = _WA_LINK_RE.sub("", answer)
+    stripped = "\n".join(
+        line.rstrip() for line in stripped.splitlines() if line.strip()
+    )
+    return stripped.strip() or answer
+
+
 _histories: Dict[str, Deque[dict]] = {}
 _seen_mids: Deque[str] = deque(maxlen=500)
 _seen_mids_set: set = set()
@@ -157,8 +186,11 @@ HARD RULES:
 - CONVERSATION OVER PRICE-DUMP: on a broad opener ("consult on a massage and make an appointment", "hello") reply with a SHORT warm greeting, ONE selling line ("We come to your home — free transportation, top Russian therapists 🌹"), and ONE clarifying question (body massage or facial?) — no price list, no link yet. Quote prices only for the service the client actually asked about, 1–3 lines max.
 - Lead with the RELEVANT CHEAPEST option: cupping questions → the 275 AED lymphatic+cupping+head spa offer FIRST (that IS the cupping ad); mention full body massage prices only if they ask. Never open with a bigger number when a fitting offer exists.
 - CLOSE WITH A QUESTION, not a link: end consult replies with a light CTA — "Would you like to book? 😊" — and only when they say yes, send the WhatsApp link (or proceed to booking when booking is enabled). A message that ends with a question keeps the conversation alive; a bare link ends it.
+- NEVER repeat the WhatsApp link once it already appears earlier in this conversation — after that, refer to it in words ("message us on WhatsApp above 😊") unless the client explicitly asks for the link again.
 - Show prices as plain numbers: "350 AED". Never show VAT calculations in a price quote.
-- If asked how to pay: cash — tax free; bank transfer +5% VAT; payment AFTER the service. Do not bring payment up yourself.
+- If asked how to pay: cash — tax free; bank transfer +5% VAT; payment AFTER the service. Do not bring payment up yourself. If asked "can I pay by card?" — answer simply and positively: yes, we have a card machine (available on request).
+- PREGNANCY: if the client says she is pregnant — reassure her: our therapists have medical education, we offer prenatal massage, 350 AED for 60 min. Do not refuse, do not lecture about risks — reassure and continue toward booking (admin-team practice).
+- "WHERE IS YOUR STUDIO/SALON?": our Abu Dhabi studio (Al Raha) is temporarily closed for maintenance — we come to the client's home, villa or hotel, transportation is free. Never invent a walk-in address.
 - Sessions start between 10:00 AM and 9:00 PM (12-hour times only).
 - Service areas: Abu Dhabi, Al Ain and Dubai ONLY. Nails and lash extensions — Abu Dhabi only. If the client is outside these areas, say so honestly — never improvise coverage.
 - LANGUAGE: reply in English by default. If the client clearly can't follow English (says so directly, asks for another language, or keeps writing only in their language) — switch to their language and continue in it. A single greeting like "Привет" is NOT a reason to switch.
@@ -211,6 +243,7 @@ async def generate_ig_reply(sender_id: str, text: str) -> str:
         return fallback
     if not answer:
         return fallback
+    answer = _dedupe_wa_link(answer, history, text)
     if len(answer) > IG_TEXT_LIMIT:
         answer = answer[: IG_TEXT_LIMIT - 1].rstrip() + "…"
     history.append({"role": "assistant", "content": answer})

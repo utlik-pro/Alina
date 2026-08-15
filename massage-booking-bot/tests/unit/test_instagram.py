@@ -384,3 +384,39 @@ def test_manychat_endpoint_shadow_outside_window(monkeypatch, tmp_path):
     assert "content" not in body
     # The would-be reply is still logged for QA
     assert "would-be answer" in (tmp_path / "t.jsonl").read_text()
+
+
+def test_wa_link_dedupe_strips_repeat_keeps_first():
+    from agents import instagram_agent
+    """jwrrrrrry live case: link must survive once, vanish on repeats."""
+    link = "https://wa.me/971551933662?text=Hi"
+    first = f"Prices are 350 AED 🌹\n{link}"
+    # No prior link in history → untouched
+    assert instagram_agent._dedupe_wa_link(first, [], "how much?") == first
+    history = [
+        {"role": "user", "content": "how much?"},
+        {"role": "assistant", "content": first},
+        {"role": "user", "content": "are you here?"},
+    ]
+    repeat = f"Yes, we're here 😊\n{link}"
+    out = instagram_agent._dedupe_wa_link(repeat, history, "are you here?")
+    assert "wa.me" not in out
+    assert "Yes, we're here" in out
+
+
+def test_wa_link_dedupe_respects_explicit_ask():
+    from agents import instagram_agent
+    link = "https://wa.me/971551933662?text=Hi"
+    history = [{"role": "assistant", "content": f"here 🌹\n{link}"}]
+    out = instagram_agent._dedupe_wa_link(
+        f"Sure 😊\n{link}", history, "can you send the whatsapp link again?"
+    )
+    assert "wa.me" in out
+
+
+def test_wa_link_dedupe_never_returns_empty():
+    from agents import instagram_agent
+    link = "https://wa.me/971551933662"
+    history = [{"role": "assistant", "content": f"hi\n{link}"}]
+    # Reply that is ONLY the link → better to repeat than send nothing
+    assert instagram_agent._dedupe_wa_link(link, history, "ok") == link

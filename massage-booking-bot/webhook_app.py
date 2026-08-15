@@ -134,7 +134,15 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "Tomorrow our administrator will contact you to confirm the "
         "details 🌹'\n"
         "- Do NOT send wa.me links in this conversation — the whole "
-        "booking happens right here in Instagram."
+        "booking happens right here in Instagram.\n"
+        "- PREGNANCY: if the client says she is pregnant — reassure her: "
+        "our therapists have medical education, we offer prenatal "
+        "massage (350 AED / 60 min); do not refuse, continue to booking.\n"
+        "- 'Where is your studio?': the Abu Dhabi studio (Al Raha) is "
+        "temporarily closed for maintenance — we come to the client's "
+        "home, villa or hotel, transportation is free.\n"
+        "- 'Can I pay by card?': yes — we have a card machine (on "
+        "request); cash is tax free, bank transfer +5% VAT."
     )
 
 
