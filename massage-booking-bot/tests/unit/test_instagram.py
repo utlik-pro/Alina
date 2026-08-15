@@ -420,3 +420,39 @@ def test_wa_link_dedupe_never_returns_empty():
     history = [{"role": "assistant", "content": f"hi\n{link}"}]
     # Reply that is ONLY the link → better to repeat than send nothing
     assert instagram_agent._dedupe_wa_link(link, history, "ok") == link
+
+
+def test_shadow_turn_acks_without_waiting_for_the_llm(monkeypatch, tmp_path):
+    """Outside the window the webhook must answer instantly.
+
+    Live incident 2026-08-15: the shadow branch awaited the LLM, ManyChat's
+    External Request timed out, the $.reply mapping never ran and the flow
+    sent the PREVIOUS NIGHT's ai_reply to a daytime client.
+    """
+    import asyncio
+
+    from fastapi.testclient import TestClient
+
+    import webhook_app
+    from agents import instagram_agent
+
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setattr(webhook_app.config, "MANYCHAT_API_KEY", None)
+    monkeypatch.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+    monkeypatch.setattr(instagram_agent, "IG_TURNS_LOG", tmp_path / "t.jsonl")
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
+
+    called = {"llm": False}
+
+    async def slow_reply(sender_id, text):
+        await asyncio.sleep(2)  # stands in for a slow LLM turn
+        called["llm"] = True
+        return "late answer"
+
+    monkeypatch.setattr(instagram_agent, "generate_ig_reply", slow_reply)
+    client = TestClient(webhook_app.app)
+    r = client.post("/webhook/manychat",
+                    json={"secret": "s3cret", "subscriber_id": "9", "text": "hi"})
+    assert r.status_code == 200
+    assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert r.json()["shadow"] is True

@@ -2987,6 +2987,22 @@ IG_MEDIA_FALLBACK = (
 )
 
 
+async def _manychat_shadow_log(subscriber_id: str, text: str) -> None:
+    """Generate the would-be reply for QA AFTER the webhook has answered.
+
+    Shadow turns must never make ManyChat wait: a slow response there means
+    no field mapping, which means the flow falls through to whatever
+    ai_reply still held — a stale reply from the previous night.
+    """
+    from agents.instagram_agent import generate_ig_reply, log_ig_turn
+
+    try:
+        reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
+        log_ig_turn("manychat", subscriber_id, text, reply, False)
+    except Exception as e:
+        logger.error(f"IG shadow log failed for {subscriber_id}: {e}")
+
+
 async def _manychat_async_turn(subscriber_id: str, text: str) -> None:
     """Full IG turn in the background: generate → (live?) send via ManyChat API.
 
@@ -3081,15 +3097,22 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         # The sentinel keeps the flow's Condition from sending anything.
         background_tasks.add_task(_manychat_async_turn, subscriber_id, text)
         return {"reply": SHADOW_SENTINEL, "queued": True}
-    reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
     live = ig_live_now()
+    if not live:
+        # Outside the window: ACK INSTANTLY. Waiting for the LLM here used to
+        # blow ManyChat's External Request timeout — the mapping then never
+        # ran, ai_reply kept LAST NIGHT's answer, and the flow's Condition
+        # happily sent that stale text to a daytime client (live incident
+        # 2026-08-15, Anum ishtiaq got a 15h-old reply at 14:58). The QA
+        # generation now happens in the background, after the response.
+        background_tasks.add_task(_manychat_shadow_log, subscriber_id, text)
+        return {"reply": SHADOW_SENTINEL, "shadow": True}
+    reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
     log_ig_turn("manychat", subscriber_id, text, reply, live)
     # Mapping-only contract: the flow maps $.reply → ai_reply and a Condition
     # node drops the shadow sentinel (ManyChat's mapper rejects empty strings,
     # and returning v2 dynamic content could double-send if ManyChat renders
     # it — so the response carries ONLY the reply field).
-    if not live:
-        return {"reply": SHADOW_SENTINEL, "shadow": True}
     return {"reply": reply}
 
 
