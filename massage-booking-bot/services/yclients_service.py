@@ -41,6 +41,11 @@ STAFF_NAMES_RU_EN = {
     "Светлана": "Svetlana",
     "Сафина": "Safina",
     "Ольга": "Olga",
+    # Added 2026-08-15 — these reached a client's screen in Cyrillic in the
+    # prod slot summary ("Бота: 4:00 PM"), which reads as broken to a UAE
+    # client. Any new therapist must be added here too.
+    "Бота": "Bota",
+    "Нина": "Nina",
 }
 
 
