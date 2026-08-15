@@ -56,13 +56,354 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   connected through ManyChat, ManyChat owns the Meta webhook — do NOT also
   subscribe our direct `/webhook/instagram` app to the same account (double
   replies); the direct path stays as the no-ManyChat fallback. Needs
-  ManyChat paid tier with External Request (Pro $29/mo; verify if Essential
-  $14 has it) + `MANYCHAT_WEBHOOK_SECRET` in Render env.
-- 🧠 **IG/ManyChat model = `gpt-5.6-sol`** via `IG_OPENAI_MODEL` (config
-  default; owner pick 2026-08-09; live smoke-tested ~3s/reply, ≈1.5¢/reply
-  at $5/$30 per 1M). **WhatsApp agent STAYS on gpt-5.4** (bake-off-proven) —
-  do not switch it without a new bake-off. Cheaper tiers if needed:
-  gpt-5.6-terra $2/$12, gpt-5.6-luna $0.20/$1.20.
+  ManyChat paid tier with External Request (Pro $29/mo — confirmed via the
+  full plan-comparison table: API access is Pro+, Essential has only Google
+  Sheets) + `MANYCHAT_WEBHOOK_SECRET` in Render env.
+- ✅ **ManyChat side CONFIGURED & LIVE (2026-08-09, done via user's Chrome):**
+  account fb5409282 (IG CRYSTAL connected, Pro TRIAL), automation
+  "Instagram Default Reply": trigger User-sends-DM (every time, enabled) →
+  External Request POST prod `/webhook/manychat` (auth = `"secret"` INSIDE
+  the body JSON: `{"secret":"<MANYCHAT_WEBHOOK_SECRET>","subscriber_id":
+  "{{Contact Id}}","text":"{{Last Text Input}}"}`, mapping `$.reply`→user
+  field `ai_reply`) → **Condition `ai_reply isn't [SHADOW]`** → yes: message
+  node sends `{{ai_reply}}`; no: flow ends silently. Bridge response is
+  mapping-only `{"reply": ...}` (no v2 content — avoids double-render);
+  shadow returns the `[SHADOW]` sentinel because ManyChat's mapper errors
+  on empty strings ("Invalid value type in json path"). E2E verified 2026-08-11.
+- 📋 **TATYANA'S RULES for the IG track (2026-07-28 thread, relayed
+  2026-08-14 — client-confirmed, authoritative):**
+  1. **Variant A confirmed: FULL booking inside Instagram Direct** — the
+     phone number is collected as a data field (for the YClients record +
+     morning follow-up), NOT to push the client to WhatsApp.
+  2. Booking closing line (verbatim template): «Ваша запись сделана
+     (краткая информация какая). Завтра с вами свяжется администратор и
+     подтвердит запись.» Record is created in YClients marked as night/IG;
+     admins confirm by phone in the morning (Tatyana calls clients herself).
+  3. **Live window 21:00→08:00 Minsk** (= 22:00→09:00 Abu Dhabi; Tatyana
+     still watches 21:00–23:00). Fixed in config default (0acd1b5).
+     🔇 **ABSOLUTE DAYTIME SILENCE (fd043ea, owner demand 2026-08-15 after a
+     stale reply reached a lead at 14:58).** Outside the window NOTHING may
+     reach an IG client — consult replies, booking turns, confirmations,
+     media nudges, **and appointment reminders** (owner: "напоминания
+     оставь как есть — не напоминать, мы работаем с 21-8"). Enforced by
+     FOUR independent guards; do NOT "fix" any of them back:
+       a) routing in `/webhook/manychat` — window is mandatory, and the
+          IG_TEST_SUBSCRIBERS whitelist NO LONGER bypasses it (it only
+          bypasses IG_BOOKING_ENABLED, i.e. lets a tester rehearse booking
+          at night while the flag is off);
+       b) `_send_to_client()` refuses any `ig:` send outside the window —
+          all 17 outbound call sites (incl. ReminderScheduler) funnel here;
+       c) `manychat_send_text()` refuses at transport level;
+       d) ManyChat flow itself: action **Set ai_reply = [SHADOW] BEFORE**
+          the External Request (order matters — after it would erase the
+          real night answer and mute the channel). Added manually in the
+          ManyChat editor 2026-08-15; if the flow is ever rebuilt, restore
+          this step first.
+     Regression suite: `tests/unit/test_daytime_silence.py` (8 paths).
+     Known accepted consequence: a dialogue still open at 08:00 gets no
+     further replies, and IG clients get no reminders at all.
+  3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
+     log stream needs a CLI token that died 2026-06-16, and
+     `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
+     outside-readable trail is the in-memory ring (1000 events) served by
+     `GET /admin/night-log?secret=$MANYCHAT_WEBHOOK_SECRET`. Morning retro:
+     `python3.11 scripts/night_report.py` (add `--full` for every event).
+     It prints contacts, per-kind counts, every booking with its YClients
+     record id, all failures, and WHO WROTE BUT GOT NO REPLY. Events:
+     inbound / routed_to_booking / sent / send_failed /
+     send_blocked_daytime / booking_created. ⚠️ The ring is memory-only —
+     a redeploy or restart wipes it, so pull the report BEFORE deploying
+     anything in the morning.
+  3e. **NAILS HAVE NO STAFF (observed 2026-08-15).** YClients lists 8
+     massage therapists + 1 lash-maker (Бота) + a service "ЛИСТ ОЖИДАНИЯ"
+     record — and NO nail tech at all (Elena/Safina are gone), while the
+     price list still carries 35 nail/lash services and the welcome texts
+     promise "Manicure and pedicure". A nails request therefore returns no
+     availability. Owner decision: **leave the greetings as they are, just
+     offer whatever is free — the admins will sort it out.** Do NOT edit
+     the welcome/reset copy for this.
+  3d. **CLOCKS — two different ones, on purpose (owner confirmed
+     2026-08-15).** Everything the CLIENT experiences is UAE time: slot
+     computation, quoted times, the YClients record, the local booking row,
+     admin/driver alerts, the night log. The record is sent as
+     `<date>T<UAE wall-clock>+03:00` because the YClients account is
+     configured in UTC+3 while the salon types Abu-Dhabi wall-clock against
+     it — verified against live records (2026-08-16T15:30:00+03:00 IS 15:30
+     in the salon's calendar). Do NOT "fix" this into a real timezone
+     conversion; that would move every night booking by an hour.
+     The SHIFT WINDOW alone stays in Minsk time (21:00–08:00 Europe/Minsk =
+     22:00–09:00 UAE) — owner declined switching it to UAE. Practical note:
+     the "book for tomorrow → book for today" flip happens at 23:00 Minsk,
+     because that is midnight in Abu Dhabi.
+  3b. **HUMAN WINS THE CHAT (owner decision 2026-08-15).** If an admin has
+     answered in a conversation, the agent does not butt in — the admin
+     owns that dialogue. Implemented WITHOUT code, via ManyChat:
+     Settings → Inbox Behavior → "Pause automations during conversations"
+     = **3 hours** (was 30 min). Any reply an Inbox Agent sends pauses all
+     automations for that contact, so our flow isn't even triggered; after
+     3h of admin silence the agent picks the conversation back up. 3h was
+     chosen because the admins' own follow-up cycle is ~2.5h (Fatima Tami
+     15.08: 10:37 template → 13:12 "should we book?"), and it lines up with
+     Tatyana watching until 23:00 while the night shift runs to 08:00.
+     ⚠️ LIMITATION: the pause triggers on replies sent through the ManyChat
+     Inbox. If an admin answers from the Instagram app directly, ManyChat
+     may not register it as an agent reply and the pause may not fire —
+     watch the first nights for a doubled reply and, if it happens, ask the
+     team to answer from ManyChat (or add a tag-based guard).
+  4. Lead alerts → the SAME group as WhatsApp leads (Crystal Lab - Leads).
+  5. **Ad prefill texts (9)** identify service intent + emirate — do NOT
+     re-ask the emirate: "I would like to consult on a massage and make an
+     appointment in {Dubai|Abu Dhabi|Al Ain}" (тело/лицо); "Hello i would
+     like to sign up for a massage package in {emirate} at a discount"
+     (пакеты/«банки»); "Hello i would like to sign up for the summer
+     promotion in {emirate}". Packages remain API-walled → package leads =
+     collect contact + team-mediated handoff, no package prices from agent.
+  6. **Pricing: NO discounts on manicure & lamination** («этих офферов
+     НЕТ») — cancelled winter offers removed from prices.py (d0157e3);
+     regular catalog prices apply.
+     ⚠️ **PACKAGE PRICES (prices.PACKAGES: 5×60 1550 / 10×60 3000 / 6×90
+     2590 / 5×face 1650 / 5×b+f 2200) are UNVERIFIED legacy data** — the
+     client never confirmed them. Tatyana complained 2026-08-15 when the
+     IG agent quoted them to a cupping-ad lead (they'd crept into the IG
+     prompt via format_special_offers_for_prompt's package tail). Fixed
+     (cca6747): include_packages=False for IG — the IG agent NEVER quotes
+     course prices; "massage package at a discount" prefill → present the
+     275 cupping combo + "courses are arranged personally by the team".
+     WhatsApp prompt still carries the package list — awaiting the
+     client's confirm/refresh; drop it there too if they disown it.
+  6d. **Admin-practice facts + link dedupe (f2255d5, full-inbox read
+     2026-08-15, ~82 chats / 15 full dialogues):**
+     - PREGNANCY (Amira case): reassure — therapists with medical
+       education, prenatal massage 350 AED/60 min; never refuse.
+     - "Where is your studio?" (Sam Sam case): Abu Dhabi studio (Al
+       Raha) temporarily closed for maintenance → home service, free
+       transportation. Never invent a walk-in address.
+     - "Can I pay by card?" (Viola case): simple "yes, we have a card
+       machine" (terminal-on-request rule unchanged).
+     - wa.me link is CODE-deduped (jwrrrrrry glued it to 4 replies):
+       survives once per conversation, repeats stripped unless the
+       client explicitly asks for the link again.
+     - PRENATAL precisely: available AFTER 4 MONTHS of pregnancy (admin
+       body-offer card «Prenatal after 4 months»); postpartum and
+       after-surgery massage exist. All therapists = Russian certified
+       FEMALE specialists (6160205 added both to the prompts).
+     - Admin OFFER CARDS (their ready answers to "how much"): Body —
+       350/60min + package 5×1550 + technique list (lymphatic,
+       maderatherapie, anti-cellulite, postpartum, mixed, guasha, deep
+       tissue, prenatal 4m+, aftersurgery); Face — «old 550 → NOW 370»
+       + package 5×1650 + techniques (lifting drainage, buccal,
+       myofascial non-surgical lift, signature mix — 50 min each).
+       ⚠️ Face card + welcome say «Abu Dhabi and Alain» only, NO Dubai —
+       ask Tatyana whether face works in Dubai (agent currently quotes
+       face in all 3 emirates).
+     - Admins also mass-broadcast copy-paste re-engagement to the whole
+       subscriber base (2 waves 12.08, ~25 msgs, ≈0 replies) — dead
+       instrument, do NOT replicate.
+     - **COMBO 275 = 60 MIN, not 45** (admins' own breakdown to Anum
+       ishtiaq 15.08: lymphatic body 30 + cupping 15 + head 15). The ad
+       creative says 45 — the admins sell 60. prices.py fixed (4cd593f);
+       matters because the slot must fit the WHOLE session.
+     - Arabic openers («مرحبا / ممكن احجز جلسة») are answered by admins in
+       ENGLISH and the client keeps going in English and leaves a phone —
+       supports our English-by-default policy (no auto-switch on a lone
+       foreign greeting).
+     - The number admins hand out in IG = 971551933662 = our
+       WHATSAPP_CTA_NUMBER. Funnel is consistent; don't "fix" it.
+     - Dead-end pattern to NEVER copy: «Our administrator will write to
+       you in WhatsApp» sent WITHOUT asking for the number (sireenoo,
+       Siobhán Forde, Gayatri — 3 cases in 4 days). The agent must always
+       secure the contact before promising a handoff.
+     - Clients DO give phones in Direct: 8 numbers in 4 days — collecting
+       the contact inside Instagram is proven, no need to push to WA
+       first.
+     - ✅ PACKAGES RESOLVED by evidence (9f0b942), no Tatyana ping needed.
+       The admins' rule, copied exactly: on the AD PREFILL "massage
+       package at a discount" they NEVER quote course prices (template +
+       ask for the number) — the prefill belongs to the cupping creative,
+       so the agent answers 275. On a DIRECT client question ("do you
+       have packages?") they DO quote, daily: 5×body 60min = 1550,
+       5×face 50min = 1650 (hk.xx7 15.08, um mahra, محمد احمد, Hendaq).
+       Agent now mirrors this. The other three legacy figures (10×60
+       3000, 6×90 2590, 5×body+facial 2200) stay BANNED — no admin has
+       ever used them; they are what Tatyana actually saw dumped on the
+       cupping lead. Her complaint = the 5-line dump on a prefill, NOT
+       course prices as such.
+     - Admin follow-up pattern the agent LACKS: silent lead → "Hi. Can
+       you update us? We have available slots for tomorrow. Should we
+       book for you?" ~2.5h later; rejection → "Have a nice day dear ❤️".
+     - Agent/admin overlap 21:00–23:00 is REAL and harmful: Diya case —
+       agent answered price perfectly at 22:42, admin dumped the
+       template on top, morning double push-up → "Sorry, will not be
+       booking". Needs an owner decision (admins off at 21:00 or flag
+       agent-handled chats).
+  6c. **Admin-style consult flow (f36d45e, from 19 real dialogues):** broad
+     prefill → greeting + ONE selling line («We come to your home — free
+     transportation, top Russian therapists») + ONE clarifying question;
+     quote only the asked service, offer-first; END WITH "Would you like
+     to book?" — the wa.me link goes out ONLY after a yes (a question
+     keeps the dialogue alive, a bare link kills it). Admin skeleton
+     copied, their flaws dropped (they never answer the actual question,
+     promise "slots today/tomorrow" without checking, and lose collected
+     numbers — Meem/Su Guer cases).
+  6b. **IG reply STYLE rules (Tatyana complaints 2026-08-15/16, f711a38):**
+     broad ad opener → short greeting + ONE clarifying question (body or
+     facial? — the "consult and make an appointment" prefill is SHARED by
+     both campaigns, the ad creative is invisible to us), NO price dump;
+     quote only the asked service (1–3 lines); cupping questions → lead
+     with the 275 combo, not the 350 body price; wa.me link only on
+     booking intent, max once per conversation, alone on the last line. ⚠️ Full CURRENT offer list (incl. what
+     "summer promotion" contains) still needed from the client — Tatyana's
+     price photos did not reach us.
+  7. The July "Meta app access" request is OBSOLETE — the ManyChat path
+     (authorized by Tatyana) replaced the direct Meta app.
+  8. **Current prices confirmed 2026-08-14** (Tatyana's price cards): body
+     350 / face 370 / deep cleansing 420 / lashes-brows unchanged; PMU new
+     1000 (lips/brows/eyeliner), corrections 500, lashliner 800/400,
+     recovery 1200; waxing eyebrow 80, zones 50, full face 200, brow
+     shaping 80 — prices.py updated (07fb431). **«Банки 275» SOLVED
+     (2026-08-14, ad creatives):** it's the 4th advertised offer —
+     lymphatic drainage + cupping + head spa, 45 min, 275 AED (was 430).
+     **The FOUR live ad creatives** (SPECIAL_OFFERS, 61894ab): deep
+     cleansing 420 (was 770) · body 60' 350 (was 500) · face 50' 370
+     (was 550) · lymph+cupping+headspa 45' 275 (was 430). Stale
+     winter_body_combo removed; trial_session (350/80min) & book-a-friend
+     kept (not cancelled). IG consult prompt now includes the offers +
+     ad-prefill note (emirate from the ad text — never re-ask).
+  9. **No nail master at the moment** (Tatyana 2026-08-14): nail catalog
+     prices are correct and quotable, but nail bookings can't be fulfilled
+     right now — YClients will simply show no nail slots (fails honest);
+     do NOT hardcode "no master" into prompts, it will rot when hiring.
+- 🌙 **First night (11→12 Aug): agent LIVE 21:00→09:00 worked.** 2 clean live
+  consults (exact prices + wa.me link + context across turns: Vishnu Priya
+  21:06, Jess Ann Joseph 22:04); shadow correctly silent before/after the
+  window (lizaxjones 09:13 → [SHADOW], no send). **1 bug found+fixed:**
+  a 3-line client message broke ManyChat's body template ("Invalid payload
+  json" ~08:50, client joja got no reply) → fix deployed (330b441):
+  endpoint pulls last_input_text via ManyChat API when the payload has no
+  text. ✅ ACTIVATED 2026-08-12: `MANYCHAT_API_KEY` in Render env, flow body
+  switched to ids-only `{"secret":"...","subscriber_id":"{{Contact Id}}"}` —
+  raw client text never rides the body template anymore. Also 2026-08-12:
+  wa.me link slimmed (static prefill only, link on its own last line —
+  owner feedback: URL-encoded client question looked monstrous in IG).
+  ✋ **OWNER DECISION 2026-08-12: WHATSAPP_CTA_NUMBER stays = 971551933662
+  (live admins' number) — deliberately.** IG leads go to HUMAN admins in
+  WhatsApp who book manually; the IG agent consults + funnels only. Do NOT
+  "fix" this to the Wappi agent number without a new owner decision (the
+  option is known: switching the env var would make the booking agent
+  handle IG leads end-to-end).
+  Admin night style observed: humans write "Our administrator wrote to you
+  in WhatsApp" / "Dear check please WhatsApp" — don't confuse with agent
+  output when auditing (agent replies always carry prices/wa.me per prompt).
+  ⚠️ ManyChat editor gotchas (live-fought 2026-08-11): (1) **header VALUES
+  silently never persist** (key does; value field = token-input that drops
+  uncommitted text) → auth secret lives in the request BODY
+  (`{"secret": ...}`; endpoint also accepts ?secret= and the header —
+  commit 68bbc72). (2) **Inserting text next to a variable chip hijacks
+  typing into the chip's "Variable Type" editor** and everything vanishes
+  on save — to edit the body, RETYPE THE WHOLE LINE from scratch (cmd+a →
+  type → chips via "{+} Add a Field" → Save immediately, no tab switches);
+  verify by reopening the dialog (body IS shown on reopen, headers aren't).
+  (3) Escape closes the whole dialog, not the popup. (4) External Request
+  worked fine on the TRIAL Pro (docs said it might be blocked — it wasn't;
+  the "Forbidden" in Settings→Logs was OUR 403 from the empty header).
+  (5) IG track LIVE window = 21:00→09:00 Europe/Minsk (`IG_ACTIVE_*`),
+  otherwise SHADOW: reply generated + logged ([IG-SHADOW] in Render logs +
+  logs/ig_turns.jsonl, ephemeral), nothing sent — bridge returns empty
+  messages. Render env has `MANYCHAT_WEBHOOK_SECRET` + `WHATSAPP_CTA_NUMBER`
+  (added by user 2026-08-11). E2E verified: real DM → trigger fired →
+  request hit prod (first with 403 → fixed via body secret → 200 shadow).
+  ⚠️ Render CLI log stream died AGAIN 2026-08-11 (AUTH DEAD, token rot) —
+  ig_turns visibility on prod needs the token refreshed or /admin/logs.
+- 🚧 **IG BOOKING (variant A) — IN PROGRESS since 2026-08-14.** Stage 0
+  DONE (728ca6e): `manychat_send_text()` via Sending API + async bridge
+  path behind `IG_ASYNC_SEND`; media/voice DMs get a "type it as text"
+  nudge. **Stage 1 DONE (8affec4): ig:<subscriber> identities flow through
+  the ENTIRE WhatsApp booking pipeline** — same buffering/locks/context/
+  gates/YClients/alerts, zero forked logic. Seams: `_send_to_client()`
+  channel router (ig:→ManyChat Sending API, numbers→Wappi, 15 call sites);
+  `ig_<id>` telegram_id (scheduler phone-derivations safely yield None);
+  **PHONE GATE** (IG-only): reply override asks for the number after
+  loc/name and before confirm + binding ≥9-digit record block in
+  `_maybe_create_booking`; the ig-key NEVER leaks into YClients/clients.
+  phone — only booking_call.client_phone; YClients comment = "Instagram
+  agent booking (night) + Phone"; IG prompt brief (collect phone, close
+  with Tatyana's template, no wa.me in booking channel). Bridge routes to
+  booking ONLY when `IG_BOOKING_ENABLED` && live window; day = consult/
+  shadow as before. BOTH FLAGS OFF — prod unchanged. **Stage-3 sims DONE
+  2026-08-14 (42c3ad0):** sim_conversation grew `"channel": "instagram"`
+  (shared `_ig_channel_brief()` — one source with prod); two gpt-5.4 runs
+  against live YClients passed: ad-prefill path (emirate not re-asked,
+  real per-master slots incl. the Dubai floater, phone asked before
+  payment) and the gate path ("yes, confirm" with no number → phone
+  question, record only after the number). `IG_TEST_SUBSCRIBERS` env (csv
+  of ManyChat ids) = tester whitelist: full booking pipeline at ANY hour,
+  YClients records forced [TEST]. Live E2E via Dmitry's IG (subscriber
+  868311272): add IG_TEST_SUBSCRIBERS=868311272 to Render env; the first
+  live reply also verifies manychat_send_text (Sending API) for real.
+  Watch in live test: Tatyana's closing template after the record (sim
+  couldn't verify it — duplicate-suppress kicked in) and the weak
+  greeting-only first turn. Model = the WA booking_agent's (gpt-5.4).
+  Packages still blocked on the loyalty-scope YClients token; comment-to-DM
+  = ManyChat built-in trigger (needs client's keywords/posts).
+- ✅ **IG BOOKING PROVEN LIVE END-TO-END (2026-08-15, 23:00 Abu Dhabi,
+  record #1908955686).** Driven from Dmitry's own Instagram through the whole
+  flow: ad prefill → one clarifying question (body/face) → duration → real
+  slots → typed address + name → payment → **phone gate** → explicit confirm →
+  YClients record. Verified against the live calendar: `2026-08-22T19:00+03:00`
+  (UAE wall-clock per the clock rule), 3600 s, Makhabat (Abu Dhabi), client
+  phone from the dialogue (the `ig:` key never leaked), comment `[TEST]
+  Instagram agent booking (night) #20 … Area … Address`, and Tatyana's closing
+  template. Slots were re-checked against YClients afterwards — every time the
+  agent offered was genuinely free. `IG_BOOKING_ENABLED=true` is now set
+  GLOBALLY in Render (not just for the tester whitelist).
+  **Four defects the run exposed, all fixed in `1f8d609`:**
+  1. 💵 **Payment terms silently disappeared.** The brevity rules stripped
+     "(tax free)"/"(+5% VAT)" off the menu, the model's own recap quoted a bare
+     "350 AED" for a bank-transfer booking, and the confirmation then said
+     "368 AED" (`base * 1.05`) — the client agreed to one number and was
+     confirmed at another, and the VAT arithmetic is explicitly forbidden by
+     the prompt itself. Now CODE-enforced (`_enforce_payment_terms`, applied to
+     every outgoing reply): a bare menu line regains its label; once the client
+     has chosen a method every later price carries that footnote; prices quoted
+     BEFORE the choice stay clean (consult phase). The confirmation quotes the
+     BASE price. Sticky `booking_data["payment_method"]`. Tests:
+     `tests/unit/test_payment_terms.py`.
+  2. 📞 **The morning caller was blind to the payment method** — it never
+     reached the YClients comment, though the admin phones the client to
+     confirm and cash vs transfer differ by 5%. Now `Payment: …` is in the
+     comment (both channels).
+  3. 📍 **"Share your location 📍" is a dead end in Instagram** — an attachment
+     never reaches the bridge (ManyChat passes text), so a pin only earns the
+     client a "type it as text" nudge. IG now asks for a TYPED address (code
+     gate + brief); WhatsApp keeps the pin, which works there.
+  4. 👤 **The night log lost the therapist** on every IG booking: the event read
+     `staff_name`, a field that never existed on the tool call (it is
+     `master_name`), and IG deliberately never names a therapist to the client.
+     Now resolved from the staff id actually booked.
+  ✅ **NOT a defect (checked):** "body massage" mapping to the YClients service
+  *"Lymphatic drainage 60 min (new)"* is deliberate — `yclients_service.py:525`
+  documents it as the catalog's default body offer in the new price list.
+  ⚠️ **The test record #1908955686 could NOT be deleted** — `DELETE
+  /record/1094806/{id}` still answers **403 «Нет прав на управление филиалом»**
+  (re-verified 2026-08-15), and `record_hash` (the client-side cancel path) is
+  not stored at creation. It must be removed by hand in YClients. Consider
+  persisting `record_hash` from the create response — it may unlock
+  `DELETE /user/records/{id}/{hash}` without a new token grant.
+- 👁️ **Watch a shift live:** `python3.11 scripts/watch_night_log.py --who
+  <subscriber> [--seconds N]` tails `/admin/night-log` and prints only new
+  turns (stops on `booking_created`). `night_report.py` stays the morning
+  retro. ⚠️ **Deploys blind the log:** three pushes between 21:13 and 21:42
+  Minsk on 2026-08-15 wiped the in-memory ring for that half-hour of the LIVE
+  window — if a real client wrote then, there is no trace at all. Snapshot the
+  ring (`night_report.py --full > logs/night_snapshots/…`) before every push
+  during a shift.
+- 🧠 **IG/ManyChat model = `gpt-5.4`** via `IG_OPENAI_MODEL` — UNIFIED with
+  the WhatsApp brain (owner decision 2026-08-14, was gpt-5.6-sol Aug 9–14).
+  ⚠️ **gpt-5.6-sol CANNOT drive the booking tools**: chat/completions 400s
+  ("function tools with reasoning_effort are not supported … use
+  /v1/responses or reasoning_effort='none'") — bake-off 2026-08-14, every
+  turn fell to the error fallback. Don't retry sol for tool paths without
+  migrating to the Responses API first.
 - Competitors assessed 2026-08-09: **Brevo** — no Instagram at all
   (email/SMS/WhatsApp/site-chat only). **ChatPlace** — own AI only
   (Creator $45/mo, ~3000 AI msgs), no documented custom-LLM webhook →
