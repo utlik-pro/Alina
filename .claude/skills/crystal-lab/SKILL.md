@@ -457,6 +457,30 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   vanishes without a trace. On 2026-08-15 five pushes landed between 21:40 and
   23:00 Minsk. If a push is unavoidable, snapshot first —
   `python3.11 scripts/night_report.py --full > logs/night_snapshots/<date>_<tag>.json`.
+- 🛡️ **SLOT-REALITY GATE on every outgoing reply (`c8630ad`, 2026-08-16) — the
+  night's deepest three-layer find.** Auditing all nine ad prefills against
+  live YClients (`scripts/audit_ad_prefills.py` — prices AND offered-times
+  dimensions, 9/9 green) uncovered, layer under layer:
+  1. The model OFFERED FOUR TIMES FOR AN EMPTY DAY (Al Ain 20 Aug) despite the
+     injected "do NOT invent times". Now `_enforce_slot_reality()` checks every
+     AM/PM time in the outgoing text against `context.slot_truth` (captured at
+     injection) and rewrites invention into the honest answer — the day's real
+     times, or "fully booked + nearest real day". Outage judges nothing.
+  2. Beneath it: **the body-or-face gate never released** — the category
+     detector only yields generic `massage`, nothing upgraded it, so slots
+     were never injected and the model free-styled. The client's "body
+     massage" answer now upgrades `service_type→body_massage` (duration
+     survives; no downgrade back). The gate itself also now answers a price
+     question first instead of repeating itself (the client asked "how much?"
+     three times and never heard a number).
+  3. Beneath that: **a YClients 429 masqueraded as an empty day** — `get_staff`
+     returned [] on outage and two summary early-exits skipped the outage
+     wording. `_get` now honours the 429 retry hint once; `get_staff` returns
+     None on outage; both exits say TEMPORARILY UNAVAILABLE. ⚠️ Never run
+     parallel sims against live YClients (the audit defaults to `--jobs 1`).
+  Tests: `tests/unit/test_slot_reality.py`. ✅ Validated live minutes after
+  deploy: real IG lead 00:28 «I want deep facial cleaning» → «120 min —
+  420 AED. Would you like to book dear?» (new duration, right price, 25 s).
 - 👁️ **Watch a shift live:** `python3.11 scripts/watch_night_log.py --who
   <subscriber> [--seconds N]` tails `/admin/night-log` and prints only new
   turns (stops on `booking_created`). `night_report.py` stays the morning
