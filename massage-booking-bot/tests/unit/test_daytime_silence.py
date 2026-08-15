@@ -255,3 +255,21 @@ def test_12_explicit_date_is_understood():
     assert wh._detect_explicit_date("3 March", now) is None
     # a date later this year inside the horizon still resolves
     assert wh._detect_explicit_date("2 October", now) == "2026-10-02"
+
+
+# 13 — no times until the massage duration is known (IG only)
+def test_13_duration_gate_blocks_times_for_massage():
+    """60- and 90-min windows differ, so offering times before the client
+    picks a duration means taking them back (live-caught 2026-08-15)."""
+    import webhook_app as wh
+
+    assert wh._is_massage_service("body massage") is True
+    assert wh._is_massage_service("facial massage") is True
+    assert wh._is_massage_service("массаж 60") is True
+    # services with a single fixed duration must NOT be gated
+    for other in ("lash lifting", "eyebrow lamination", "manicure",
+                  "pedicure", "deep cleansing", "permanent make up"):
+        assert wh._is_massage_service(other) is False, other
+
+    assert "Do NOT show" in wh.DURATION_FIRST_GATE_MSG
+    assert "60" in wh.DURATION_FIRST_GATE_MSG and "90" in wh.DURATION_FIRST_GATE_MSG

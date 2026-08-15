@@ -424,6 +424,28 @@ def _service_named(text: str) -> bool:
 # The exact instruction injected when the area is known but the service is not.
 # Kept as a module-level constant so scripts/sim_conversation.py injects the
 # IDENTICAL text — the sim must never drift from prod (same rule as detect_area).
+def _is_massage_service(name: str) -> bool:
+    """True for services whose 60/90-min choice changes price AND fit."""
+    n = (name or "").lower()
+    if any(k in n for k in ("lash", "brow", "mani", "pedi", "nail", "cleansing", "permanent")):
+        return False
+    return any(k in n for k in ("massage", "масса", "body", "face", "facial"))
+
+
+DURATION_FIRST_GATE_MSG = (
+    "\n\n⚠️ MASSAGE DURATION NOT CHOSEN YET (service and area are known).\n"
+    "🚨 Do NOT show, list or invent ANY times / slots this turn — the free "
+    "windows for 60 and 90 min are DIFFERENT (a 90-min session plus the "
+    "travel buffer does not fit everywhere a 60-min one does), so any time "
+    "offered now could be taken back a moment later.\n"
+    "🚨 Give the two options with prices and ask which one, e.g.:\n"
+    "    '60 min - 350 AED\\n90 min - 460 AED\\nWhich one would you like "
+    "dear? 🌹'\n"
+    "🚨 The system will provide the real slots for the chosen duration on "
+    "the next turn."
+)
+
+
 SERVICE_FIRST_GATE_MSG = (
     "\n\n⚠️ SERVICE NOT KNOWN YET (area is confirmed, service is not).\n"
     "🚨 Do NOT show, list or invent ANY times / slots / masters this turn.\n"
@@ -2452,6 +2474,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 # CODE (crystal-lab SKILL: "no hard gate = bug"). Ask first.
                 logger.info("service_first_gate: area known, service unknown → ask service")
                 context.extra_system_info = SERVICE_FIRST_GATE_MSG
+            elif (
+                _is_ig_key(phone)
+                and not context.booking_data.get("service_duration")
+                and _is_massage_service(context.booking_data.get("service_type") or "")
+            ):
+                # Same reasoning as the service gate, one step later: the LLM
+                # happily pastes 60-min windows while the client hasn't said
+                # whether they want 60 or 90 (live-caught 2026-08-15). Ask,
+                # then show times that actually fit.
+                logger.info("duration_first_gate: massage without duration → ask 60/90")
+                context.extra_system_info = DURATION_FIRST_GATE_MSG
             elif _client_area:
                 try:
                     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
