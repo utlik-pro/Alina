@@ -43,7 +43,6 @@ def _build_service_catalog() -> Dict[str, Dict[str, Any]]:
         "lash_ext_russian": "Eyelash extension Russian volume",
         "lash_lifting": "Eyelash lifting",
         "brow_lamination": "Eyebrow lamination",
-        "lash_brow_combo": "Eyebrow lamination + Eyelash lifting",
         "pmu_lips": "Permanent makeup lips",
         "pmu_eyebrows": "Permanent makeup eyebrows",
         "pmu_eyeliner": "Permanent makeup eyeliner",

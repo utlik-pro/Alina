@@ -288,11 +288,14 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
        had been presenting the trial session as a current campaign.
      · Nail prices stay CURRENT and quotable; only the nail *discount* offer is
        withdrawn, and there is still no nail master.
-     ⚠️ **Open with Tatyana: the cupping combo creative says 45 MIN, we book
-     60** (her admins' own breakdown 30+15+15). We keep 60 — a slot must fit
-     the whole session — but the ad and the practice disagree.
-     ⚠️ Also not on her lashes card: `lash_brow_combo` 350 (lifting +
-     lamination). Quotable today; confirm or drop it.
+     ✅ **BOTH FOLLOW-UPS ANSWERED BY THE OWNER 2026-08-16:**
+     · **Cupping combo 275 = 60 MIN.** The creative's "45 MIN" is wrong —
+       book and quote 60 (matches the admins' own 30+15+15 breakdown). Do not
+       "correct" it back to the ad.
+     · **`lash_brow_combo` (lamination + lifting, 350) is WITHDRAWN** — it is
+       not on her lashes card. Removed from the catalog, the prompt, the
+       upsell in `follow_up.py` and the legacy Telegram branch; the two
+       services are quoted separately now.
   9. **No nail master at the moment** (Tatyana 2026-08-14): nail catalog
      prices are correct and quotable, but nail bookings can't be fulfilled
      right now — YClients will simply show no nail slots (fails honest);

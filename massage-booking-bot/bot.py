@@ -713,11 +713,9 @@ async def _extract_and_save_data(
                 service_name = "Russian gelish pedicure"
                 base_price = _p("russian_pedi")
             duration = None
-        # ВАЖНО: Проверяем комбо ПЕРЕД отдельными услугами
-        elif ("eyebrow" in msg_lower or "brow" in msg_lower) and ("eyelash" in msg_lower and ("lifting" in msg_lower or "lift" in msg_lower)):
-            service_name = "Eyebrow lamination + Eyelash lifting"
-            base_price = _p("lash_brow_combo")
-            duration = None
+        # The lamination+lifting combo was withdrawn by the client
+        # (2026-08-16): it is not on her lashes card, so both services are
+        # quoted separately now.
         elif "eyelash" in msg_lower or "lash" in msg_lower:
             if "extension" in msg_lower:
                 if "russian" in msg_lower:

@@ -78,7 +78,7 @@ def _build_upsell_recommendations():
             f"Would you like to add eyebrow lamination as well? {_p('brow_lamination'):.0f} AED 🌹",
         ],
         "Eyebrow lamination": [
-            f"Eyelash lifting pairs perfectly with brow lamination - combo just {_p('lash_brow_combo'):.0f} AED! 🌹",
+            f"Eyelash lifting pairs perfectly with brow lamination - {_p('lash_lifting'):.0f} AED 🌹",
         ],
     }
 

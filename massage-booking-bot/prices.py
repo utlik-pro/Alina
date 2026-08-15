@@ -148,7 +148,6 @@ SERVICE_CATALOG = {
     "brow_shaping": {"name": "Brow shaping", "duration": None, "price": 80.0, "category": "lashes_brows"},
     "upper_lip_threading": {"name": "Upper lip threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
     "chin_threading": {"name": "Chin threading", "duration": None, "price": 35.0, "category": "lashes_brows"},
-    "lash_brow_combo": {"name": "Combo eyelash lifting + eyebrow lamination", "duration": None, "price": 350.0, "category": "lashes_brows"},
 
     # ── Permanent Makeup ──────────────────────────────────
     # PMU prices updated 2026-08-14 from the client's current price cards
@@ -376,7 +375,6 @@ LASHES AND BROWS:
 - Eyebrow lamination (shaping included): {p('brow_lamination'):.0f} AED
 - Brow tinting: {p('brow_tinting'):.0f} | Eyelash tinting: {p('lash_tinting'):.0f} | Brow shaping: {p('brow_shaping'):.0f}
 - Upper lip threading: {p('upper_lip_threading'):.0f} | Chin threading: {p('chin_threading'):.0f}
-- Combo eyelash lifting + eyebrow lamination: {p('lash_brow_combo'):.0f} AED
 
 PERMANENT MAKE UP:
 New: Lips {p('pmu_lips'):.0f} | Eyebrows {p('pmu_eyebrows'):.0f} | Eyeliner {p('pmu_eyeliner'):.0f} | Lashliner {p('pmu_lashliner'):.0f} AED
