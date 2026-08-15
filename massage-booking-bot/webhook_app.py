@@ -474,7 +474,8 @@ def _booking_day_mismatch(user_text: str, booking_call):
 def _enforce_reply_wording(response_text: str, actions, booking_call, client_data: dict,
                            user_text: str = "", already_booked_sig=None,
                            group_requested: bool = False,
-                           needs_phone: bool = False) -> str:
+                           needs_phone: bool = False,
+                           is_ig: bool = False) -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -547,6 +548,16 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
                     "\n\nYour other guest's spot is being arranged by our team — "
                     "we'll confirm it very shortly 🌸"
                 )
+        # Instagram closing template — the client's (Tatyana's) verbatim rule
+        # from 2026-07-28: every IG booking ends with the admin follow-up
+        # promise. The model drops it about half the time, so append it here.
+        if is_ig and not re.search(
+            r"administrator|admin will|tomorrow.*(contact|confirm)", response_text, re.I
+        ):
+            response_text = response_text.rstrip() + (
+                "\n\nTomorrow our administrator will contact you to confirm "
+                "the details 🌹"
+            )
     return response_text
 
 
@@ -2516,6 +2527,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             group_requested=bool((context.booking_data or {}).get("group_requested")),
             already_booked_sig=getattr(context, "last_booking_sig", None),
             needs_phone=_needs_phone,
+            is_ig=_is_ig_key(phone),
         )
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)

@@ -149,7 +149,7 @@ async def run(scenario):
             resp, actions, actions.booking_call, ctx.client_data, user_text=msg,
             already_booked_sig=getattr(ctx, "last_booking_sig", None),
             group_requested=bool(ctx.booking_data.get("group_requested")),
-            needs_phone=_needs_phone)
+            needs_phone=_needs_phone, is_ig=is_ig)
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call
@@ -166,6 +166,9 @@ async def run(scenario):
                 tag = " [gate: wrong-day — blocked]"
             elif _needs_phone:
                 tag = " [gate: NO record — PHONE missing (IG)]"
+            elif not wh._client_confirmed(msg):
+                # prod defers the record until an explicit "yes" to the recap
+                tag = " [gate: awaiting explicit confirm — no record]"
             elif has_loc and has_name:
                 tag = " [✅ RECORD CREATED]"
                 ctx.last_booking_sig = _sig

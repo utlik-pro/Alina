@@ -152,3 +152,47 @@ def test_manychat_bridge_shadow_bypasses_booking(monkeypatch, tmp_path):
     assert r.status_code == 200
     assert r.json()["shadow"] is True
     assert "hit" not in called
+
+
+def test_ig_booking_always_gets_admin_followup_line():
+    """Tatyana's closing template: every IG booking promises the admin call."""
+    from types import SimpleNamespace
+
+    import webhook_app as wh
+
+    call = SimpleNamespace(service="body massage", date="2026-08-16", time="19:00",
+                           client_name="Anna", address="Al Reem Island", guests=None,
+                           client_phone="0501234567")
+    out = wh._enforce_reply_wording(
+        "Your body massage is booked ✅ Masha — Sun 16 Aug 7:00 PM — 350 AED 🌹",
+        actions=SimpleNamespace(reschedule_call=None, cancel_call=None),
+        booking_call=call, client_data={"name": "Anna", "address": "Al Reem Island"},
+        user_text="yes confirm please", is_ig=True,
+    )
+    assert "administrator" in out.lower()
+    # WhatsApp path must stay untouched
+    out_wa = wh._enforce_reply_wording(
+        "Your body massage is booked ✅",
+        actions=SimpleNamespace(reschedule_call=None, cancel_call=None),
+        booking_call=call, client_data={"name": "Anna", "address": "Al Reem Island"},
+        user_text="yes confirm please", is_ig=False,
+    )
+    assert "administrator" not in out_wa.lower()
+
+
+def test_ig_closing_line_not_duplicated():
+    from types import SimpleNamespace
+
+    import webhook_app as wh
+
+    call = SimpleNamespace(service="body massage", date="2026-08-16", time="19:00",
+                           client_name="Anna", address="Al Reem", guests=None,
+                           client_phone="0501234567")
+    text = ("Booked ✅ Sun 16 Aug 7:00 PM. Tomorrow our administrator will "
+            "contact you to confirm the details 🌹")
+    out = wh._enforce_reply_wording(
+        text, actions=SimpleNamespace(reschedule_call=None, cancel_call=None),
+        booking_call=call, client_data={"name": "Anna", "address": "Al Reem"},
+        user_text="yes", is_ig=True,
+    )
+    assert out.lower().count("administrator") == 1
