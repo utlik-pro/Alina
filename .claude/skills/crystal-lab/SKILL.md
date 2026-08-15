@@ -269,6 +269,30 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      winter_body_combo removed; trial_session (350/80min) & book-a-friend
      kept (not cancelled). IG consult prompt now includes the offers +
      ad-prefill note (emirate from the ad text — never re-ask).
+  8b. **PRICES RE-CONFIRMED FROM THE CLIENT'S OWN CARDS (2026-08-16).** She
+     sent three cards + the four ad creatives and stated: «Тело 350, лицо 370,
+     банки 275, чистка 2 часа 420… последние 4 фото — основные эти и реклама
+     на них». Every card matched `prices.py` to the figure — permanent makeup
+     9/9, face waxing 6/6, lashes & brows 11/11 — so PMU/waxing "changed" only
+     relative to older lists, and she notes clients rarely ask about them.
+     Two things did NOT match and were fixed (`1d7d683`):
+     · **Deep facial cleansing is 120 min, not 90.** The catalog said 90 while
+       the offer entry and her creative both say a 2-hour treatment — a
+       booking made from the catalog reserved half an hour too little and the
+       therapist walked into an overlap.
+     · **"Summer promotion" = the four advertised creatives** (deep cleansing
+       420/770 · body 60' 350/500 · face 50' 370/550 · lymph+cupping+headspa
+       275/430). This ANSWERS the long-open "what is in the summer promotion".
+       `trial_session` (350/80 min) and `book_a_friend` are NOT advertised —
+       `format_ad_offers_for_prompt()` serves only the four, because the agent
+       had been presenting the trial session as a current campaign.
+     · Nail prices stay CURRENT and quotable; only the nail *discount* offer is
+       withdrawn, and there is still no nail master.
+     ⚠️ **Open with Tatyana: the cupping combo creative says 45 MIN, we book
+     60** (her admins' own breakdown 30+15+15). We keep 60 — a slot must fit
+     the whole session — but the ad and the practice disagree.
+     ⚠️ Also not on her lashes card: `lash_brow_combo` 350 (lifting +
+     lamination). Quotable today; confirm or drop it.
   9. **No nail master at the moment** (Tatyana 2026-08-14): nail catalog
      prices are correct and quotable, but nail bookings can't be fulfilled
      right now — YClients will simply show no nail slots (fails honest);
