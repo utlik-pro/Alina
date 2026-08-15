@@ -122,3 +122,14 @@ def test_ad_prefill_is_recognised_per_creative():
         "I would like to consult on a massage and make an appointment in Abu Dhabi"
     ) == "consult"
     assert _detect_ad_prefill("hi, how much is a back massage?") is None
+
+
+def test_unverified_package_prices_never_reach_the_prompt():
+    # A real Instagram lead was quoted 3,000 / 2,590 on 2026-08-15 — figures no
+    # admin has ever used and the client never confirmed.
+    from prices import format_special_offers_for_prompt
+
+    text = format_special_offers_for_prompt(include_packages=True)
+    assert "1,550" in text and "1,650" in text      # the two the admins sell
+    for banned in ("3,000", "2,590", "2,200"):
+        assert banned not in text, f"{banned} must never reach the prompt"

@@ -239,11 +239,18 @@ SPECIAL_OFFERS = {
 # ═══════════════════════════════════════════════════════════
 
 PACKAGES = {
-    "face_5x50": {"name": "Face massage", "sessions": 5, "duration": 50, "price": 1650, "was": 1850},
-    "body_5x60": {"name": "Body massage", "sessions": 5, "duration": 60, "price": 1550, "was": 1750},
-    "body_10x60": {"name": "Body massage", "sessions": 10, "duration": 60, "price": 3000, "was": 3500},
-    "body_6x90": {"name": "Body massage", "sessions": 6, "duration": 90, "price": 2590, "was": 2760},
-    "body_facial_5x85": {"name": "Body + Facial", "sessions": 5, "duration": 85, "price": 2200, "was": 2675},
+    # `quotable` = the admins actually sell this one and quote it daily, so the
+    # agent may too. The other three are UNVERIFIED legacy figures: no admin
+    # has ever used them in the whole inbox, the client never confirmed them,
+    # and on 2026-08-15 the agent read them off this list to a real Instagram
+    # lead (5x60 1,550 / 10x60 3,000 / 6x90 2,590 in one dump) — the very
+    # thing the client complained about. Kept as data, never spoken, until she
+    # confirms or replaces them.
+    "face_5x50": {"name": "Face massage", "sessions": 5, "duration": 50, "price": 1650, "was": 1850, "quotable": True},
+    "body_5x60": {"name": "Body massage", "sessions": 5, "duration": 60, "price": 1550, "was": 1750, "quotable": True},
+    "body_10x60": {"name": "Body massage", "sessions": 10, "duration": 60, "price": 3000, "was": 3500, "quotable": False},
+    "body_6x90": {"name": "Body massage", "sessions": 6, "duration": 90, "price": 2590, "was": 2760, "quotable": False},
+    "body_facial_5x85": {"name": "Body + Facial", "sessions": 5, "duration": 85, "price": 2200, "was": 2675, "quotable": False},
 }
 
 
@@ -395,9 +402,15 @@ def format_special_offers_for_prompt(include_packages: bool = True) -> str:
             lines.append(offer["description"])
 
     if include_packages:
-        lines.append(f"\nMASSAGE PACKAGES:")
+        # Only the packages the admins actually sell reach the prompt — an
+        # unquotable figure the model cannot see is one it cannot invoice.
+        lines.append(f"\nMASSAGE PACKAGES (the only ones you may quote):")
         for key, pkg in PACKAGES.items():
+            if not pkg.get("quotable"):
+                continue
             lines.append(f"- {pkg['name']}: {pkg['sessions']} x {pkg['duration']}min - {pkg['price']:,} AED (was {pkg['was']:,})")
+        lines.append("Any other course length is arranged personally by the team — "
+                     "never invent or quote a price for it.")
 
     return "\n".join(lines)
 
