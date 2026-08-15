@@ -210,8 +210,14 @@ SPECIAL_OFFERS = {
         "name": "NEW OFFER - Lymphatic drainage massage + Cupping + Head spa",
         "price": 275,
         "was": 430,
-        "duration": 45,
-        "description": "Lymphatic drainage body massage + Cupping + Head spa treatment",
+        # Breakdown straight from the admins' own IG answer (Anum ishtiaq,
+        # 15.08): lymphatic body 30 + cupping 15 + head 15 = 60 min. The
+        # creative says 45 — the admins sell 60.
+        "duration": 60,
+        "description": (
+            "Lymphatic drainage body massage 30 min + Cupping 15 min "
+            "+ Head massage 15 min"
+        ),
     },
     "trial_session": {
         "name": "TRIAL SESSION (NEW CLIENTS ONLY)",
