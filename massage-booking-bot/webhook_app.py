@@ -1093,6 +1093,9 @@ async def health():
         # publishing the id. The old group silently stopped existing and
         # nobody noticed until 2026-08-15.
         "leads_group_tail": (str(config.ADMIN_GROUP_CHAT_ID or "")[-5:] or "unset"),
+        # WhatsApp transport — silently absent when WAPPI_* aren't in the
+        # deploy env, which once made the whole WA channel go quiet unnoticed.
+        "wappi": bool(config.WAPPI_TOKEN and config.WAPPI_PROFILE_ID),
     }
 
 
@@ -2273,11 +2276,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # reset sent right after another message still fires).
         if _is_reset_command(text):
             await _reset_user(user_id, telegram_id)
-            if wappi_client:
-                await _send_to_client(
-                    phone,
-                    _RESET_GREETING
-                )
+            # Route by channel, don't gate on the WhatsApp client: an
+            # Instagram reset used to leave the client with no confirmation
+            # at all when wappi wasn't configured (live-caught 2026-08-15).
+            await _send_to_client(phone, _RESET_GREETING)
             return
 
         client = await bot_module.client_service.get_or_create_client(telegram_id)
