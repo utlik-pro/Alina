@@ -2770,8 +2770,21 @@ async def admin_yclients_health(request: Request):
     Protected by X-Admin-Secret header.
     Usage: curl https://.../admin/health/yclients -H "X-Admin-Secret: <secret>"
     """
-    secret = request.headers.get("X-Admin-Secret", "")
-    if not config.WEBHOOK_SECRET or secret != config.WEBHOOK_SECRET:
+    # Two accepted secrets: the admin one, and the ManyChat bridge secret —
+    # whoever verifies the night shift has the latter but not the former,
+    # and a dead YClients token is exactly what must be caught BEFORE 21:00.
+    import hmac as _hmac
+
+    secret = (
+        request.headers.get("X-Admin-Secret", "")
+        or request.query_params.get("secret", "")
+    )
+    _ok = (
+        (config.WEBHOOK_SECRET and _hmac.compare_digest(secret, config.WEBHOOK_SECRET))
+        or (config.MANYCHAT_WEBHOOK_SECRET
+            and _hmac.compare_digest(secret, config.MANYCHAT_WEBHOOK_SECRET))
+    )
+    if not _ok:
         return Response(status_code=403, content="forbidden")
 
     import bot as bot_module
