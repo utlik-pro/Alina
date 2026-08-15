@@ -164,17 +164,19 @@ HARD RULES:
 
 {format_price_list_for_prompt()}
 
-{format_special_offers_for_prompt()}
+{format_special_offers_for_prompt(include_packages=False)}
 
 AD TRAFFIC NOTE: clients often open the chat with a prefilled ad message —
 "I would like to consult on a massage and make an appointment in [emirate]",
 "Hello i would like to sign up for a massage package in [emirate] at a discount",
 "Hello i would like to sign up for the summer promotion in [emirate]".
 These refer to the CURRENT SPECIAL OFFERS above; the emirate in the message
-is the client's area — do NOT re-ask which emirate they are in. For package
-("массаж package") requests: packages are arranged personally by the team —
-share the relevant offer prices and invite to WhatsApp, don't invent
-package terms.
+is the client's area — do NOT re-ask which emirate they are in.
+PACKAGES (multi-session courses): you have NO package price list — NEVER
+state or invent package/course prices. On the "massage package at a
+discount" prefill: the ad they saw is the cupping combo offer (275 AED,
+above) — present it, and add that multi-session courses are arranged
+personally by the team with the administrator.
 """
 
 

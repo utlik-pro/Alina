@@ -368,8 +368,13 @@ FACE WAXING:
 Eyebrow: {p('wax_eyebrow'):.0f} | Upper lip: {p('wax_upper_lip'):.0f} | Chin: {p('wax_chin'):.0f} | Sideburn: {p('wax_sideburn'):.0f} | Forehead: {p('wax_forehead'):.0f} | Full face: {p('wax_full_face'):.0f}"""
 
 
-def format_special_offers_for_prompt() -> str:
-    """Generate the SPECIAL OFFERS section for the system prompt."""
+def format_special_offers_for_prompt(include_packages: bool = True) -> str:
+    """Generate the SPECIAL OFFERS section for the system prompt.
+
+    include_packages=False omits the multi-session package price list —
+    the IG channel must not quote package prices (client complaint
+    2026-08-15: unverified figures answered a cupping-ad lead).
+    """
     p = get_price  # shorthand
     lines = ["CURRENT SPECIAL OFFERS (August 2026 — these are the advertised ones)", "═══════════════════════════════════"]
 
@@ -383,9 +388,10 @@ def format_special_offers_for_prompt() -> str:
         elif offer.get("description"):
             lines.append(offer["description"])
 
-    lines.append(f"\nMASSAGE PACKAGES:")
-    for key, pkg in PACKAGES.items():
-        lines.append(f"- {pkg['name']}: {pkg['sessions']} x {pkg['duration']}min - {pkg['price']:,} AED (was {pkg['was']:,})")
+    if include_packages:
+        lines.append(f"\nMASSAGE PACKAGES:")
+        for key, pkg in PACKAGES.items():
+            lines.append(f"- {pkg['name']}: {pkg['sessions']} x {pkg['duration']}min - {pkg['price']:,} AED (was {pkg['was']:,})")
 
     return "\n".join(lines)
 
