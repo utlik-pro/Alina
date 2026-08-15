@@ -2805,7 +2805,17 @@ async def admin_yclients_health(request: Request):
         return {"status": "partner_token_fail", "detail": "get_staff returned empty"}
 
     today = _dt.now(_tz(_td(hours=4))).strftime("%Y-%m-%d")
+    tomorrow = (_dt.now(_tz(_td(hours=4))) + _td(days=1)).strftime("%Y-%m-%d")
     sample = staff[0]
+    # Slots are what the night shift actually shows a client, and they are
+    # computed from schedule+records — so probe the real summary, not just
+    # the token. Verified from outside before the 21:00 launch.
+    try:
+        _slots = await bot_module.yclients_service.get_available_slots_summary(
+            date=tomorrow, area="abu_dhabi", service_duration=60
+        )
+    except Exception as e:
+        _slots = f"ERROR: {e}"
     recs = await bot_module.yclients_service.get_records(sample["id"], today)
     if recs is None:
         return {
@@ -2820,6 +2830,7 @@ async def admin_yclients_health(request: Request):
         }
     return {
         "status": "ok",
+        "slots_tomorrow_abu_dhabi": str(_slots)[:600],
         "records_count": len(recs),
         "staff_probed": {"id": sample["id"], "name": sample.get("name")},
         "date": today,
