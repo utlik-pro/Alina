@@ -456,3 +456,43 @@ def test_shadow_turn_acks_without_waiting_for_the_llm(monkeypatch, tmp_path):
     assert r.status_code == 200
     assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
     assert r.json()["shadow"] is True
+
+
+def test_keep_warm_pings_health_and_survives_failures(monkeypatch):
+    """The keep-warm loop must not die on a failed ping (Render cold starts)."""
+    import asyncio
+
+    import webhook_app
+
+    calls = []
+
+    class _Resp:
+        status = 200
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    class _Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        def get(self, url):
+            calls.append(url)
+            if len(calls) == 1:
+                raise RuntimeError("cold start timeout")
+            return _Resp()
+
+    import aiohttp
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda **kw: _Session())
+    monkeypatch.setattr(webhook_app, "KEEP_WARM_INTERVAL_SEC", 0)
+
+    async def run():
+        task = asyncio.create_task(webhook_app._keep_warm("https://example.test"))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run())
+    assert len(calls) >= 2, "loop must keep pinging after a failure"
+    assert calls[0] == "https://example.test/"

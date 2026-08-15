@@ -712,6 +712,31 @@ dp: Dispatcher = None
 wappi_client: WappiClient = None
 
 
+KEEP_WARM_INTERVAL_SEC = 600  # 10 min — Render idles a service out at ~15
+
+
+async def _keep_warm(base_url: str) -> None:
+    """Ping our own health endpoint so Render never idles the instance out.
+
+    Only meaningful on Render; a cold start costs ~30-60s, which is far more
+    than ManyChat waits for its External Request.
+    """
+    import aiohttp
+
+    while True:
+        try:
+            await asyncio.sleep(KEEP_WARM_INTERVAL_SEC)
+            timeout = aiohttp.ClientTimeout(total=20)
+            async with aiohttp.ClientSession(timeout=timeout) as s:
+                async with s.get(f"{base_url}/") as resp:
+                    if resp.status != 200:
+                        logger.warning(f"keep-warm: health returned {resp.status}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"keep-warm ping failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Startup and shutdown logic."""
@@ -847,7 +872,20 @@ async def lifespan(application: FastAPI):
     logger.info(f"✅ Telegram webhook set: {webhook_url}")
     logger.info("🤖 Crystal Lab Bot started in WEBHOOK mode (Render)")
 
+    # Keep-warm: Render puts an idle instance to sleep, and the next request
+    # then waits ~30-60s for a cold start. ManyChat's External Request gives
+    # up long before that, so a night DM would go unanswered (the flow now
+    # correctly stays silent rather than sending a stale reply — but silence
+    # loses the lead too). A light self-request every 10 minutes keeps the
+    # instance awake through the quiet hours.
+    keepalive_task = (
+        asyncio.create_task(_keep_warm(base_url)) if config.RENDER else None
+    )
+
     yield
+
+    if keepalive_task is not None:
+        keepalive_task.cancel()
 
     # Shutdown — do NOT delete webhook, new instance will re-set it on startup
     logger.info("Shutting down...")
