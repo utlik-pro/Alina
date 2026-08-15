@@ -273,3 +273,18 @@ def test_13_duration_gate_blocks_times_for_massage():
 
     assert "Do NOT show" in wh.DURATION_FIRST_GATE_MSG
     assert "60" in wh.DURATION_FIRST_GATE_MSG and "90" in wh.DURATION_FIRST_GATE_MSG
+
+
+# 14 — a bare "massage" asks body-or-face before duration
+def test_14_ambiguous_massage_asks_kind_first():
+    """Live first night: 'consult on a massage' jumped straight to the 60/90
+    question, then repeated it verbatim when the client said 'body massage'."""
+    import webhook_app as wh
+
+    assert wh._massage_kind_known("massage") is False
+    assert wh._massage_kind_known("массаж") is False
+    for known in ("body massage", "facial massage", "face massage",
+                  "массаж тела", "массаж лица"):
+        assert wh._massage_kind_known(known) is True, known
+    assert "Body massage or facial" in wh.MASSAGE_KIND_GATE_MSG
+    assert "do NOT repeat" in wh.DURATION_FIRST_GATE_MSG

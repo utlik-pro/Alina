@@ -35,7 +35,7 @@ from services.yclients_service import YClientsService
 _UAE = timezone(timedelta(hours=4))
 
 
-async def _inject_slots(yc, ctx, date, last_user_text: str = ""):
+async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = False):
     """Mirror the webhook's slot injection into ctx.extra_system_info."""
     area = ctx.client_data.get("area")
     if not area:
@@ -45,6 +45,17 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = ""):
     # (uses the SAME constant so the sim can't drift from prod).
     if not (ctx.booking_data.get("service_named") or ctx.booking_data.get("service_type")):
         ctx.extra_system_info = wh.SERVICE_FIRST_GATE_MSG
+        return
+    # Mirror prod's duration gate (IG): no times until 60/90 is chosen, since
+    # the free windows differ. Without this the sim showed times prod would
+    # have withheld — a simulator that flatters the agent is worse than none.
+    _svc = ctx.booking_data.get("service_type") or ""
+    if is_ig and wh._is_massage_service(_svc) and not wh._massage_kind_known(_svc):
+        ctx.extra_system_info = wh.MASSAGE_KIND_GATE_MSG
+        return
+    if (is_ig and not ctx.booking_data.get("service_duration")
+            and wh._is_massage_service(_svc)):
+        ctx.extra_system_info = wh.DURATION_FIRST_GATE_MSG
         return
     now = datetime.now(_UAE)
     today = now.strftime("%Y-%m-%d")
@@ -157,7 +168,8 @@ async def run(scenario):
         if dur:
             ctx.booking_data["service_duration"] = dur
 
-        await _inject_slots(yc, ctx, date, msg)
+        await _inject_slots(yc, ctx, date, msg,
+                            is_ig=scenario.get("channel") == "instagram")
 
         # Instagram channel: mirror the webhook — same brief, same phone gate.
         is_ig = scenario.get("channel") == "instagram"

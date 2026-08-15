@@ -448,6 +448,26 @@ def _is_massage_service(name: str) -> bool:
     return any(k in n for k in ("massage", "масса", "body", "face", "facial"))
 
 
+def _massage_kind_known(name: str) -> bool:
+    """True when the client said WHICH massage — body or face.
+
+    A bare "massage" is not enough: body and face differ in price, duration
+    and even which therapist can take it, so asking the duration first (as
+    the gate did on the first live night) skips a step and then repeats
+    itself when the client answers "body massage".
+    """
+    n = (name or "").lower()
+    return any(k in n for k in ("body", "face", "facial", "тело", "лицо", "спин"))
+
+
+MASSAGE_KIND_GATE_MSG = (
+    "\n\n⚠️ THE CLIENT SAID 'MASSAGE' BUT NOT WHICH ONE (body or face).\n"
+    "🚨 Do NOT show times and do NOT ask about duration yet — body and face "
+    "differ in price, length and available therapists.\n"
+    "🚨 Ask ONE short question: 'Body massage or facial dear? 😊'"
+)
+
+
 DURATION_FIRST_GATE_MSG = (
     "\n\n⚠️ MASSAGE DURATION NOT CHOSEN YET (service and area are known).\n"
     "🚨 Do NOT show, list or invent ANY times / slots this turn — the free "
@@ -458,7 +478,9 @@ DURATION_FIRST_GATE_MSG = (
     "    '60 min - 350 AED\\n90 min - 460 AED\\nWhich one would you like "
     "dear? 🌹'\n"
     "🚨 The system will provide the real slots for the chosen duration on "
-    "the next turn."
+    "the next turn.\n"
+    "🚨 If you ALREADY asked this in a previous message, do NOT repeat the "
+    "price list word-for-word — just nudge briefly: '60 or 90 min dear? 🌹'"
 )
 
 
@@ -2490,6 +2512,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 # CODE (crystal-lab SKILL: "no hard gate = bug"). Ask first.
                 logger.info("service_first_gate: area known, service unknown → ask service")
                 context.extra_system_info = SERVICE_FIRST_GATE_MSG
+            elif (
+                _is_ig_key(phone)
+                and _is_massage_service(context.booking_data.get("service_type") or "")
+                and not _massage_kind_known(context.booking_data.get("service_type") or "")
+            ):
+                logger.info("massage_kind_gate: 'massage' unspecified → ask body/face")
+                context.extra_system_info = MASSAGE_KIND_GATE_MSG
             elif (
                 _is_ig_key(phone)
                 and not context.booking_data.get("service_duration")
