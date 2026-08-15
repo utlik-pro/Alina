@@ -1063,6 +1063,24 @@ class YClientsService:
         if is_test:
             comment = f"[TEST] {comment}".strip()
 
+        # Last-line guard: the therapist must actually be free at that moment.
+        # The model can carry a master's name over from slots it showed for a
+        # DIFFERENT day (caught 2026-08-15: booked "Masha" for a Saturday she
+        # doesn't work), which would send a client a visit nobody will make.
+        try:
+            free = await self.get_real_available_slots(
+                staff_id, date, duration_minutes or 60
+            )
+        except Exception as e:  # availability unknown → don't block the booking
+            logger.warning(f"YClients: availability precheck failed ({e}) — proceeding")
+            free = None
+        if free is not None and time not in free:
+            logger.error(
+                f"YClients: refusing booking — staff {staff_id} is NOT free on "
+                f"{date} at {time} (free: {free[:8] if free else 'none'})"
+            )
+            return None
+
         # Build services array
         services = [{"id": sid} for sid in service_ids]
 

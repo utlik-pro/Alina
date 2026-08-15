@@ -240,3 +240,41 @@ def test_area_spelling_never_hides_availability():
     assert _normalize_area("Al Ain") == "al_ain"
     assert _normalize_area("Dubai") == "dubai"
     assert _normalize_area("") == ""
+
+
+def test_create_booking_refuses_unavailable_staff():
+    """A master carried over from another day's slot list must be refused."""
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from services.yclients_service import YClientsService
+
+    svc = YClientsService()
+    with patch.object(svc, "get_real_available_slots",
+                      AsyncMock(return_value=[])) as free, \
+         patch.object(svc, "_get_session", AsyncMock()) as sess:
+        out = asyncio.run(svc.create_booking(
+            staff_id=3726110, service_ids=[1], date="2026-08-22", time="19:00",
+            client_name="Dmitry", client_phone="0501234567", duration_minutes=60))
+    assert out is None
+    assert free.called
+    assert not sess.called, "no HTTP call may happen for an unavailable master"
+
+
+def test_create_booking_proceeds_when_slot_is_free():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from services.yclients_service import YClientsService
+
+    svc = YClientsService()
+    with patch.object(svc, "get_real_available_slots",
+                      AsyncMock(return_value=["18:30", "19:00"])) as free, \
+         patch.object(svc, "_get_session", AsyncMock(side_effect=RuntimeError("http reached"))):
+        try:
+            asyncio.run(svc.create_booking(
+                staff_id=3605906, service_ids=[1], date="2026-08-22", time="19:00",
+                client_name="Dmitry", client_phone="0501234567", duration_minutes=60))
+        except RuntimeError as e:
+            assert "http reached" in str(e)  # guard passed, request attempted
+    assert free.called
