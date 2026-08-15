@@ -21,6 +21,7 @@ Area / service / duration are inferred from the messages, just like prod.
 
 import asyncio
 import json
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -34,7 +35,7 @@ from services.yclients_service import YClientsService
 _UAE = timezone(timedelta(hours=4))
 
 
-async def _inject_slots(yc, ctx, date):
+async def _inject_slots(yc, ctx, date, last_user_text: str = ""):
     """Mirror the webhook's slot injection into ctx.extra_system_info."""
     area = ctx.client_data.get("area")
     if not area:
@@ -51,7 +52,32 @@ async def _inject_slots(yc, ctx, date):
     svc = ctx.booking_data.get("service_type") or ""
     dur = ctx.booking_data.get("service_duration")
     dates = []
-    for d in (today, tomorrow, date):
+    # Mirror prod's weekday detection: a client saying "next Saturday" must
+    # get THAT day's slots loaded. Without it the sim answered "22 Aug is not
+    # loaded yet" while prod would have shown the day — a false alarm that
+    # cost real debugging time (2026-08-15).
+    _day_kw = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+        "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
+        "пятниц": 4, "суббот": 5, "воскрес": 6,
+    }
+    _low = (last_user_text or "").lower()
+    _named = None
+    for _kw, _wd in _day_kw.items():
+        if re.search(r"\b" + _kw, _low):
+            _ahead = (_wd - now.weekday()) % 7
+            if _ahead == 0 and ("next" in _low or "следующ" in _low):
+                _ahead = 7
+            _named = (now + timedelta(days=_ahead)).strftime("%Y-%m-%d")
+            break
+    # Prod persists the chosen day in booking_data so later turns ("7 pm",
+    # the address, "cash") keep loading THAT day. Without it the day is
+    # forgotten on the very next message.
+    if _named:
+        ctx.booking_data["date"] = _named
+    _sticky = ctx.booking_data.get("date")
+    for d in (today, tomorrow, _named or _sticky, date):
         if d and d not in dates:
             dates.append(d)
     blocks = []
@@ -127,7 +153,7 @@ async def run(scenario):
         if dur:
             ctx.booking_data["service_duration"] = dur
 
-        await _inject_slots(yc, ctx, date)
+        await _inject_slots(yc, ctx, date, msg)
 
         # Instagram channel: mirror the webhook — same brief, same phone gate.
         is_ig = scenario.get("channel") == "instagram"

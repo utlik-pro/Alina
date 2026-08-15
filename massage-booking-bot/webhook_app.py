@@ -174,7 +174,19 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "temporarily closed for maintenance — we come to the client's "
         "home, villa or hotel, transportation is free.\n"
         "- 'Can I pay by card?': yes — we have a card machine (on "
-        "request); cash is tax free, bank transfer +5% VAT."
+        "request); cash is tax free, bank transfer +5% VAT.\n"
+        "- 🚫 NEVER NAME A THERAPIST in this channel (owner decision "
+        "2026-08-15). Not when offering times, not in the recap, not in "
+        "the final confirmation. Say 'our therapist' / 'our specialist' "
+        "instead. The client picks a TIME, not a person.\n"
+        "- OFFER TIMES, NOT A TIMETABLE: merge every free therapist's "
+        "windows into ONE short list and offer 3–4 concrete times total "
+        "— e.g. 'On Saturday we have 3:00 PM, 5:30 PM or 7:00 PM 🌹 "
+        "Which suits you?'. Never list per-therapist lines, never dump "
+        "a whole day. If none of them fit, offer the next few real "
+        "times from the same day. This OVERRIDES the WhatsApp rule about "
+        "showing every therapist — Instagram is a narrow, fast chat and "
+        "a wall of slots kills the conversation."
     )
 
 
