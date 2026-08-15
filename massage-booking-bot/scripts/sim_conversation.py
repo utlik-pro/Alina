@@ -207,14 +207,14 @@ async def run(scenario):
         if _ad and not ctx.booking_data.get("ad_prefill"):
             ctx.booking_data["ad_prefill"] = _ad
         if ctx.booking_data.get("ad_prefill") == "summer":
-            from prices import format_special_offers_for_prompt as _offers
+            from prices import format_ad_offers_for_prompt as _offers
             ctx.extra_system_info = (ctx.extra_system_info or "") + (
                 "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "
                 "no separate 'summer' price list, so lead with the discounts "
                 "that ARE running, briefly, was→now, and then ask which one "
                 "they want. Do NOT answer with a bare question — they asked "
                 "about an offer and must hear real numbers:\n"
-                + _offers(include_packages=False)
+                + _offers()
             )
         elif ctx.booking_data.get("ad_prefill") == "package":
             from prices import SPECIAL_OFFERS as _OFFERS

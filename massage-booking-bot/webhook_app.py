@@ -2996,14 +2996,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # so a client tapping that ad hears those instead of a narrowing
             # question. Before this, three turns went by without a single price
             # (prefill audit, 2026-08-15) and the lead simply left.
-            from prices import format_special_offers_for_prompt as _offers
+            from prices import format_ad_offers_for_prompt as _offers
             context.extra_system_info += (
                 "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "
                 "no separate 'summer' price list, so lead with the discounts "
                 "that ARE running, briefly, was→now, and then ask which one "
                 "they want. Do NOT answer with a bare question — they asked "
                 "about an offer and must hear real numbers:\n"
-                + _offers(include_packages=False)
+                + _offers()
             )
         elif _ad == "package":
             from prices import SPECIAL_OFFERS as _OFFERS

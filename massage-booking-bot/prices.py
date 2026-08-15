@@ -71,7 +71,12 @@ SERVICE_CATALOG = {
     # ── Facials ───────────────────────────────────────────
     "deep_facial_cleansing": {
         "name": "Deep facial cleansing",
-        "duration": 90,
+        # 2 hours — the client's own creative says "2 hours treatment" and the
+        # offer entry has always said 120. The catalog said 90, so a booking
+        # made from the catalog reserved half an hour less than the procedure
+        # takes and the therapist walked into an overlap (found 2026-08-16 when
+        # the client sent the price cards).
+        "duration": 120,
         "price": 420.0,
         "category": "facial",
         "description": "8 steps, 2h treatment: cleansing, peeling, hydrating gel, ultrasonic machine, deep manual cleansing, antibacterial toning, soothing mask, cream with SPF",
@@ -187,6 +192,7 @@ SERVICE_CATALOG = {
 SPECIAL_OFFERS = {
     "offer_deep_cleansing": {
         "name": "NEW OFFER - Deep Facial Cleansing (8 steps, 2 hours)",
+        "ad": True,
         "price": 420,
         "was": 770,
         "duration": 120,
@@ -194,6 +200,7 @@ SPECIAL_OFFERS = {
     },
     "offer_body_60": {
         "name": "NEW OFFER - Body massage 60 min",
+        "ad": True,
         "price": 350,
         "was": 500,
         "duration": 60,
@@ -201,6 +208,7 @@ SPECIAL_OFFERS = {
     },
     "offer_face_50": {
         "name": "NEW OFFER - Facial massage 50 min",
+        "ad": True,
         "price": 370,
         "was": 550,
         "duration": 50,
@@ -208,6 +216,7 @@ SPECIAL_OFFERS = {
     },
     "lymphatic_cupping_combo": {
         "name": "NEW OFFER - Lymphatic drainage massage + Cupping + Head spa",
+        "ad": True,
         "price": 275,
         "was": 430,
         # Breakdown straight from the admins' own IG answer (Anum ishtiaq,
@@ -317,7 +326,7 @@ ADDITIONAL BODY SERVICES:
 - Neck and shoulders massage: {SERVICE_CATALOG['neck_shoulders']['duration']} min - {p('neck_shoulders'):.0f} AED
 
 FACIALS:
-- Deep facial cleansing (8 steps, 2h treatment): 90 min - {p('deep_facial_cleansing'):.0f} AED
+- Deep facial cleansing (8 steps, 2h treatment): 120 min - {p('deep_facial_cleansing'):.0f} AED
 - Carboxy-therapy: 40 min - {p('carboxy_therapy'):.0f} AED
 - Carboxy-therapy + alginate mask: 60 min - {p('carboxy_alginate'):.0f} AED
 - Shiny face: {p('shiny_face'):.0f} AED
@@ -379,6 +388,26 @@ HAIR AND MAKE UP:
 
 FACE WAXING:
 Eyebrow: {p('wax_eyebrow'):.0f} | Upper lip: {p('wax_upper_lip'):.0f} | Chin: {p('wax_chin'):.0f} | Sideburn: {p('wax_sideburn'):.0f} | Forehead: {p('wax_forehead'):.0f} | Full face: {p('wax_full_face'):.0f}"""
+
+
+def format_ad_offers_for_prompt() -> str:
+    """Only the offers the ads actually run on (client, 2026-08-16: «последние
+    4 фото — основные эти и реклама на них»).
+
+    A client tapping an ad must hear the ad's own offer. The trial session and
+    book-a-friend live in SPECIAL_OFFERS too but are NOT advertised, and
+    presenting them as "our current promotion" invents a campaign that does not
+    exist — the prefill audit caught the agent doing exactly that.
+    """
+    lines = ["THE OFFERS CURRENTLY ADVERTISED (these and only these):"]
+    for key, offer in SPECIAL_OFFERS.items():
+        if not offer.get("ad"):
+            continue
+        lines.append(
+            f"- {offer['name']}: {offer['price']} AED instead of {offer['was']}"
+            + (f", {offer['duration']} min" if offer.get("duration") else "")
+        )
+    return "\n".join(lines)
 
 
 def format_special_offers_for_prompt(include_packages: bool = True) -> str:
