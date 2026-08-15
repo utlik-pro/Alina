@@ -457,7 +457,7 @@ def _massage_kind_known(name: str) -> bool:
     itself when the client answers "body massage".
     """
     n = (name or "").lower()
-    return any(k in n for k in ("body", "face", "facial", "тело", "лицо", "спин"))
+    return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
 
 
 MASSAGE_KIND_GATE_MSG = (
