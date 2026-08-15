@@ -119,6 +119,28 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = F
         + "\n\n".join(blocks) + f"\n🚨 Use ONLY these real slots. {note}{pref}"
     )
 
+    # Mirror prod: a concrete time the client named is checked against the
+    # calendar and the verdict injected, so a merged short list can never be
+    # mistaken for the whole schedule.
+    _asked_time = wh._detect_requested_time(last_user_text or "")
+    _asked_date = ctx.booking_data.get("date") or (_named or "")
+    if _asked_time and _asked_date:
+        try:
+            _free = await yc.is_slot_available(area, _asked_date, _asked_time, dur or 60)
+        except Exception:
+            _free = None
+        if _free is not None:
+            from services.yclients_service import _to_ampm as _ampm
+            ctx.extra_system_info += (
+                f"\n\n🎯 THE CLIENT ASKED FOR {_ampm(_asked_time)} on {_asked_date} — "
+                "CHECKED AGAINST THE CALENDAR JUST NOW: "
+                + ("that time IS FREE. Confirm it and move to the next step. "
+                   "NEVER tell them it is unavailable."
+                   if _free else
+                   "that time is NOT free. Say so honestly and offer the "
+                   "nearest real alternatives from the schedule above.")
+            )
+
 
 async def run(scenario):
     yc = YClientsService()
@@ -178,6 +200,36 @@ async def run(scenario):
                 (ctx.client_data.get("phone") or "").strip()
             )
 
+        # Mirror prod: which ad creative sent this client, kept sticky, and the
+        # offer they must hear first. The prefill arrives in message #1 while
+        # the price question comes later, so a per-turn read would miss it.
+        _ad = wh._detect_ad_prefill(msg)
+        if _ad and not ctx.booking_data.get("ad_prefill"):
+            ctx.booking_data["ad_prefill"] = _ad
+        if ctx.booking_data.get("ad_prefill") == "summer":
+            from prices import format_special_offers_for_prompt as _offers
+            ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "
+                "no separate 'summer' price list, so lead with the discounts "
+                "that ARE running, briefly, was→now, and then ask which one "
+                "they want. Do NOT answer with a bare question — they asked "
+                "about an offer and must hear real numbers:\n"
+                + _offers(include_packages=False)
+            )
+        elif ctx.booking_data.get("ad_prefill") == "package":
+            from prices import SPECIAL_OFFERS as _OFFERS
+            _combo = _OFFERS["lymphatic_cupping_combo"]
+            ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                f"\n\n🎯 THIS CLIENT CAME FROM THE PACKAGE/CUPPING AD "
+                f"('massage package at a discount'). Lead with THAT offer: "
+                f"{_combo['description']} — {int(_combo['price'])} AED "
+                f"(was {int(_combo['was'])}), {_combo['duration']} min. "
+                "Quote it as soon as they say what they want, BEFORE the plain "
+                "per-session prices. NEVER quote course/abonement prices on "
+                "this prefill — say courses are arranged personally by the "
+                "team. The emirate is already in their message: never re-ask it."
+            )
+
         ctx.recent_messages.append({"role": "user", "content": msg})
         resp, actions = await agent.process_message_with_tools(msg, ctx)
         _bc = actions.booking_call
@@ -192,6 +244,14 @@ async def run(scenario):
             already_booked_sig=getattr(ctx, "last_booking_sig", None),
             group_requested=bool(ctx.booking_data.get("group_requested")),
             needs_phone=_needs_phone, is_ig=is_ig)
+        # Mirror prod's binding payment-terms pass (labels on the menu, the
+        # chosen method's footnote on every later price).
+        _pay = (getattr(actions.booking_call, "payment_method", None)
+                or wh._detect_payment_method(msg)
+                or ctx.booking_data.get("payment_method"))
+        if _pay:
+            ctx.booking_data["payment_method"] = _pay
+        final = wh._enforce_payment_terms(final, _pay)
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call

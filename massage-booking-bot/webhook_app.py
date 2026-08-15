@@ -475,12 +475,35 @@ def _massage_kind_known(name: str) -> bool:
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
 
 
-MASSAGE_KIND_GATE_MSG = (
-    "\n\n⚠️ THE CLIENT SAID 'MASSAGE' BUT NOT WHICH ONE (body or face).\n"
-    "🚨 Do NOT show times and do NOT ask about duration yet — body and face "
-    "differ in price, length and available therapists.\n"
-    "🚨 Ask ONE short question: 'Body massage or facial dear? 😊'"
-)
+def _kind_gate_msg() -> str:
+    """Body-or-face gate, with the prices to hand.
+
+    The first version only said "ask which one", so a client who answered a
+    question with a question ("how much?") got the SAME question back — three
+    times in a row in the 2026-08-15 prefill audit, without ever being told a
+    price. A gate must say what to do when the client doesn't play along; the
+    duration gate below already does, which is why it never loops.
+    """
+    from prices import get_price as _p, SERVICE_CATALOG as _cat
+    body60 = int(_p("body_massage_60"))
+    body90 = int(_p("body_massage_90"))
+    face = int((_cat.get("face_massage") or {}).get("price") or 370)
+    return (
+        "\n\n⚠️ THE CLIENT SAID 'MASSAGE' BUT NOT WHICH ONE (body or face).\n"
+        "🚨 Do NOT show times and do NOT ask about duration yet — body and face "
+        "differ in price, length and available therapists.\n"
+        "🚨 Ask ONE short question: 'Body massage or facial dear? 😊'\n"
+        "🚨 BUT ANSWER THEM FIRST. If they asked about PRICE (or anything else) "
+        "instead of choosing, give the answer and THEN ask, e.g.:\n"
+        f"    'Body {body60} AED / 60 min, {body90} AED / 90 min\n"
+        f"     Facial {face} AED / 50 min\n"
+        "     Which one dear? 😊'\n"
+        "🚨 NEVER send the same question twice in a row — repeating it while "
+        "ignoring what they asked is how a lead walks away."
+    )
+
+
+MASSAGE_KIND_GATE_MSG = _kind_gate_msg()
 
 
 DURATION_FIRST_GATE_MSG = (
@@ -2967,7 +2990,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # and never a course price list (the client complained about exactly
         # that dump on 2026-08-15).
         _ad = (context.booking_data or {}).get("ad_prefill")
-        if _ad == "package":
+        if _ad == "summer":
+            # There is no "summer promotion" price list — the client never sent
+            # one. What DOES exist is the four discounts currently advertised,
+            # so a client tapping that ad hears those instead of a narrowing
+            # question. Before this, three turns went by without a single price
+            # (prefill audit, 2026-08-15) and the lead simply left.
+            from prices import format_special_offers_for_prompt as _offers
+            context.extra_system_info += (
+                "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "
+                "no separate 'summer' price list, so lead with the discounts "
+                "that ARE running, briefly, was→now, and then ask which one "
+                "they want. Do NOT answer with a bare question — they asked "
+                "about an offer and must hear real numbers:\n"
+                + _offers(include_packages=False)
+            )
+        elif _ad == "package":
             from prices import SPECIAL_OFFERS as _OFFERS
             _combo = _OFFERS["lymphatic_cupping_combo"]
             context.extra_system_info += (
