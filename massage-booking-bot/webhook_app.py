@@ -841,8 +841,27 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def health():
-    """Health check for Render."""
-    return {"status": "ok", "bot": "Crystal Lab", "mode": "webhook"}
+    """Health check for Render.
+
+    Also exposes the Instagram track's runtime state (no secrets) — the
+    flags live only in the Render env, so this is the only way to verify
+    from outside which mode the night shift is actually in.
+    """
+    from agents.instagram_agent import ig_live_now
+
+    return {
+        "status": "ok",
+        "bot": "Crystal Lab",
+        "mode": "webhook",
+        "ig": {
+            "booking_enabled": config.IG_BOOKING_ENABLED,
+            "live_now": ig_live_now(),
+            "window": f"{config.IG_ACTIVE_FROM}-{config.IG_ACTIVE_TO} {config.IG_ACTIVE_TZ}",
+            "model": config.IG_OPENAI_MODEL,
+            "manychat": bool(config.MANYCHAT_API_KEY),
+            "testers": len([t for t in config.IG_TEST_SUBSCRIBERS.split(",") if t.strip()]),
+        },
+    }
 
 
 @app.post("/webhook/telegram")
