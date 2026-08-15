@@ -32,12 +32,19 @@ _MON = ["January", "February", "March", "April", "May", "June", "July",
 def parser_forms(d: datetime) -> list[tuple[str, str]]:
     mon = _MON[d.month - 1]
     suffix = {1: "st", 2: "nd", 3: "rd", 21: "st", 22: "nd", 23: "rd", 31: "st"}.get(d.day, "th")
+    _RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля",
+           "августа", "сентября", "октября", "ноября", "декабря"]
     return [
         (f"on {d.day} {mon}", "day month"),
         (f"{mon} {d.day} please", "month day"),
         (f"{d.day:02d}/{d.month:02d}", "dd/mm"),
         (f"{d.day:02d}.{d.month:02d}", "dd.mm"),
-        (f"book me {d.day}{suffix} of {mon}", "ordinal"),
+        (f"book me {d.day}{suffix} of {mon}", "ordinal+of"),
+        (f"{d.day} {mon[:3]}", "short month"),
+        (f"{d.day}{mon[:3].upper()}", "joined"),
+        (f"{d:%Y-%m-%d}", "iso"),
+        (f"на {d.day} {_RU[d.month - 1]}", "russian"),
+        (f"{d.day} {_RU[d.month - 1][:3]}", "russian short"),
     ]
 
 
@@ -91,7 +98,8 @@ async def main() -> None:
         print(f"{iso:12} {wd:4} {c['abu_dhabi']:>3} {c['al_ain']:>6} {c['dubai']:>6}{flag}{mark}")
 
     print("\n" + "=" * 60)
-    print(f"PARSER: {args.days - len(parse_fail)}/{args.days} days resolved in all 5 forms")
+    n_forms = len(parser_forms(now))
+    print(f"PARSER: {args.days - len(parse_fail)}/{args.days} days resolved in all {n_forms} spellings")
     for line in parse_fail:
         print(f"  ❌ {line}")
     print(f"DAYS WITH NO AVAILABILITY ANYWHERE: {len(empty_days)}")

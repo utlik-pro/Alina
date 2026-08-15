@@ -225,6 +225,16 @@ def test_12_explicit_date_is_understood():
     assert wh._detect_explicit_date("20/08", now) == "2026-08-20"
     assert wh._detect_explicit_date("on the 20th", now) == "2026-08-20"
 
+    # abbreviated, joined, ISO and Russian month names — clients use them all
+    assert wh._detect_explicit_date("20 Aug", now) == "2026-08-20"
+    assert wh._detect_explicit_date("Sept 20", now) == "2026-09-20"
+    assert wh._detect_explicit_date("20AUG", now) == "2026-08-20"
+    assert wh._detect_explicit_date("2026-08-20", now) == "2026-08-20"
+    assert wh._detect_explicit_date("20 августа", now) == "2026-08-20"
+    assert wh._detect_explicit_date("3 сен", now) == "2026-09-03"
+    # ambiguous US order stays unparsed rather than guessed
+    assert wh._detect_explicit_date("8/20", now) is None
+
     # ordinals with "of", and Russian-style "3 сентября"
     assert wh._detect_explicit_date("book me 22nd of August", now) == "2026-08-22"
     assert wh._detect_explicit_date("on 3rd of September", now) == "2026-09-03"

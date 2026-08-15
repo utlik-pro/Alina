@@ -518,8 +518,10 @@ _MONTHS_EN = {
     "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
     "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
     "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
-    "январ": 1, "феврал": 2, "март": 3, "апрел": 4, "мая": 5, "июн": 6,
-    "июл": 7, "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12,
+    "январ": 1, "янв": 1, "феврал": 2, "фев": 2, "март": 3, "мар": 3,
+    "апрел": 4, "апр": 4, "мая": 5, "май": 5, "июн": 6, "июл": 7,
+    "август": 8, "авг": 8, "сентябр": 9, "сент": 9, "сен": 9,
+    "октябр": 10, "окт": 10, "ноябр": 11, "ноя": 11, "декабр": 12, "дек": 12,
 }
 
 
@@ -539,8 +541,9 @@ def _detect_explicit_date(text: str, now) -> Optional[str]:
     day = month = None
 
     # "20 August", "20th August", "22nd of August", "20 го августа"
-    m = re.search(r"\b([0-3]?\d)\s*(?:st|nd|rd|th|го)?\s+(?:of\s+)?([a-zа-я]{3,9})\b", t)
-    if m and m.group(2)[:5] in _MONTHS_EN or (m and m.group(2) in _MONTHS_EN):
+    # "20 August", "20th August", "22nd of August", "20 августа", "20AUG"
+    m = re.search(r"\b([0-3]?\d)\s*(?:st|nd|rd|th|го)?\s*(?:of\s+)?([a-zа-яё]{3,9})\b", t)
+    if m:
         for key, num in _MONTHS_EN.items():
             if m.group(2).startswith(key):
                 day, month = int(m.group(1)), num
@@ -552,6 +555,10 @@ def _detect_explicit_date(text: str, now) -> Optional[str]:
                 if m.group(1).startswith(key):
                     day, month = int(m.group(2)), num
                     break
+    if day is None:
+        m = re.search(r"\b(20\d{2})-([01]?\d)-([0-3]?\d)\b", t)
+        if m:
+            day, month = int(m.group(3)), int(m.group(2))
     if day is None:
         m = re.search(r"\b([0-3]?\d)[./-]([01]?\d)(?![./-]?\d{2,})\b", t)
         if m:
