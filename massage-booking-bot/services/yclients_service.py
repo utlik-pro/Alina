@@ -332,10 +332,16 @@ class YClientsService:
         Returns a formatted string like:
         "Tomorrow: Svetlana 10am, 12pm, 4pm | Marina 2pm, 7pm"
         """
-        # Determine if we need massage therapists or nail techs
-        is_nails = service_category == "nails" or (service_name and any(
-            kw in (service_name or "").lower() for kw in ["mani", "pedi", "nail", "gel", "маникюр"]
-        ))
+        # Determine which kind of specialist the service needs. Three real
+        # roles exist in this salon — massage therapist, nail tech and
+        # lash-maker — and a client must never be offered the wrong one.
+        _sn = (service_name or "").lower()
+        is_nails = service_category == "nails" or any(
+            kw in _sn for kw in ["mani", "pedi", "nail", "gel", "маникюр"]
+        )
+        is_lashes = service_category == "lashes" or any(
+            kw in _sn for kw in ["lash", "eyelash", "brow", "lamination", "ресниц", "бров"]
+        )
 
         # How long the actual session runs. If the client asked for a 90-min
         # massage we must not offer a slot that only has 60 min free. When the
@@ -375,10 +381,21 @@ class YClientsService:
             spec = (staff.get("specialization", "") or "").lower()
             if "АДМИНИСТРАТОР" in staff_name.upper() or "ЛИСТ ОЖИДАНИЯ" in staff_name.upper():
                 continue
-            is_nail_tech = "маникюр" in spec or "nail" in spec.lower()
+            _pos = ((staff.get("position") or {}).get("title") or "").lower()
+            _role = f"{spec} {_pos}"
+            is_nail_tech = "маникюр" in _role or "nail" in _role
+            is_lash_tech = ("лэш" in _role or "lash" in _role
+                            or "ресниц" in _role or "бров" in _role)
+            is_masseur = "масс" in _role or "massage" in _role
+            # Service-role match. Before 2026-08-15 anything that wasn't a
+            # nail tech counted as a massage therapist, so the lash-maker
+            # (Бота, "мастер лэшмейкер") was offered for body massage —
+            # a lash specialist would have arrived for a massage booking.
             if is_nails and not is_nail_tech:
                 continue
-            if not is_nails and is_nail_tech:
+            if is_lashes and not is_lash_tech:
+                continue
+            if not is_nails and not is_lashes and not is_masseur:
                 continue
             roster.append((staff, is_nail_tech))
 

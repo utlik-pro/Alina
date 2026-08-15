@@ -160,3 +160,48 @@ def test_10_night_log_never_raises():
     events = list(webhook_app.NIGHT_LOG)
     assert len(events) == 2
     assert events[-1]["text"].endswith("…"), "long text must be truncated"
+
+
+# 11 — a lash-maker must never be offered for a massage (and vice versa)
+def test_11_specialist_role_must_match_the_service():
+    """Live defect 2026-08-15: 'Бота' (мастер лэшмейкер) was offered for body
+    massage, so a lash specialist would have arrived for a massage booking.
+    Anything that wasn't a nail tech used to count as a massage therapist.
+    """
+    from unittest.mock import AsyncMock, patch as _patch
+
+    from services.yclients_service import YClientsService
+
+    staff = [
+        {"id": 1, "name": "Екатерина", "specialization": "массажист",
+         "position": {"title": "Массажист"}},
+        {"id": 2, "name": "Бота", "specialization": "мастер лэшмейкер",
+         "position": {"title": "Лэшмейкер"}},
+        {"id": 3, "name": "Елена", "specialization": "маникюр",
+         "position": {"title": "Мастер маникюра"}},
+        {"id": 4, "name": "АДМИНИСТРАТОРЫ", "specialization": "ЛИСТ ОЖИДАНИЯ",
+         "position": {"title": "ЛИСТ ОЖИДАНИЯ"}},
+    ]
+    svc = YClientsService()
+
+    def run(service_name):
+        with _patch.object(svc, "get_staff", AsyncMock(return_value=staff)), \
+             _patch.object(svc, "get_records", AsyncMock(return_value=[])), \
+             _patch.object(svc, "get_real_available_slots",
+                           AsyncMock(return_value=["10:00", "10:30"])):
+            return asyncio.run(svc.get_available_slots_summary(
+                date="2026-08-22", service_name=service_name,
+                area="abu_dhabi", service_duration=60))
+
+    massage = run("body massage")
+    assert "Ekaterina" in massage
+    assert "Bota" not in massage, "a lash-maker must not take massage bookings"
+    assert "Elena" not in massage and "Елена" not in massage
+
+    lashes = run("lash lifting")
+    assert "Bota" in lashes
+    assert "Ekaterina" not in lashes
+
+    # the waiting-list service record is never a bookable master
+    for out in (massage, lashes, run("manicure")):
+        assert "АДМИНИСТРАТОР" not in out.upper()
