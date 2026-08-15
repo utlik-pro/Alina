@@ -538,7 +538,8 @@ def _detect_explicit_date(text: str, now) -> Optional[str]:
     t = (text or "").lower()
     day = month = None
 
-    m = re.search(r"\b([0-3]?\d)\s*(?:st|nd|rd|th)?\s+([a-zа-я]{3,9})\b", t)
+    # "20 August", "20th August", "22nd of August", "20 го августа"
+    m = re.search(r"\b([0-3]?\d)\s*(?:st|nd|rd|th|го)?\s+(?:of\s+)?([a-zа-я]{3,9})\b", t)
     if m and m.group(2)[:5] in _MONTHS_EN or (m and m.group(2) in _MONTHS_EN):
         for key, num in _MONTHS_EN.items():
             if m.group(2).startswith(key):
@@ -556,8 +557,14 @@ def _detect_explicit_date(text: str, now) -> Optional[str]:
         if m:
             day, month = int(m.group(1)), int(m.group(2))
     if day is None:
-        # "on the 20th" — nearest future day-of-month
-        m = re.search(r"\bthe\s+([0-3]?\d)(?:st|nd|rd|th)\b", t)
+        # "on the 20th" — nearest future day-of-month. Never inside an
+        # address: "Gate Tower, 21st floor" is where the client LIVES, not
+        # when they want the visit (caught by the month-ahead sweep).
+        m = re.search(
+            r"\b(?:the\s+)?([0-3]?\d)(?:st|nd|rd|th)\b"
+            r"(?!\s*(?:floor|fl\b|этаж|apartment|apt|room|tower|building|villa|street|road))",
+            t,
+        )
         if m:
             day, month = int(m.group(1)), now.month
 

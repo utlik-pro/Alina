@@ -225,9 +225,17 @@ def test_12_explicit_date_is_understood():
     assert wh._detect_explicit_date("20/08", now) == "2026-08-20"
     assert wh._detect_explicit_date("on the 20th", now) == "2026-08-20"
 
-    # must NOT mistake prices, durations, flat numbers or times for a date
+    # ordinals with "of", and Russian-style "3 сентября"
+    assert wh._detect_explicit_date("book me 22nd of August", now) == "2026-08-22"
+    assert wh._detect_explicit_date("on 3rd of September", now) == "2026-09-03"
+    assert wh._detect_explicit_date("1st of September", now) == "2026-09-01"
+
+    # must NOT mistake prices, durations, flat numbers, times — or an
+    # ADDRESS — for a date. "Gate Tower, 21st floor" is where the client
+    # lives, not when they want the visit (month-ahead sweep, 2026-08-15).
     for noise in ("60 min massage 350 AED", "apt 1204", "5 pm works",
-                  "0501234567", "90 min"):
+                  "0501234567", "90 min", "room 21st floor",
+                  "Gate Tower 2, 21st floor apt 1801", "Marina, 3rd floor"):
         assert wh._detect_explicit_date(noise, now) is None, noise
 
     # a date that already passed is never resolved into the past …
