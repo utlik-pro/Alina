@@ -577,6 +577,10 @@ class YClientsService:
         "combo_body_face": ["face + body"],
         "face_body_combo": ["face + body"],
         "lymphatic_drainage": ["lymphatic drainage"],
+        # The advertised 275 combo (lymph 30 + cupping 15 + head spa 15) books
+        # onto the lymphatic-drainage 60-min service — YClients has no combo
+        # entry, and the record's comment carries what the session includes.
+        "lymphatic_cupping_combo": ["lymphatic drainage"],
         "deep_tissue": ["deep tissue"],
         "postpartum": ["postpartum"],
         "postpartum_massage": ["postpartum"],

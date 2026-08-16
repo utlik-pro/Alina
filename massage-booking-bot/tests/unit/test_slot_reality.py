@@ -91,3 +91,20 @@ def test_kind_upgrade_releases_the_gate_without_losing_duration():
     assert _massage_kind_from_text("massage") is None
     assert _massage_kind_known("body_massage") and _massage_kind_known("face_massage")
     assert not _massage_kind_known("massage")
+
+
+def test_combo_choice_is_detected_and_fixes_the_duration():
+    # Live-caught 2026-08-16 02:48: "I like the special offer / Cupping" was
+    # answered with "60 or 90 min dear?" — a nonsense question for a fixed
+    # 30+15+15 session — and the lead walked away.
+    from webhook_app import _detect_combo_choice, _is_massage_service, _COMBO_KEY
+    from prices import SPECIAL_OFFERS
+
+    for phrase in ("I like the special offer", "Cupping", "and cupping",
+                   "хочу банки", "the 275 one", "hijama"):
+        assert _detect_combo_choice(phrase), phrase
+    for phrase in ("body massage", "60 min", "facial please", "how much?"):
+        assert not _detect_combo_choice(phrase), phrase
+    # The combo key must slip past BOTH massage gates (kind and duration ask).
+    assert not _is_massage_service(_COMBO_KEY)
+    assert SPECIAL_OFFERS[_COMBO_KEY]["duration"] == 60

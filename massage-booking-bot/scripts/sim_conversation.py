@@ -183,7 +183,9 @@ async def run(scenario):
         cur = ctx.booking_data.get("service_type") or None
         # Mirror prod: never downgrade body_massage/face_massage → 'massage'.
         if (cat and cat != cur
-                and not (cat == "massage" and wh._massage_kind_known(cur or ""))):
+                and not (cat == "massage"
+                         and (wh._massage_kind_known(cur or "")
+                              or cur == wh._COMBO_KEY))):
             ctx.booking_data["service_type"] = cat
             if ctx.booking_data.get("service_duration"):
                 ctx.booking_data["service_duration"] = None
@@ -193,6 +195,12 @@ async def run(scenario):
         cur = ctx.booking_data.get("service_type") or ""
         if kind and wh._is_massage_service(cur) and not wh._massage_kind_known(cur):
             ctx.booking_data["service_type"] = f"{kind}_massage"
+        # Mirror prod: picking the cupping combo fixes service AND duration.
+        if (scenario.get("channel") == "instagram" and wh._detect_combo_choice(msg)
+                and ctx.booking_data.get("service_type") != wh._COMBO_KEY):
+            from prices import SPECIAL_OFFERS as _SO
+            ctx.booking_data["service_type"] = wh._COMBO_KEY
+            ctx.booking_data["service_duration"] = int(_SO[wh._COMBO_KEY]["duration"])
         # Use the SAME detector prod uses, so the sim can't drift from the
         # webhook (it used to only know "abu dhabi" and missed "Абу-Даби").
         _ar = wh.detect_area(msg)

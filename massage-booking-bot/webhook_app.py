@@ -168,6 +168,13 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "(which comes AFTER the client has picked a time, never before), ask "
         "them to TYPE the address (area, building, apartment). Never say "
         "'share your location': a pin does not reach us from Instagram.\n"
+        "- 🎁 THE CUPPING COMBO (lymphatic drainage 30 + cupping 15 + head spa "
+        "15 — 275 AED) is ONE fixed 60-minute session: when the client picks "
+        "it ('special offer', 'cupping', '275'), NEVER ask '60 or 90 min?' — "
+        "the length is already decided. Confirm the combo and go straight to "
+        "the day/time. Its price is 275, not the 350/460 massage prices, and "
+        "in book_appointment pass service='lymphatic_cupping_combo', "
+        "duration_minutes=60, base_price_aed=275.\n"
         "- 💵 WORDING ONLY, NOT A NEW STEP — payment is asked at its own step, "
         "AFTER the name and address are known. Do NOT put it next to a price "
         "quote and do NOT bring it up early. When you do reach it, the menu "
@@ -473,6 +480,30 @@ def _massage_kind_known(name: str) -> bool:
     """
     n = (name or "").lower()
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
+
+
+_COMBO_KEY = "lymphatic_cupping_combo"
+
+
+def _detect_combo_choice(text: str) -> bool:
+    """The client is choosing the advertised cupping combo (275 AED).
+
+    Live-caught 2026-08-16, 02:48 UAE: a lead said "I like the special offer /
+    Cupping" and the duration gate — which only knows 60-or-90 massages —
+    asked "60 or 90 min dear?". The combo's length is FIXED (30+15+15 = 60),
+    so the question reads as nonsense; the client answered "But it includes
+    massage" and walked away. Choosing the combo must set the service AND its
+    fixed duration in code so no gate ever asks about either again.
+    """
+    t = (text or "").lower()
+    if "special offer" in t or "275" in t:
+        return True
+    if "cupping" in t or "банк" in t or "хиджам" in t or "hijama" in t:
+        # The standalone cupping add-on exists (15 min / 100 AED), but in the
+        # night IG funnel "cupping" is how clients name the advertised combo —
+        # the admins themselves answer a cupping ask with the 275 offer.
+        return True
+    return False
 
 
 def _massage_kind_from_text(text: str) -> Optional[str]:
@@ -2741,7 +2772,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # not erase the body/face answer already given (that re-arms the
         # body-or-face gate and re-asks a settled question).
         if (_svc_cat and _svc_cat != _cur_svc
-                and not (_svc_cat == "massage" and _massage_kind_known(_cur_svc or ""))):
+                and not (_svc_cat == "massage"
+                         and (_massage_kind_known(_cur_svc or "")
+                              or _cur_svc == _COMBO_KEY))):
             dialog_manager.update_booking_data(user_id, "service_type", _svc_cat)
             # A category switch invalidates any previously-stated duration: a
             # 90-min massage length must not keep over-filtering slots for a
@@ -2760,6 +2793,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(
                 user_id, "service_type", f"{_kind_now}_massage")
             logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
+
+        # The advertised cupping combo has a FIXED length: choosing it settles
+        # BOTH the service and the duration, so the 60-or-90 question is never
+        # asked (it cost a hot lead on 2026-08-16 — see _detect_combo_choice).
+        if (_is_ig_key(phone) and _detect_combo_choice(text)
+                and context.booking_data.get("service_type") != _COMBO_KEY):
+            from prices import SPECIAL_OFFERS as _SO
+            dialog_manager.update_booking_data(user_id, "service_type", _COMBO_KEY)
+            dialog_manager.update_booking_data(
+                user_id, "service_duration", int(_SO[_COMBO_KEY]["duration"]))
+            logger.info("combo choice detected → lymphatic_cupping_combo, 60 min fixed")
 
         # Reset the injected-slots block EVERY turn before rebuilding it. It is
         # per-turn ground truth (dated "TODAY — <date>"); if this turn's fetch is

@@ -457,6 +457,27 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   vanishes without a trace. On 2026-08-15 five pushes landed between 21:40 and
   23:00 Minsk. If a push is unavoidable, snapshot first —
   `python3.11 scripts/night_report.py --full > logs/night_snapshots/<date>_<tag>.json`.
+- 🎁 **COMBO CHOICE FIXES THE DURATION (night 2, 2026-08-16).** A hot lead
+  chose the 275 offer ("I like the special offer / Cupping") and the duration
+  gate asked "60 or 90 min dear?" — nonsense for a fixed 30+15+15 session; the
+  client answered "But it includes massage" and left. Now
+  `_detect_combo_choice()` (client says special offer / 275 / cupping / банки /
+  hijama) sets `service_type=lymphatic_cupping_combo` + `duration=60` in CODE,
+  the combo key deliberately does NOT match `_is_massage_service` so neither
+  massage gate fires, the anti-downgrade shield covers it, the IG brief says
+  "never ask 60-or-90 for the combo", and YClients books it onto the
+  lymphatic-drainage 60-min service (no combo entry exists; the comment
+  carries the contents). Replayed the lost dialogue in the sim — the lead now
+  reaches day/time. Also that night: "lead with 275 on the package prefill"
+  is only half-obeyed (first reply often quotes 1,550/1,650 without 275) —
+  known, minor, prompt-level.
+- 🌙 **OUR SCOPE = THE NIGHT SHIFT ONLY (owner decision 2026-08-16).** Daytime
+  IG leads are the admins' territory: do NOT send lead alerts about daytime
+  messages, do NOT propose replying to them, do NOT touch daytime ManyChat
+  conversations — «днём мы не лезем, там админы порешают». The morning retro
+  reviews the night's QUALITY (agent replies inside the window); daytime
+  inbound in the log is context, not a task list. Lead alerts to the group
+  remain what the agent itself sends at night for its own bookings/failures.
 - 🛡️ **SLOT-REALITY GATE on every outgoing reply (`c8630ad`, 2026-08-16) — the
   night's deepest three-layer find.** Auditing all nine ad prefills against
   live YClients (`scripts/audit_ad_prefills.py` — prices AND offered-times
