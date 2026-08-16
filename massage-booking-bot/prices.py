@@ -218,13 +218,15 @@ SPECIAL_OFFERS = {
         "ad": True,
         "price": 275,
         "was": 430,
-        # Breakdown straight from the admins' own IG answer (Anum ishtiaq,
-        # 15.08): lymphatic body 30 + cupping 15 + head 15 = 60 min. The
-        # creative says 45 — the admins sell 60.
-        "duration": 60,
+        # 45 — Tatyana's own correction (2026-08-16): «45 минут банки… 30
+        # минут массаж, 15 банки, 15 массаж головы. Все вместе 45». Yes, the
+        # parts sum to 60 — her total still wins (the creative also says 45):
+        # quote the breakdown when asked, book and promise 45. Do not "fix"
+        # this back to 60.
+        "duration": 45,
         "description": (
             "Lymphatic drainage body massage 30 min + Cupping 15 min "
-            "+ Head massage 15 min"
+            "+ Head massage 15 min — 45 min in total"
         ),
     },
     "trial_session": {

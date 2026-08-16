@@ -199,10 +199,13 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      - Admins also mass-broadcast copy-paste re-engagement to the whole
        subscriber base (2 waves 12.08, ~25 msgs, ≈0 replies) — dead
        instrument, do NOT replicate.
-     - **COMBO 275 = 60 MIN, not 45** (admins' own breakdown to Anum
-       ishtiaq 15.08: lymphatic body 30 + cupping 15 + head 15). The ad
-       creative says 45 — the admins sell 60. prices.py fixed (4cd593f);
-       matters because the slot must fit the WHOLE session.
+     - **COMBO 275 = 45 MIN — Tatyana's final word (2026-08-16),
+       OVERRIDING the earlier 60.** Her exact rule: if asked what it
+       includes — «30 минут массаж, 15 банки, 15 массаж головы. Все вместе
+       45». Yes, the parts sum to 60; her TOTAL wins and matches the ad
+       creative's 45. Quote the breakdown, book and promise 45. History:
+       admins' 15.08 answer read as 60 (4cd593f), owner relay 16.08 said 60,
+       Tatyana then corrected to 45 — do not flip it back without her word.
      - Arabic openers («مرحبا / ممكن احجز جلسة») are answered by admins in
        ENGLISH and the client keeps going in English and leaves a phone —
        supports our English-by-default policy (no auto-switch on a lone
@@ -289,9 +292,10 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      · Nail prices stay CURRENT and quotable; only the nail *discount* offer is
        withdrawn, and there is still no nail master.
      ✅ **BOTH FOLLOW-UPS ANSWERED BY THE OWNER 2026-08-16:**
-     · **Cupping combo 275 = 60 MIN.** The creative's "45 MIN" is wrong —
-       book and quote 60 (matches the admins' own 30+15+15 breakdown). Do not
-       "correct" it back to the ad.
+     · **Cupping combo 275: SUPERSEDED — Tatyana corrected it to 45 MIN
+       later the same day** («45 минут банки… все вместе 45»); the creative
+       was right after all. prices.py duration=45, IG brief quotes the
+       30+15+15 breakdown with a 45 total. See the entry above.
      · **`lash_brow_combo` (lamination + lifting, 350) is WITHDRAWN** — it is
        not on her lashes card. Removed from the catalog, the prompt, the
        upsell in `follow_up.py` and the legacy Telegram branch; the two

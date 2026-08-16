@@ -107,4 +107,6 @@ def test_combo_choice_is_detected_and_fixes_the_duration():
         assert not _detect_combo_choice(phrase), phrase
     # The combo key must slip past BOTH massage gates (kind and duration ask).
     assert not _is_massage_service(_COMBO_KEY)
-    assert SPECIAL_OFFERS[_COMBO_KEY]["duration"] == 60
+    # 45 per Tatyana 2026-08-16: the parts are 30+15+15 but her total
+    # is 45 and it wins (the ad creative says 45 too).
+    assert SPECIAL_OFFERS[_COMBO_KEY]["duration"] == 45
