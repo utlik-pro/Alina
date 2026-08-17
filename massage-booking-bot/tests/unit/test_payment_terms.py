@@ -133,3 +133,14 @@ def test_unverified_package_prices_never_reach_the_prompt():
     assert "1,550" in text and "1,650" in text      # the two the admins sell
     for banned in ("3,000", "2,590", "2,200"):
         assert banned not in text, f"{banned} must never reach the prompt"
+
+
+def test_cleansing_prefill_is_recognised():
+    # Tatyana 2026-08-16: this exact ad text is ALWAYS the deep-cleansing
+    # creative — lead with 420/770 and keep the dialogue going.
+    from webhook_app import _detect_ad_prefill
+
+    assert _detect_ad_prefill(
+        "Hello, I want to know the details about the promotion and get advice"
+    ) == "cleansing"
+    assert _detect_ad_prefill("what promotions do you have?") is None

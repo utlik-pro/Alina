@@ -39,6 +39,9 @@ CAMPAIGNS = {
     "consult": "I would like to consult on a massage and make an appointment in {e}",
     "package": "Hello i would like to sign up for a massage package in {e} at a discount",
     "summer": "Hello i would like to sign up for the summer promotion in {e}",
+    # No emirate in this prefill — the client's rule (2026-08-16): this text
+    # is ALWAYS the deep-cleansing creative. {e} is ignored via a fixed text.
+    "cleansing": "Hello, I want to know the details about the promotion and get advice",
 }
 
 # The follow-ups exist to FORCE a price out of the agent: without them a
@@ -211,6 +214,8 @@ def audit(result: dict, ok: dict[int, str]) -> list[str]:
             problems.append(f"✗ UNKNOWN {value:,} AED — matches nothing in prices.py")
     if result["campaign"] == "package" and "275" not in agent_lines:
         problems.append("⚠ MISSING 275 — the offer this very ad sells was never quoted")
+    if result["campaign"] == "cleansing" and "420" not in agent_lines:
+        problems.append("⚠ MISSING 420 — the cleansing ad's own offer was never quoted")
 
     # A dialogue with NO price at all passes every check above while being the
     # worst outcome of them all: the client asked "how much?" twice and was

@@ -495,6 +495,15 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   reaches day/time. Also that night: "lead with 275 on the package prefill"
   is only half-obeyed (first reply often quotes 1,550/1,650 without 275) —
   known, minor, prompt-level.
+- 🧴 **FOURTH AD PREFILL = DEEP CLEANSING (Tatyana 2026-08-16, screenshot):**
+  the text «Hello, I want to know the details about the promotion and get
+  advice» is ALWAYS the deep-cleansing creative — «видим этот текст —
+  скидываем чистку и дальше ведём диалог». `_detect_ad_prefill` → "cleansing";
+  the injected instruction leads with 420 AED instead of 770 (8 steps, 2 h,
+  medical education) and FORBIDS listing the other promotions (the agent was
+  dumping all five — that was the complaint). ⚠️ This prefill carries NO
+  emirate — ask the city later in the normal flow. Audit covers it
+  (MISSING 420 check); sim mirrors it.
 - 🎯 **INSTAGRAM IS THE MAIN CHANNEL NOW (owner, 2026-08-16: «сейчас у нас
   главное это инстаграм»).** All effort goes to the IG night shift. The
   WhatsApp (Wappi) agent channel is DORMANT: the subscription lapsed

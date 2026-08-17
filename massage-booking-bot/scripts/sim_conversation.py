@@ -251,7 +251,19 @@ async def run(scenario):
                     "Resume ONLY if they say they can come to one of OUR "
                     "cities."
                 )
-        if ctx.booking_data.get("ad_prefill") == "summer":
+        if ctx.booking_data.get("ad_prefill") == "cleansing":
+            from prices import SPECIAL_OFFERS as _SOC
+            _cl = _SOC["offer_deep_cleansing"]
+            ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                "\n\n🎯 THIS CLIENT CAME FROM THE DEEP-CLEANSING AD (the "
+                "'details about the promotion and get advice' prefill). Lead "
+                f"with THAT offer and nothing else: {_cl['name']} — "
+                f"{int(_cl['price'])} AED instead of {int(_cl['was'])}, "
+                f"{int(_cl['duration'])} min, specialist with medical "
+                "education. Do NOT list the other promotions. Then continue "
+                "the NORMAL flow — ask the emirate when the time comes."
+            )
+        elif ctx.booking_data.get("ad_prefill") == "summer":
             from prices import format_ad_offers_for_prompt as _offers
             ctx.extra_system_info = (ctx.extra_system_info or "") + (
                 "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "

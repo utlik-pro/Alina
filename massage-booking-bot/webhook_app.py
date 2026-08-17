@@ -1054,6 +1054,12 @@ def _detect_ad_prefill(text: str) -> Optional[str]:
         return "summer"
     if "consult" in t and "massage" in t:
         return "consult"
+    # «Hello, I want to know the details about the promotion and get advice»
+    # — Tatyana 2026-08-16: this text ALWAYS comes from the deep-cleansing
+    # creative («этот текст на чистку — всегда… скидываем чистку и дальше
+    # ведём диалог»). Note it carries NO emirate — ask it later as usual.
+    if "details about the promotion" in t:
+        return "cleansing"
     return None
 
 
@@ -3296,7 +3302,21 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             )
 
         _ad = (context.booking_data or {}).get("ad_prefill")
-        if _ad == "summer":
+        if _ad == "cleansing":
+            from prices import SPECIAL_OFFERS as _SOC
+            _cl = _SOC["offer_deep_cleansing"]
+            context.extra_system_info += (
+                "\n\n🎯 THIS CLIENT CAME FROM THE DEEP-CLEANSING AD (the "
+                "'details about the promotion and get advice' prefill — the "
+                "client's rule: this text is ALWAYS the cleansing creative). "
+                f"Lead with THAT offer and nothing else: {_cl['name']} — "
+                f"{int(_cl['price'])} AED instead of {int(_cl['was'])}, "
+                f"{int(_cl['duration'])} min, specialist with medical "
+                "education. Do NOT list the other promotions. Then continue "
+                "the NORMAL flow — this prefill has no emirate, so ask which "
+                "city they are in when the time comes."
+            )
+        elif _ad == "summer":
             # There is no "summer promotion" price list — the client never sent
             # one. What DOES exist is the four discounts currently advertised,
             # so a client tapping that ad hears those instead of a narrowing
