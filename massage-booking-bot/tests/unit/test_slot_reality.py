@@ -110,3 +110,20 @@ def test_combo_choice_is_detected_and_fixes_the_duration():
     # 45 per Tatyana 2026-08-16: the parts are 30+15+15 but her total
     # is 45 and it wins (the ad creative says 45 too).
     assert SPECIAL_OFFERS[_COMBO_KEY]["duration"] == 45
+
+
+def test_times_with_no_truth_and_no_area_become_the_city_question():
+    # Cleansing prefill carries no emirate; the client answered "20 August"
+    # to the city question and got four invented times for an empty day.
+    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    ctx.slot_truth = {}
+    out = _enforce_slot_reality(
+        "On Thursday 20 August we have 10:00 AM, 1:00 PM, 4:00 PM or 7:00 PM",
+        ctx, None)
+    assert "Abu Dhabi, Al Ain or Dubai" in out
+    assert "10:00 AM" not in out
+    # With a KNOWN area and empty truth the reply passes (other gates own it).
+    ctx2 = types.SimpleNamespace(booking_data={}, client_data={"area": "dubai"})
+    ctx2.slot_truth = {}
+    text = "Tomorrow we have 3:00 PM 🌹"
+    assert _enforce_slot_reality(text, ctx2, None) == text

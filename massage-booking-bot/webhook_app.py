@@ -1131,10 +1131,24 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
     reply because the backend hiccuped.
     """
     truth = getattr(context, "slot_truth", None) or {}
-    if not truth or not response_text:
+    if not response_text:
         return response_text
     said = _ampm_times_set(response_text)
     if not said:
+        return response_text
+    if not truth:
+        # Times with NO ground truth at all: the injection never ran, which
+        # (on the funnel paths) means the area is still unknown — any time in
+        # the reply is invented by construction. Ask for the city instead
+        # (live-caught 2026-08-16: the cleansing prefill has no emirate, the
+        # client answered "20 August" to the city question, and four times
+        # were offered for a day that is empty).
+        if not (getattr(context, "client_data", None) or {}).get("area"):
+            logger.warning(
+                "slot-reality gate: times offered with no truth and no area "
+                "— rewritten to the city question")
+            return ("Happy to check the times for you dear 🌹\n"
+                    "Which city are you in — Abu Dhabi, Al Ain or Dubai?")
         return response_text
 
     def _nice(d):
@@ -3215,6 +3229,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 # like "2pm, 4pm, 6pm" — caught red-handed in a live
                 # test. Inject a hard rule instead: never volunteer
                 # times before we know the area.
+                from datetime import datetime as _dt_au, timedelta as _td_au, timezone as _tz_au
                 _asks_time = any(
                     kw in _text_lower for kw in (
                         "when", "time", "available", "slot", "schedule",
@@ -3222,7 +3237,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "когда", "время", "свободн", "сегодня", "завтра",
                         "утро", "день", "вечер",
                     )
-                )
+                # A concrete date or a clock time IS a timing ask too — the
+                # cleansing prefill carries no emirate, and a client answering
+                # "20 August" to the city question used to slip past this net
+                # and get invented times (prefill audit, 2026-08-16).
+                ) or bool(_detect_explicit_date(
+                    _text_lower, _dt_au.now(_tz_au(_td_au(hours=4)))
+                )) or bool(_detect_requested_time(_text_lower))
                 if _asks_time:
                     context.extra_system_info = (
                         "\n\n⚠️ CLIENT AREA IS STILL UNKNOWN.\n"

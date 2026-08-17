@@ -40,7 +40,21 @@ async def _inject_slots(yc, ctx, date, last_user_text: str = "", is_ig: bool = F
     ctx.slot_truth = {}  # mirror prod: reset every turn, stale truth is worse than none
     area = ctx.client_data.get("area")
     if not area:
-        ctx.extra_system_info = ""
+        # Mirror prod: a timing ask (incl. a bare date) with no area gets the
+        # never-invent-times injection, not silence.
+        _low_na = (last_user_text or "").lower()
+        _now_na = datetime.now(_UAE)
+        _asks = any(kw in _low_na for kw in (
+            "when", "time", "available", "slot", "schedule", "today",
+            "tomorrow", "morning", "afternoon", "evening",
+        )) or bool(wh._detect_explicit_date(_low_na, _now_na)) \
+           or bool(wh._detect_requested_time(_low_na))
+        ctx.extra_system_info = (
+            "\n\n⚠️ CLIENT AREA IS STILL UNKNOWN.\n"
+            "🚨 NEVER show or invent specific times before area is "
+            "confirmed. Ask: 'Are you in Abu Dhabi, Al Ain or Dubai "
+            "dear? 🌹'"
+        ) if _asks else ""
         return
     # Service-first gate — mirror the webhook: no slots until a service is named
     # (uses the SAME constant so the sim can't drift from prod).

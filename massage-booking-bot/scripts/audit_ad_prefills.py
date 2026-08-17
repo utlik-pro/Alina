@@ -228,6 +228,10 @@ def audit(result: dict, ok: dict[int, str]) -> list[str]:
     bare_questions = [
         t for t in agent_turns(result["transcript"])
         if "?" in t and not re.search(r"\d", t)
+        # Asking which city is a REQUIRED step (some prefills carry no
+        # emirate) and repeating it when the client ignores it is correct —
+        # not a stonewall.
+        and not re.search(r"abu dhabi.*al ain.*dubai", t, re.I | re.S)
     ]
     if len(bare_questions) >= 2:
         problems.append(
