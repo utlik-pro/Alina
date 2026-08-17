@@ -209,6 +209,11 @@ async def run(scenario):
         cur = ctx.booking_data.get("service_type") or ""
         if kind and wh._is_massage_service(cur) and not wh._massage_kind_known(cur):
             ctx.booking_data["service_type"] = f"{kind}_massage"
+        # Mirror prod: a typed phone number is sticky from the moment it appears.
+        _ph = wh._detect_phone_in_text(msg)
+        if _ph:
+            ctx.client_data["phone"] = _ph
+
         # Mirror prod: out-of-area is sticky, lifted only by naming our city.
         _ooa = wh._detect_out_of_area(msg)
         if _ooa:
@@ -247,6 +252,28 @@ async def run(scenario):
         _ad = wh._detect_ad_prefill(msg)
         if _ad and not ctx.booking_data.get("ad_prefill"):
             ctx.booking_data["ad_prefill"] = _ad
+        # Mirror prod: the ALREADY-KNOWN recap keeps the model from restarting.
+        _known = []
+        if ctx.client_data.get("phone"):
+            _known.append(f"phone {ctx.client_data['phone']}")
+        if ctx.client_data.get("name"):
+            _known.append(f"name {ctx.client_data['name']}")
+        if ctx.client_data.get("area"):
+            _known.append(f"city {ctx.client_data['area']}")
+        if ctx.booking_data.get("service_type"):
+            _known.append(f"service {ctx.booking_data['service_type']}")
+        if ctx.booking_data.get("service_duration"):
+            _known.append(f"duration {ctx.booking_data['service_duration']} min")
+        if ctx.booking_data.get("date"):
+            _known.append(f"date {ctx.booking_data['date']}")
+        if _known:
+            ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                "\n\n📌 ALREADY KNOWN (never re-ask any of these, and never "
+                "restart the flow from the beginning): " + "; ".join(_known)
+                + ". The client may give details in ANY order — accept them, "
+                "thank briefly, and continue from the FIRST missing step."
+            )
+
         if ctx.booking_data.get("out_of_area"):
             if _ooa:  # named this very turn — the refusal itself comes first
                 ctx.extra_system_info = (ctx.extra_system_info or "") + (

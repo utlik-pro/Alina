@@ -495,6 +495,13 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   reaches day/time. Also that night: "lead with 275 on the package prefill"
   is only half-obeyed (first reply often quotes 1,550/1,650 without 275) —
   known, minor, prompt-level.
+- 📌 **DETAILS ARRIVE IN ANY ORDER — NEVER RESTART THE FUNNEL (client
+  complaint 2026-08-16: «она уже дала номер, зачем по второму кругу диалог
+  вести?»).** A typed UAE number (`_detect_phone_in_text`, any spelling →
+  +9715XXXXXXXX) is captured the moment it appears — client record + phone
+  gate see it, it is never asked again. Every turn injects an ALREADY-KNOWN
+  recap (phone/name/city/service/duration/date) with «continue from the
+  FIRST missing step». Sim mirrors both.
 - 🧴 **FOURTH AD PREFILL = DEEP CLEANSING (Tatyana 2026-08-16, screenshot):**
   the text «Hello, I want to know the details about the promotion and get
   advice» is ALWAYS the deep-cleansing creative — «видим этот текст —

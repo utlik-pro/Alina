@@ -492,6 +492,23 @@ def _massage_kind_known(name: str) -> bool:
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
 
 
+_UAE_PHONE_RE = re.compile(r"(?:\+?971|00971|0)\s*(5\d)\s*(\d{3})\s*(\d{4})\b")
+
+
+def _detect_phone_in_text(text: str) -> Optional[str]:
+    """A UAE mobile number the client typed, normalised to +9715XXXXXXXX.
+
+    Clients drop their number whenever they feel like it — often before the
+    flow's own phone step (live 2026-08-16: «0509952880» arrived mid-consult
+    and the agent later restarted the funnel instead of keeping it). Captured
+    the moment it appears, it must never be asked for again.
+    """
+    m = _UAE_PHONE_RE.search(text or "")
+    if not m:
+        return None
+    return "+971" + "".join(m.groups())
+
+
 _OUT_OF_AREA_RE = re.compile(
     r"\b(sharjah|ajman|fujairah|fujeirah|umm al[- ]?quwain|"
     r"ras al[- ]?khaima?h|\brak\b|khor ?fakkan|dibba|"
@@ -2878,6 +2895,18 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 user_id, "service_type", f"{_kind_now}_massage")
             logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
 
+        # A phone number typed at ANY point is kept: saved to the client
+        # record so the phone gate sees it and the flow never re-asks.
+        _phone_in_msg = _detect_phone_in_text(text)
+        if _phone_in_msg and _phone_in_msg != (context.client_data or {}).get("phone"):
+            dialog_manager.update_client_data(user_id, "phone", _phone_in_msg)
+            try:
+                await bot_module.client_service.update_client(
+                    telegram_id, phone=_phone_in_msg)
+            except Exception as _e:
+                logger.warning(f"couldn't persist client phone: {_e}")
+            logger.info(f"client phone captured from text: {_phone_in_msg}")
+
         # Out-of-area is STICKY: once the client says Sharjah (etc.), the
         # funnel stops — and it stays stopped on their "Okay" next turn, which
         # is exactly where the model used to resume selling (client complaint
@@ -3280,6 +3309,35 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # the honest answer is that combo — not the regular per-session prices,
         # and never a course price list (the client complained about exactly
         # that dump on 2026-08-15).
+        # WHAT WE ALREADY KNOW — injected every turn so the model continues
+        # from the first MISSING step instead of restarting the funnel.
+        # Live-caught 2026-08-16: the client dropped her number mid-consult
+        # and was then asked "what service would you like?" from scratch —
+        # «она уже дала номер, зачем по второму кругу диалог вести?».
+        _known_bits = []
+        _cd, _bd = (context.client_data or {}), (context.booking_data or {})
+        if _cd.get("phone"):
+            _known_bits.append(f"phone {_cd['phone']}")
+        if _cd.get("name"):
+            _known_bits.append(f"name {_cd['name']}")
+        if _cd.get("area"):
+            _known_bits.append(f"city {_cd['area']}")
+        if _bd.get("service_type"):
+            _known_bits.append(f"service {_bd['service_type']}")
+        if _bd.get("service_duration"):
+            _known_bits.append(f"duration {_bd['service_duration']} min")
+        if _bd.get("date"):
+            _known_bits.append(f"date {_bd['date']}")
+        if _known_bits:
+            context.extra_system_info += (
+                "\n\n📌 ALREADY KNOWN (never re-ask any of these, and never "
+                "restart the flow from the beginning): "
+                + "; ".join(_known_bits) + ". "
+                "The client may give details in ANY order — accept them, "
+                "thank briefly, and continue from the FIRST missing step of "
+                "the flow."
+            )
+
         # Out of our service area: the funnel is CLOSED. One warm goodbye,
         # no service questions, no prices, no times — however the client
         # keeps the chat going ("Okay", "thanks") — until they name a city
@@ -3443,7 +3501,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # (the identity key is not a number there).
         _needs_phone = False
         if _is_ig_key(phone) and booking_call is not None:
-            _known_phone = (getattr(booking_call, "client_phone", None) or client.phone or "")
+            _known_phone = (getattr(booking_call, "client_phone", None)
+                            or (context.client_data or {}).get("phone")
+                            or client.phone or "")
             _needs_phone = len(re.sub(r"\D", "", str(_known_phone))) < 9
         response_text = _enforce_reply_wording(
             response_text, actions, booking_call, context.client_data, user_text=text,

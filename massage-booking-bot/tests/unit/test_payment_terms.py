@@ -144,3 +144,18 @@ def test_cleansing_prefill_is_recognised():
         "Hello, I want to know the details about the promotion and get advice"
     ) == "cleansing"
     assert _detect_ad_prefill("what promotions do you have?") is None
+
+
+def test_uae_phone_is_captured_in_any_format():
+    # «0509952880» arrived mid-consult (live 2026-08-16) and the funnel
+    # restarted instead of keeping it. Any UAE mobile spelling → +9715XXXXXXXX.
+    from webhook_app import _detect_phone_in_text
+
+    assert _detect_phone_in_text("0509952880") == "+971509952880"
+    assert _detect_phone_in_text("+971 50 995 2880") == "+971509952880"
+    assert _detect_phone_in_text("my number is 00971501234567") == "+971501234567"
+    assert _detect_phone_in_text("Bank transfer, +971501234567") == "+971501234567"
+    # Not phones: prices, durations, dates, short numbers.
+    assert _detect_phone_in_text("350 AED") is None
+    assert _detect_phone_in_text("60 min") is None
+    assert _detect_phone_in_text("20 August") is None
