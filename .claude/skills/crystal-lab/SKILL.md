@@ -495,6 +495,18 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   reaches day/time. Also that night: "lead with 275 on the package prefill"
   is only half-obeyed (first reply often quotes 1,550/1,650 without 275) —
   known, minor, prompt-level.
+- 🎯 **INSTAGRAM IS THE MAIN CHANNEL NOW (owner, 2026-08-16: «сейчас у нас
+  главное это инстаграм»).** All effort goes to the IG night shift. The
+  WhatsApp (Wappi) agent channel is DORMANT: the subscription lapsed
+  2026-07-24 («Profile not paid») and nobody noticed for 3+ weeks — the
+  channel carried no real client traffic (archive: July follow-ups to
+  testers, no replies). The number on the price cards (+971 55 193 36 62)
+  is the ADMINS' own WhatsApp, not the agent's — card clients reach live
+  admins as before. The local chat-puller launchd job is UNLOADED (it had
+  5,662 consecutive fails). Prod keeps WAPPI_* env harmlessly; WA-side
+  follow-ups/reminders are off with it. To revive a WhatsApp agent later:
+  pay the Wappi profile, rescan the QR, then
+  `launchctl load ~/Library/LaunchAgents/com.crystal-lab.wappi-pull.plist`.
 - 🌙 **OUR SCOPE = THE NIGHT SHIFT ONLY (owner decision 2026-08-16).** Daytime
   IG leads are the admins' territory: do NOT send lead alerts about daytime
   messages, do NOT propose replying to them, do NOT touch daytime ManyChat
