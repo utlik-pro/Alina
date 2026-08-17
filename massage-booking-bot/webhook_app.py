@@ -485,6 +485,46 @@ def _massage_kind_known(name: str) -> bool:
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
 
 
+_ARABIC_RE = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")
+_CYRILLIC_RE = re.compile(r"[Ѐ-ӿ]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def _is_non_english_script(text: str) -> bool:
+    """The message is written in a script the admins can't read — Arabic or
+    any other non-Latin, non-Cyrillic writing (client rule 2026-08-16: «пусть
+    переходят на англ… чтобы мы потом смогли с ними общаться»). Russian stays
+    allowed, so Cyrillic does NOT count."""
+    t = text or ""
+    if _ARABIC_RE.search(t):
+        return True
+    letters = [c for c in t if c.isalpha()]
+    if len(letters) < 3:
+        return False
+    other = [c for c in letters
+             if not _LATIN_RE.match(c) and not _CYRILLIC_RE.match(c)]
+    return len(other) / len(letters) > 0.4
+
+
+ENGLISH_PLEASE_MSG = "In English please 🙏\nWe reply in English dear 🌹"
+
+
+def _enforce_english_reply(response_text: str, inbound_text: str) -> str:
+    """The agent must never answer in Arabic (or another script the admins
+    can't read) — the morning admins take over these chats and must be able
+    to continue them. Live-caught 2026-08-16: an Arabic ad-reply question got
+    a whole Arabic paragraph back. The prompt now forbids it; this is the
+    binding version: if the model still emits such a reply, it is replaced by
+    the polite English ask (better a lost nuance than an unreadable thread).
+    Cyrillic passes — Russian is the allowed switch."""
+    if not response_text or not _is_non_english_script(response_text):
+        return response_text
+    logger.warning(
+        f"english-only gate: reply contained a non-English script "
+        f"(inbound was {inbound_text[:40]!r}) — replaced")
+    return ENGLISH_PLEASE_MSG
+
+
 _COMBO_KEY = "lymphatic_cupping_combo"
 
 
@@ -3179,6 +3219,18 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # the honest answer is that combo — not the regular per-session prices,
         # and never a course price list (the client complained about exactly
         # that dump on 2026-08-15).
+        # The client wrote in a script the admins can't read (Arabic etc.) —
+        # instruct THIS turn explicitly: answer the substance in English and
+        # ask to switch. Russian is exempt (the admins speak it).
+        if _is_non_english_script(text):
+            context.extra_system_info += (
+                "\n\n🚫 THE CLIENT'S MESSAGE IS NOT IN ENGLISH (non-Latin, "
+                "non-Russian script). Reply in ENGLISH ONLY — never mirror "
+                "their language (client rule: the admins must be able to read "
+                "and continue every chat). Understand what they meant, answer "
+                "it in English, and politely add: 'In English please 🙏'."
+            )
+
         _ad = (context.booking_data or {}).get("ad_prefill")
         if _ad == "summer":
             # There is no "summer promotion" price list — the client never sent
@@ -3299,6 +3351,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # No invented times reach the client — every offered time must exist
         # in the YClients truth captured this turn (see _enforce_slot_reality).
         response_text = _enforce_slot_reality(response_text, context, booking_call)
+
+        # English-only guard: the admins must be able to read and continue
+        # every chat, so a non-English-script reply never leaves the building.
+        response_text = _enforce_english_reply(response_text, text)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

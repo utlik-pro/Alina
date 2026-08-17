@@ -28,8 +28,17 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   `_instagram_consult_task` → `agents/instagram_agent.generate_ig_reply`
   (gpt via `OPENAI_MODEL`, per-sender in-memory history, ≤950 chars) →
   fallback to the static handoff line on ANY LLM failure.
-- Same language rule as WA (English default, switch when the client can't
-  follow), prices plain "350 AED" (no VAT math), payment only when asked.
+- 🗣️ **LANGUAGE (client rule 2026-08-16, supersedes 07-15): English always;
+  RUSSIAN is the ONLY allowed switch** (admins speak it; switch only when the
+  client can't follow English — a lone «Привет» stays English). **Arabic or
+  any other language → NEVER mirror it**: answer the substance in English and
+  add "In English please 🙏" («чтобы мы потом смогли с ними общаться» — after
+  the agent answered an Arabic ad-reply with a whole Arabic paragraph).
+  Code-enforced both ways: `_is_non_english_script()` injects an
+  English-only instruction on such inbound, `_enforce_english_reply()`
+  replaces any non-English-script OUTBOUND with the polite English ask
+  (Cyrillic exempt). Tests: `tests/unit/test_english_only.py`.
+  Prices plain "350 AED" (no VAT math), payment only when asked.
 - Go-live needs (user-side, Meta dashboard): IG professional account with
   message access allowed, Meta app + Instagram Login, webhook subscribed
   (verify token `INSTAGRAM_VERIFY_TOKEN`, default `crystal_lab_ig_2026`),
