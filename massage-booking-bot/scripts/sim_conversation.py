@@ -195,6 +195,13 @@ async def run(scenario):
         cur = ctx.booking_data.get("service_type") or ""
         if kind and wh._is_massage_service(cur) and not wh._massage_kind_known(cur):
             ctx.booking_data["service_type"] = f"{kind}_massage"
+        # Mirror prod: out-of-area is sticky, lifted only by naming our city.
+        _ooa = wh._detect_out_of_area(msg)
+        if _ooa:
+            ctx.booking_data["out_of_area"] = _ooa
+        elif wh.detect_area(msg) and ctx.booking_data.get("out_of_area"):
+            ctx.booking_data["out_of_area"] = None
+
         # Mirror prod: picking the cupping combo fixes service AND duration.
         if (scenario.get("channel") == "instagram" and wh._detect_combo_choice(msg)
                 and ctx.booking_data.get("service_type") != wh._COMBO_KEY):
@@ -226,6 +233,24 @@ async def run(scenario):
         _ad = wh._detect_ad_prefill(msg)
         if _ad and not ctx.booking_data.get("ad_prefill"):
             ctx.booking_data["ad_prefill"] = _ad
+        if ctx.booking_data.get("out_of_area"):
+            if _ooa:  # named this very turn — the refusal itself comes first
+                ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                    f"\n\n🚫 THE CLIENT IS OUTSIDE OUR SERVICE AREA (they "
+                    f"named '{_ooa}'). Tell them warmly, ONCE: we don't work "
+                    "there — we do home service in Abu Dhabi, Al Ain and "
+                    "Dubai. Then CLOSE gracefully. DO NOT ask what service "
+                    "they want, no prices, no times."
+                )
+            else:
+                ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                    f"\n\n🚫 THE CLIENT IS OUTSIDE OUR SERVICE AREA "
+                    f"('{ctx.booking_data['out_of_area']}') and we have "
+                    "ALREADY told them so. The funnel is closed: no service "
+                    "questions, no prices, no times. ONE short warm goodbye. "
+                    "Resume ONLY if they say they can come to one of OUR "
+                    "cities."
+                )
         if ctx.booking_data.get("ad_prefill") == "summer":
             from prices import format_ad_offers_for_prompt as _offers
             ctx.extra_system_info = (ctx.extra_system_info or "") + (

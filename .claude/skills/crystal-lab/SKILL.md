@@ -470,6 +470,17 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   vanishes without a trace. On 2026-08-15 five pushes landed between 21:40 and
   23:00 Minsk. If a push is unavoidable, snapshot first —
   `python3.11 scripts/night_report.py --full > logs/night_snapshots/<date>_<tag>.json`.
+- 🚫 **OUT-OF-AREA = GRACEFUL GOODBYE, NOT A FUNNEL (client rule 2026-08-16,
+  Sharjah screenshot: «зачем спрашивать какой сервис… можно попрощаться
+  красиво и всё»).** After "we don't work in Sharjah" the agent asked "what
+  service are you interested in?" on the client's "Okay". Now sticky
+  `booking_data["out_of_area"]` (`_detect_out_of_area`: Sharjah/Ajman/RAK/
+  Fujairah/UAQ + RU spellings): first turn = warm refusal naming our three
+  cities, every later turn = ONE short goodbye («If you are ever in Abu
+  Dhabi, Al Ain or Dubai — we would be happy to pamper you 🙏»), no service
+  questions/prices/times. Naming a served emirate lifts the flag and the
+  funnel resumes. Sim mirrors it; replayed the exact dialogue — all three
+  states correct. Tests in `test_english_only.py`.
 - 🎁 **COMBO CHOICE FIXES THE DURATION (night 2, 2026-08-16).** A hot lead
   chose the 275 offer ("I like the special offer / Cupping") and the duration
   gate asked "60 or 90 min dear?" — nonsense for a fixed 30+15+15 session; the

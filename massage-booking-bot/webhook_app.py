@@ -168,6 +168,13 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "(which comes AFTER the client has picked a time, never before), ask "
         "them to TYPE the address (area, building, apartment). Never say "
         "'share your location': a pin does not reach us from Instagram.\n"
+        "- 🚫 OUT OF SERVICE AREA (Sharjah, Ajman, RAK, Fujairah, UAQ…): say "
+        "once, warmly, that we only serve Abu Dhabi, Al Ain and Dubai — and "
+        "then CLOSE the conversation gracefully. No 'what service are you "
+        "interested in', no prices, no times after that; if they reply 'Okay', "
+        "answer with a short goodbye ('If you are ever in Abu Dhabi, Al Ain "
+        "or Dubai — we would be happy to pamper you 🙏'). Resume only if they "
+        "say they can come to one of our cities.\n"
         "- 🎁 THE CUPPING COMBO is ONE fixed session of 45 MINUTES TOTAL — "
         "275 AED. If asked what it includes: lymphatic drainage body massage "
         "30 min + cupping 15 min + head massage 15 min, the whole procedure "
@@ -483,6 +490,20 @@ def _massage_kind_known(name: str) -> bool:
     """
     n = (name or "").lower()
     return any(k in n for k in ("body", "face", "facial", "тел", "лиц", "спин"))
+
+
+_OUT_OF_AREA_RE = re.compile(
+    r"\b(sharjah|ajman|fujairah|fujeirah|umm al[- ]?quwain|"
+    r"ras al[- ]?khaima?h|\brak\b|khor ?fakkan|dibba|"
+    r"шардж|аджман|фуджейр|рас[- ]?(?:эль|аль)[- ]?хайм)\w*", re.I)
+
+
+def _detect_out_of_area(text: str) -> Optional[str]:
+    """An emirate/city we do NOT serve, or None. Sharjah ad-leads are common —
+    the ads target the whole UAE while we only drive to Abu Dhabi, Al Ain and
+    Dubai."""
+    m = _OUT_OF_AREA_RE.search(text or "")
+    return m.group(1) if m else None
 
 
 _ARABIC_RE = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")
@@ -2837,6 +2858,19 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 user_id, "service_type", f"{_kind_now}_massage")
             logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
 
+        # Out-of-area is STICKY: once the client says Sharjah (etc.), the
+        # funnel stops — and it stays stopped on their "Okay" next turn, which
+        # is exactly where the model used to resume selling (client complaint
+        # 2026-08-16: «зачем спрашивать какой сервис… можно попрощаться
+        # красиво и всё»). Naming one of OUR cities lifts the flag.
+        _ooa_city = _detect_out_of_area(text)
+        if _ooa_city:
+            dialog_manager.update_booking_data(user_id, "out_of_area", _ooa_city)
+            logger.info(f"out-of-area detected: {_ooa_city} — funnel stops")
+        elif detect_area(text) and context.booking_data.get("out_of_area"):
+            dialog_manager.update_booking_data(user_id, "out_of_area", None)
+            logger.info("client named a served emirate — out-of-area lifted")
+
         # The advertised cupping combo has a FIXED length: choosing it settles
         # BOTH the service and the duration, so the 60-or-90 question is never
         # asked (it cost a hot lead on 2026-08-16 — see _detect_combo_choice).
@@ -3219,6 +3253,36 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # the honest answer is that combo — not the regular per-session prices,
         # and never a course price list (the client complained about exactly
         # that dump on 2026-08-15).
+        # Out of our service area: the funnel is CLOSED. One warm goodbye,
+        # no service questions, no prices, no times — however the client
+        # keeps the chat going ("Okay", "thanks") — until they name a city
+        # we actually serve.
+        _ooa_now = (context.booking_data or {}).get("out_of_area")
+        if _ooa_now:
+            if _ooa_city:
+                # They named the city THIS turn — the refusal itself hasn't
+                # been said yet. Say it once, warmly, and close.
+                context.extra_system_info += (
+                    f"\n\n🚫 THE CLIENT IS OUTSIDE OUR SERVICE AREA (they "
+                    f"named '{_ooa_now}'). Tell them warmly, ONCE: we don't "
+                    "work there — we do home service in Abu Dhabi, Al Ain "
+                    "and Dubai. Then CLOSE gracefully ('If you are ever in "
+                    "Abu Dhabi, Al Ain or Dubai — we would be happy to "
+                    "pamper you 🙏'). DO NOT ask what service they want, no "
+                    "prices, no times."
+                )
+            else:
+                context.extra_system_info += (
+                    f"\n\n🚫 THE CLIENT IS OUTSIDE OUR SERVICE AREA "
+                    f"('{_ooa_now}') and we have ALREADY told them so. The "
+                    "funnel is closed: no 'what service are you interested "
+                    "in', no prices, no times, no offers. Reply with ONE "
+                    "short warm goodbye, e.g. 'Ok dear 🌹 If you are ever "
+                    "in Abu Dhabi, Al Ain or Dubai — we would be happy to "
+                    "pamper you 🙏'. Resume the normal flow ONLY if the "
+                    "client says they can come to one of OUR cities."
+                )
+
         # The client wrote in a script the admins can't read (Arabic etc.) —
         # instruct THIS turn explicitly: answer the substance in English and
         # ask to switch. Russian is exempt (the admins speak it).

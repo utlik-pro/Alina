@@ -45,3 +45,16 @@ def test_english_reply_untouched():
 def test_russian_reply_untouched():
     text = "Конечно, дорогая 🌹 Какая услуга вас интересует?"
     assert _enforce_english_reply(text, "напишите на русском") == text
+
+
+def test_out_of_area_cities_are_detected():
+    # Client rule 2026-08-16: after "we don't work in Sharjah", an "Okay" must
+    # get a warm goodbye — not "what service are you interested in?".
+    from webhook_app import _detect_out_of_area
+
+    for phrase in ("Availble in sharjah", "I'm in Ajman", "ras al khaimah?",
+                   "Fujairah please", "умм аль-кувейн... шарджа"):
+        assert _detect_out_of_area(phrase), phrase
+    for phrase in ("Abu Dhabi", "al ain tomorrow", "Dubai marina",
+                   "Okay", "body massage"):
+        assert _detect_out_of_area(phrase) is None, phrase
