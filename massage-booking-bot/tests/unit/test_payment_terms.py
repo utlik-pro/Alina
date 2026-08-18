@@ -174,3 +174,21 @@ def test_package_prefill_reply_always_carries_the_275_offer():
     assert _enforce_package_offer_first(good, "package") == good
     assert _enforce_package_offer_first(bare, "consult") == bare
     assert _enforce_package_offer_first("60 min - 350 AED", "package") == "60 min - 350 AED"
+
+
+def test_cleansing_question_never_gets_the_facial_massage_price():
+    # Живой случай 2026-08-18 03:50: «Deep Facial cleansing in Abu Dhabi?»
+    # → «50 min - 370 AED» (цена лифтинг-массажа лица, другая услуга).
+    from webhook_app import _enforce_cleansing_facts
+
+    wrong = "50 min - 370 AED 🌹\n\nWhich day would you like dear?"
+    out = _enforce_cleansing_facts(wrong, "Deep Facial cleansing in Abu Dhabi?")
+    assert "420" in out and "120 min" in out
+    assert "370" not in out
+    # Уже верный ответ не трогаем.
+    right = "Deep cleansing is 420 AED, 2 hours"
+    assert _enforce_cleansing_facts(right, "cleansing?") == right
+    # Вопрос не про чистку — не вмешиваемся.
+    assert _enforce_cleansing_facts(wrong, "facial massage price?") == wrong
+    # Русское «чистка» тоже ловится.
+    assert "420" in _enforce_cleansing_facts(wrong, "сколько стоит чистка лица?")

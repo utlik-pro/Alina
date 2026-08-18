@@ -1253,6 +1253,43 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
     return response_text
 
 
+_CLEANSING_ASK_RE = re.compile(r"cleansing|cleaning|чистк", re.I)
+_FACIAL_MASSAGE_PRICE_RE = re.compile(r"\b370\b|\b50\s*min", re.I)
+
+
+def _enforce_cleansing_facts(response_text: str, inbound_text: str) -> str:
+    """Спросили про ЧИСТКУ — ответ обязан нести цифры чистки, а не массажа лица.
+
+    Живой случай (Rahima Amir, 2026-08-18 03:50): «Deep Facial cleansing in
+    Abu Dhabi?» → «50 min - 370 AED» — это цена ЛИФТИНГ-МАССАЖА лица, другая
+    услуга. Клиент получил неверную цену и неверную длительность, будучи
+    готовым записаться. Инструкция в контексте не удержала (реплей 18.08
+    повторил ошибку), поэтому правило стало детерминированным: если клиент
+    спросил про чистку, а в ответе фигурируют 370 / «50 min» и НЕТ 420 —
+    ответ заменяется на факты чистки.
+    """
+    if not response_text or not inbound_text:
+        return response_text
+    if not _CLEANSING_ASK_RE.search(inbound_text):
+        return response_text
+    if "420" in response_text:
+        return response_text  # чистка названа верно — не трогаем
+    if not _FACIAL_MASSAGE_PRICE_RE.search(response_text):
+        return response_text  # цен лицевого массажа нет — вмешиваться не в чем
+
+    from prices import SPECIAL_OFFERS as _SO
+    c = _SO["offer_deep_cleansing"]
+    logger.warning(
+        "cleansing gate: клиент спросил про чистку, ответ нёс цифры лицевого "
+        "массажа — заменено на факты чистки")
+    return (
+        f"Deep facial cleansing dear 🌹\n"
+        f"{int(c['duration'])} min — {int(c['price'])} AED instead of {int(c['was'])}\n"
+        f"8 steps, specialist with medical education\n\n"
+        f"Which day would you like? 😊"
+    )
+
+
 _PKG_PRICES_RE = re.compile(r"1[,.\s]?550|1[,.\s]?650")
 
 
@@ -3606,6 +3643,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # The cupping ad's own offer is never silently skipped.
         response_text = _enforce_package_offer_first(
             response_text, (context.booking_data or {}).get("ad_prefill"))
+
+        # Спросили про чистку — цена и длительность обязаны быть от чистки.
+        response_text = _enforce_cleansing_facts(response_text, text)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

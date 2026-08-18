@@ -364,6 +364,7 @@ async def run(scenario):
         final = wh._enforce_payment_terms(final, _pay)
         final = wh._enforce_package_offer_first(
             final, ctx.booking_data.get("ad_prefill"))
+        final = wh._enforce_cleansing_facts(final, msg)
 
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
