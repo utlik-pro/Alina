@@ -159,6 +159,50 @@ async def _persist_night_event(ts: str, kind: str, data: dict) -> None:
         logger.debug(f"night event persist skipped: {e}")
 
 
+async def _human_led_dialogue(subscriber_id: str, hours: int = 3) -> bool:
+    """True, если этот диалог сейчас ведёт ЖИВОЙ админ, а не агент.
+
+    ManyChat ставит трёхчасовую паузу автоматизаций, только когда админ
+    отвечает через его инбокс. Админы Crystal Lab пишут прямо из приложения
+    Instagram — ManyChat об этом не знает, пауза не срабатывает, и агент
+    влезает в чужой разговор (живой случай 2026-08-18 21:02: админ вёл
+    клиентку, агент вклинился со своим приветствием).
+
+    Прямого признака «ответил человек» ManyChat не отдаёт, поэтому судим по
+    своим данным: клиент активно пишет (3+ сообщения), а мы не отправили
+    ему НИ ОДНОГО ответа — значит отвечает кто-то другой. Наши собственные
+    сбои отправки из этого исключены: это наша поломка, а не админ.
+    """
+    try:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        from sqlalchemy import select as _select
+        from database import NightEvent, get_db
+
+        since = (_dt.now(_tz(_td(hours=4))) - _td(hours=hours)).isoformat(timespec="seconds")
+        async with get_db().session() as db:
+            rows = (await db.execute(
+                _select(NightEvent)
+                .where(NightEvent.ts >= since)
+                .order_by(NightEvent.id.desc()).limit(300)
+            )).scalars().all()
+    except Exception as e:
+        logger.debug(f"human-led check skipped: {e}")
+        return False
+
+    inbound = sent = failed = 0
+    for r in rows:
+        who = (r.who or "").replace(IG_KEY_PREFIX, "")
+        if who != str(subscriber_id):
+            continue
+        if r.kind == "inbound":
+            inbound += 1
+        elif r.kind == "sent":
+            sent += 1
+        elif r.kind == "send_failed":
+            failed += 1
+    return inbound >= 3 and sent == 0 and failed == 0
+
+
 def _is_ig_key(phone: str) -> bool:
     """True for synthetic Instagram identities ("ig:<ManyChat subscriber id>")."""
     return isinstance(phone, str) and phone.startswith(IG_KEY_PREFIX)
@@ -4452,6 +4496,15 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
     # its only remaining effect was answering during the day (owner request
     # 2026-08-15 — the client must see complete daytime silence).
     _night_event("inbound", who=subscriber_id, text=text, live=ig_live_now())
+
+    # Живой админ уже ведёт этот диалог — не влезаем. Админы отвечают из
+    # приложения Instagram, поэтому пауза ManyChat не срабатывает; без этой
+    # проверки агент вклинивается в чужой разговор (2026-08-18 21:02).
+    if ig_live_now() and await _human_led_dialogue(subscriber_id):
+        _night_event("human_led_skip", who=subscriber_id, text=text[:120])
+        logger.info(f"human-led dialogue {subscriber_id} — агент молчит")
+        return {"reply": SHADOW_SENTINEL, "human_led": True}
+
     if config.MANYCHAT_API_KEY and ig_live_now() and (
         config.IG_BOOKING_ENABLED or _is_ig_test_subscriber(subscriber_id)
     ):

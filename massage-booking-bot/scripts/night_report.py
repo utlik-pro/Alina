@@ -77,11 +77,31 @@ def main() -> None:
         who = str(e.get("who") or "").replace("ig:", "")
         if who:
             by_contact[who].append(e)
-    unanswered = [
-        who for who, evs in by_contact.items()
-        if any(e["kind"] == "inbound" for e in evs)
-        and not any(e["kind"] == "sent" for e in evs)
-    ]
+    # Кто вёл диалог. Без этого разделения отчёт врёт: сообщения клиента,
+    # которому отвечал ЖИВОЙ админ из Instagram, выглядели как «агент
+    # промолчал» (дважды ввело в заблуждение 2026-08-18).
+    human_led, agent_led, unanswered = [], [], []
+    for who, evs in by_contact.items():
+        if not any(e["kind"] == "inbound" for e in evs):
+            continue
+        if any(e["kind"] == "human_led_skip" for e in evs):
+            human_led.append(who)
+        elif any(e["kind"] == "sent" for e in evs):
+            agent_led.append(who)
+        else:
+            in_window = [e for e in evs
+                         if e["kind"] == "inbound" and e.get("live")]
+            # 3+ сообщения в окне без единого нашего ответа — почти наверняка
+            # клиента вёл человек, просто до нашей проверки очередь не дошла.
+            (human_led if len(in_window) >= 3 else unanswered).append(who)
+
+    print(f"\nВЁЛ АГЕНТ: {len(agent_led)}   ВЁЛ ЧЕЛОВЕК: {len(human_led)}")
+    if human_led:
+        print("  диалоги админов (агент молчал — это норма):")
+        for who in human_led[:20]:
+            first = next(e for e in by_contact[who] if e["kind"] == "inbound")
+            print(f"    {who}: {first.get('text', '')[:70]!r}")
+
     if unanswered:
         print(f"\nWROTE BUT GOT NO REPLY: {len(unanswered)}")
         for who in unanswered[:20]:

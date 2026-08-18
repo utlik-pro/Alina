@@ -182,3 +182,49 @@ def test_typos_in_body_or_face_still_release_the_gate():
     # Ложных срабатываний быть не должно.
     for w in ("booking", "buy", "package", "cleansing", "how much?"):
         assert _massage_kind_from_text(w) is None, w
+
+
+def test_human_led_dialogue_detection(monkeypatch):
+    # Админы отвечают из приложения Instagram, пауза ManyChat не срабатывает,
+    # и агент влезал в чужой разговор (2026-08-18 21:02). Признак: клиент
+    # активно пишет, а мы не отправили ни одного ответа.
+    import asyncio
+    import types as _t
+    import webhook_app as wh
+
+    class _Row:
+        def __init__(self, kind, who):
+            self.kind, self.who = kind, who
+
+    def _fake_rows(rows):
+        class _Res:
+            def scalars(self):
+                return _t.SimpleNamespace(all=lambda: rows)
+        class _DB:
+            async def execute(self, *a, **kw):
+                return _Res()
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *a):
+                return False
+        class _Sess:
+            def session(self):
+                return _DB()
+        return _Sess()
+
+    # 4 сообщения клиента, ни одного нашего ответа → ведёт человек
+    rows = [_Row("inbound", "ig:777")] * 4
+    monkeypatch.setattr(wh, "get_db", lambda: _fake_rows(rows), raising=False)
+    import database
+    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows), raising=False)
+    assert asyncio.run(wh._human_led_dialogue("777")) is True
+
+    # Мы отвечали → это наш диалог
+    rows2 = [_Row("inbound", "ig:777")] * 4 + [_Row("sent", "ig:777")]
+    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows2), raising=False)
+    assert asyncio.run(wh._human_led_dialogue("777")) is False
+
+    # Наш сбой отправки — не повод считать, что отвечает админ
+    rows3 = [_Row("inbound", "ig:777")] * 4 + [_Row("send_failed", "ig:777")]
+    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows3), raising=False)
+    assert asyncio.run(wh._human_led_dialogue("777")) is False
