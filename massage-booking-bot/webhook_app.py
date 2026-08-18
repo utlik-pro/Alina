@@ -196,7 +196,10 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "details 🌹'\n"
         "- Do NOT send wa.me links in this conversation — the whole "
         "booking happens right here in Instagram.\n"
-        "- 📍 WORDING ONLY, NOT A NEW STEP — when you reach the address step "
+        "- 📍 NEVER put a 📍 pin emoji in your message here — it invites the "
+        "client to share a location pin, which Instagram does not deliver to "
+        "us. Ask in plain words.\n"
+        "- WORDING ONLY, NOT A NEW STEP — when you reach the address step "
         "(which comes AFTER the client has picked a time, never before), ask "
         "them to TYPE the address (area, building, apartment). Never say "
         "'share your location': a pin does not reach us from Instagram.\n"
@@ -3247,8 +3250,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
                     context.extra_system_info = (
                         f"\n\nREAL AVAILABLE SLOTS (ground truth — overrides anything you said before):\n"
-                        f"TODAY — {_label(today)}:\n{slots_today}\n\n"
-                        f"TOMORROW — {_label(tomorrow)}:\n{slots_tomorrow}"
+                        f"TODAY = {_label(today)} — this is what 'today' means "
+                        f"RIGHT NOW on the salon's clock; if you are answering "
+                        f"after midnight, 'today' is THIS date, not the day the "
+                        f"shift started:\n{slots_today}\n\n"
+                        f"TOMORROW = {_label(tomorrow)}:\n{slots_tomorrow}"
                         f"{extra_slots_text}\n\n"
                         f"🚨 The schedule above is the GROUND TRUTH. Available weekdays in "
                         f"this context: {_all_wd}.\n"
@@ -3590,6 +3596,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # English-only guard: the admins must be able to read and continue
         # every chat, so a non-English-script reply never leaves the building.
         response_text = _enforce_english_reply(response_text, text)
+
+        # Instagram can't deliver a shared location, so a 📍 in OUR message
+        # only invites a pin we will never receive. Strip it on the IG path
+        # (the prompt asks; this makes it certain). WhatsApp keeps the pin.
+        if _is_ig_key(phone) and "📍" in response_text:
+            response_text = response_text.replace(" 📍", "").replace("📍", "")
 
         # The cupping ad's own offer is never silently skipped.
         response_text = _enforce_package_offer_first(

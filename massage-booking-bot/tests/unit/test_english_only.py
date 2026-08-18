@@ -58,3 +58,13 @@ def test_out_of_area_cities_are_detected():
     for phrase in ("Abu Dhabi", "al ain tomorrow", "Dubai marina",
                    "Okay", "body massage"):
         assert _detect_out_of_area(phrase) is None, phrase
+
+
+def test_no_pin_emoji_survives_on_the_instagram_path():
+    # Instagram never delivers a shared location, so a 📍 in our own message
+    # only invites a pin we can't receive (client complaint 2026-08-16).
+    import webhook_app as wh
+
+    assert "📍" not in wh.ENGLISH_PLEASE_MSG
+    brief = wh._ig_channel_brief()
+    assert "NEVER put a 📍 pin emoji" in brief

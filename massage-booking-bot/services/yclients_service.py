@@ -17,6 +17,10 @@ from loguru import logger
 
 from config import config
 
+# Цвет наших записей в журнале YClients (мятно-зелёный). Админские записи
+# жёлтые, API-записи раньше были бесцветными и визуально терялись.
+AGENT_RECORD_COLOR = "a5d6a7"
+
 
 # Russian → English transliteration for the real Crystal Lab staff. The
 # YClients name field often carries area + handover notes ("Людмила/с 20.06
@@ -1171,6 +1175,13 @@ class YClientsService:
             "seance_length": seance_length,
             "save_if_busy": False,
             "comment": comment,
+            # Цвет записи в журнале. Записи админов приходят жёлтыми
+            # (custom_color=ffeb3b), наши API-записи были бесцветными и
+            # терялись среди прочих — салон буквально «не видел» созданную
+            # ночью запись (2026-08-17). Мятно-зелёный = «сделано агентом»:
+            # видно с порога, кто создал визит.
+            "custom_color": AGENT_RECORD_COLOR,
+            "custom_font_color": "000000",
             "client": {},
         }
 
