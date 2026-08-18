@@ -167,3 +167,18 @@ def test_busy_time_in_a_reply_is_rewritten(monkeypatch):
         ctx, "al_ain", who="test"))
     assert "6:00 PM" not in out
     assert "10:00 AM" in out                # предложены реальные окна
+
+
+def test_typos_in_body_or_face_still_release_the_gate():
+    # «Faicial» (живой клиент 2026-08-18) не распознавался, из-за чего слоты
+    # не грузились вовсе и агент назвал занятые времена. Модель опечатку
+    # понимает — код обязан тоже.
+    from webhook_app import _massage_kind_from_text
+
+    for w in ("Facial", "Faicial", "facal", "fasial", "фейшл"):
+        assert _massage_kind_from_text(w) == "face", w
+    for w in ("body", "bodu", "bosy", "массаж тела"):
+        assert _massage_kind_from_text(w) == "body", w
+    # Ложных срабатываний быть не должно.
+    for w in ("booking", "buy", "package", "cleansing", "how much?"):
+        assert _massage_kind_from_text(w) is None, w

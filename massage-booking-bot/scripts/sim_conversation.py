@@ -354,6 +354,8 @@ async def run(scenario):
             )
         # Mirror prod: no invented times survive to the client.
         final = wh._enforce_slot_reality(final, ctx, actions.booking_call)
+        final = await wh._verify_reply_times_against_calendar(
+            final, ctx, ctx.client_data.get("area") or "", who="sim")
         # Mirror prod's binding payment-terms pass (labels on the menu, the
         # chosen method's footnote on every later price).
         _pay = (getattr(actions.booking_call, "payment_method", None)

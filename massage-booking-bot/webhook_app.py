@@ -630,10 +630,27 @@ def _massage_kind_from_text(text: str) -> Optional[str]:
     NEVER releases (found 2026-08-15: every Al Ain prefill run looped on the
     gate, slots were never injected, and the model invented times for an
     empty day). Face wins when both stems appear ('facial with body oils').
+
+    Клиенты печатают с телефона и промахиваются: живой случай 2026-08-18 —
+    «Faicial». Модель опечатку поняла, а точное совпадение нет, и вся цепочка
+    встала: kind не определился → гейт не отпустил → слоты не загрузились →
+    правда пуста → гейты слепы → агент назвал занятые времена. Поэтому здесь
+    допускается одна опечатка (difflib) — цена ошибки на порядок выше.
     """
+    import difflib
+
     t = (text or "").lower()
-    has_face = any(k in t for k in ("face", "facial", "лиц"))
+    has_face = any(k in t for k in ("face", "facial", "лиц", "фейш", "фэйш"))
     has_body = any(k in t for k in ("body", "тел", "спин", "back"))
+    if not has_face and not has_body:
+        # Слово целиком похоже на "facial"/"body"? ("faicial", "facal", "bodu")
+        for w in re.findall(r"[a-zа-яё]{4,12}", t):
+            if difflib.SequenceMatcher(None, w, "facial").ratio() >= 0.75:
+                has_face = True
+                break
+            if difflib.SequenceMatcher(None, w, "body").ratio() >= 0.74:
+                has_body = True
+                break
     if has_face:
         return "face"
     if has_body:
