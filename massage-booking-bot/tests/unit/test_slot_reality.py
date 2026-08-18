@@ -185,18 +185,18 @@ def test_typos_in_body_or_face_still_release_the_gate():
 
 
 def test_human_led_dialogue_detection(monkeypatch):
-    # Админы отвечают из приложения Instagram, пауза ManyChat не срабатывает,
-    # и агент влезал в чужой разговор (2026-08-18 21:02). Признак: клиент
-    # активно пишет, а мы не отправили ни одного ответа.
+    """Правило владельца: главный — админ. Признак — хвост сообщений клиента
+    после нашего последнего ответа, разнесённый по времени (мы отвечаем за
+    ~25 сек и молчать между его репликами не можем)."""
     import asyncio
     import types as _t
     import webhook_app as wh
 
     class _Row:
-        def __init__(self, kind, who):
-            self.kind, self.who = kind, who
+        def __init__(self, kind, ts):
+            self.kind, self.ts, self.who = kind, ts, "ig:777"
 
-    def _fake_rows(rows):
+    def _db_with(rows):
         class _Res:
             def scalars(self):
                 return _t.SimpleNamespace(all=lambda: rows)
@@ -207,24 +207,30 @@ def test_human_led_dialogue_detection(monkeypatch):
                 return self
             async def __aexit__(self, *a):
                 return False
-        class _Sess:
-            def session(self):
-                return _DB()
-        return _Sess()
+        return _t.SimpleNamespace(session=lambda: _DB())
 
-    # 4 сообщения клиента, ни одного нашего ответа → ведёт человек
-    rows = [_Row("inbound", "ig:777")] * 4
-    monkeypatch.setattr(wh, "get_db", lambda: _fake_rows(rows), raising=False)
     import database
-    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows), raising=False)
+
+    def _set(rows):
+        monkeypatch.setattr(database, "get_db", lambda: _db_with(rows), raising=False)
+
+    T = "2026-08-18T22:%02d:00+04:00"
+    # Клиент написал дважды с разрывом 4 минуты, мы молчали -> ведёт человек.
+    _set([_Row("inbound", T % 10), _Row("inbound", T % 6), _Row("sent", T % 1)])
     assert asyncio.run(wh._human_led_dialogue("777")) is True
 
-    # Мы отвечали → это наш диалог
-    rows2 = [_Row("inbound", "ig:777")] * 4 + [_Row("sent", "ig:777")]
-    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows2), raising=False)
+    # Быстрая пара сообщений — это НЕ админ, агент ещё отвечает.
+    _set([_Row("inbound", T % 10), _Row("inbound", T % 10), _Row("sent", T % 1)])
     assert asyncio.run(wh._human_led_dialogue("777")) is False
 
-    # Наш сбой отправки — не повод считать, что отвечает админ
-    rows3 = [_Row("inbound", "ig:777")] * 4 + [_Row("send_failed", "ig:777")]
-    monkeypatch.setattr(database, "get_db", lambda: _fake_rows(rows3), raising=False)
+    # Мы ответили последними -> диалог наш.
+    _set([_Row("sent", T % 12), _Row("inbound", T % 10), _Row("inbound", T % 5)])
+    assert asyncio.run(wh._human_led_dialogue("777")) is False
+
+    # Одно сообщение клиента — обычное начало, отвечаем.
+    _set([_Row("inbound", T % 10)])
+    assert asyncio.run(wh._human_led_dialogue("777")) is False
+
+    # Наш сбой отправки — поломка, а не админ: хвост обрывается на нём.
+    _set([_Row("inbound", T % 10), _Row("send_failed", T % 9), _Row("inbound", T % 5)])
     assert asyncio.run(wh._human_led_dialogue("777")) is False

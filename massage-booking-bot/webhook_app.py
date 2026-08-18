@@ -159,48 +159,62 @@ async def _persist_night_event(ts: str, kind: str, data: dict) -> None:
         logger.debug(f"night event persist skipped: {e}")
 
 
-async def _human_led_dialogue(subscriber_id: str, hours: int = 3) -> bool:
-    """True, если этот диалог сейчас ведёт ЖИВОЙ админ, а не агент.
+HUMAN_LED_GAP_SECONDS = 90
 
-    ManyChat ставит трёхчасовую паузу автоматизаций, только когда админ
-    отвечает через его инбокс. Админы Crystal Lab пишут прямо из приложения
-    Instagram — ManyChat об этом не знает, пауза не срабатывает, и агент
-    влезает в чужой разговор (живой случай 2026-08-18 21:02: админ вёл
-    клиентку, агент вклинился со своим приветствием).
 
-    Прямого признака «ответил человек» ManyChat не отдаёт, поэтому судим по
-    своим данным: клиент активно пишет (3+ сообщения), а мы не отправили
-    ему НИ ОДНОГО ответа — значит отвечает кто-то другой. Наши собственные
-    сбои отправки из этого исключены: это наша поломка, а не админ.
+async def _human_led_dialogue(subscriber_id: str, hours: int = 6) -> bool:
+    """True, если диалог ведёт ЖИВОЙ админ — тогда агент отходит.
+
+    Правило владельца (2026-08-18): **главный — админ**. Если человек
+    подключился к диалогу, агент в него не лезет.
+
+    ManyChat ставит паузу автоматизаций только когда админ отвечает через
+    его инбокс, а админы Crystal Lab пишут прямо из приложения Instagram —
+    ManyChat этого не видит, пауза не срабатывает, и агент вклинивается в
+    чужой разговор (живой случай 21:02: админ вёл продажу, агент влез со
+    своим приветствием).
+
+    Признака «ответил человек» в API нет, поэтому судим по своим данным:
+    смотрим ХВОСТ диалога — сколько сообщений клиента подряд пришло ПОСЛЕ
+    нашего последнего ответа. Два и больше, разнесённые более чем на
+    HUMAN_LED_GAP_SECONDS — значит клиенту отвечает кто-то другой: сами мы
+    укладываемся в ~25 секунд, и молчать между его репликами не могли.
+    Разрыв важен, иначе быстрая пара сообщений от клиента («6», затем
+    «Pm») выглядела бы как работа админа.
     """
     try:
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        from datetime import datetime as _dtp
         from sqlalchemy import select as _select
         from database import NightEvent, get_db
 
-        since = (_dt.now(_tz(_td(hours=4))) - _td(hours=hours)).isoformat(timespec="seconds")
         async with get_db().session() as db:
             rows = (await db.execute(
                 _select(NightEvent)
-                .where(NightEvent.ts >= since)
-                .order_by(NightEvent.id.desc()).limit(300)
+                .where(NightEvent.who.in_(
+                    [str(subscriber_id), f"{IG_KEY_PREFIX}{subscriber_id}"]))
+                .order_by(NightEvent.id.desc()).limit(40)
             )).scalars().all()
     except Exception as e:
         logger.debug(f"human-led check skipped: {e}")
         return False
 
-    inbound = sent = failed = 0
+    # rows идут от новых к старым: считаем хвост входящих до нашего ответа.
+    tail = []
     for r in rows:
-        who = (r.who or "").replace(IG_KEY_PREFIX, "")
-        if who != str(subscriber_id):
-            continue
+        if r.kind in ("sent", "send_failed"):
+            break  # дошли до нашего ответа (или нашей поломки) — хвост кончился
         if r.kind == "inbound":
-            inbound += 1
-        elif r.kind == "sent":
-            sent += 1
-        elif r.kind == "send_failed":
-            failed += 1
-    return inbound >= 3 and sent == 0 and failed == 0
+            tail.append(r.ts)
+    if len(tail) < 2:
+        return False
+
+    from datetime import datetime as _dtp
+    try:
+        newest = _dtp.fromisoformat(tail[0])
+        oldest = _dtp.fromisoformat(tail[-1])
+    except (ValueError, TypeError):
+        return False
+    return (newest - oldest).total_seconds() >= HUMAN_LED_GAP_SECONDS
 
 
 def _is_ig_key(phone: str) -> bool:
