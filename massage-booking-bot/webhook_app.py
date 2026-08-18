@@ -857,8 +857,13 @@ def _detect_explicit_date(text: str, now) -> Optional[str]:
         # "on the 20th" — nearest future day-of-month. Never inside an
         # address: "Gate Tower, 21st floor" is where the client LIVES, not
         # when they want the visit (caught by the month-ahead sweep).
+        # Пробел перед суффиксом встречается чаще, чем кажется: клиент пишет
+        # с телефона «23 rd», «1 st», и слитный шаблон это пропускал — дата не
+        # определялась, календарь на тот день не загружался, и гейт слотов
+        # судил время против сегодня/завтра (живой случай 2026-08-18: агент
+        # подтвердил 6 PM на 23-е, где у мастера уже стоял визит).
         m = re.search(
-            r"\b(?:the\s+)?([0-3]?\d)(?:st|nd|rd|th)\b"
+            r"\b(?:the\s+)?([0-3]?\d)\s?(?:st|nd|rd|th)\b"
             r"(?!\s*(?:floor|fl\b|этаж|apartment|apt|room|tower|building|villa|street|road))",
             t,
         )
@@ -1251,6 +1256,69 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
             f"on any injected day — rewritten")
         return _honest(None)
     return response_text
+
+
+async def _verify_reply_times_against_calendar(response_text: str, context,
+                                               area: str, who: str = "") -> str:
+    """Каждое время, которое агент называет, сверяется с КАЛЕНДАРЁМ ТОГО ДНЯ,
+    про который он говорит — включая день, названный в самом ответе.
+
+    Живой провал 2026-08-18: клиент написал «23 rd» и «Sunday» разными
+    сообщениями, дата не распозналась, календарь на 23-е не загрузился — и
+    гейт слотов сверил «6:00 PM» с сегодня/завтра, где оно было свободно.
+    Клиенту подтвердили время, на котором у мастера уже стоял 90-минутный
+    визит. Теперь дата берётся и из ответа агента («Sunday 23rd at 6:00 PM»),
+    а если её нет в загруженной правде — время проверяется напрямую запросом
+    к YClients. Сбой самого YClients ничего не переписывает (fail open).
+    """
+    if not response_text or not area:
+        return response_text
+    said = _ampm_times_set(response_text)
+    if not said:
+        return response_text
+
+    from datetime import datetime as _dtv, timedelta as _tdv, timezone as _tzv
+    now = _dtv.now(_tzv(_tdv(hours=4)))
+    # День, про который говорит САМ ответ; иначе — выбранный ранее в диалоге.
+    target = (_detect_explicit_date(response_text.lower(), now)
+              or (context.booking_data or {}).get("date"))
+    if not target:
+        return response_text
+    truth = getattr(context, "slot_truth", None) or {}
+    if target in truth and truth[target] is not None:
+        return response_text  # эту дату уже проверил основной гейт
+
+    import bot as bot_module
+    dur = (context.booking_data or {}).get("service_duration") or 60
+    busy = []
+    for t in sorted(said):
+        try:
+            free = await bot_module.yclients_service.is_slot_available(
+                area, target, t, dur)
+        except Exception as e:
+            logger.warning(f"reply-time check failed ({e}) — не сужу")
+            return response_text
+        if free is False:
+            busy.append(t)
+    if not busy:
+        return response_text
+
+    logger.error(f"reply-time gate: агент назвал занятое время {busy} на "
+                 f"{target} (клиент {who}) — ответ переписан")
+    _night_event("busy_time_blocked", who=who, text=f"{target} {busy}")
+    try:
+        real = await bot_module.yclients_service.get_available_slots_summary(
+            date=target, service_category=(context.booking_data or {}).get("service_type"),
+            area=area, service_duration=dur)
+        times = sorted(_ampm_times_set(real or ""))
+    except Exception:
+        times = []
+    nice = _dtv.strptime(target, "%Y-%m-%d").strftime("%A %-d %B")
+    if times:
+        shown = ", ".join(_to_ampm(t) for t in times[:4])
+        return f"On {nice} we have {shown} 🌹\nWhich suits you?"
+    return (f"On {nice} we're fully booked dear 🙏\n"
+            f"Would another day work for you?")
 
 
 _PRICE_IN_REPLY_RE = re.compile(r"(\d[\d,\s]{1,7})\s*AED", re.I)
@@ -3742,6 +3810,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # No invented times reach the client — every offered time must exist
         # in the YClients truth captured this turn (see _enforce_slot_reality).
         response_text = _enforce_slot_reality(response_text, context, booking_call)
+
+        # ...и ни одно названное время не может быть занятым в календаре того
+        # дня, про который агент говорит (в т.ч. дня из его собственного ответа).
+        response_text = await _verify_reply_times_against_calendar(
+            response_text, context,
+            (context.client_data or {}).get("area") or "", who=phone)
 
         # English-only guard: the admins must be able to read and continue
         # every chat, so a non-English-script reply never leaves the building.

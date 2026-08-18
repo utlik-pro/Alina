@@ -127,3 +127,43 @@ def test_times_with_no_truth_and_no_area_become_the_city_question():
     ctx2.slot_truth = {}
     text = "Tomorrow we have 3:00 PM 🌹"
     assert _enforce_slot_reality(text, ctx2, None) == text
+
+
+def test_spaced_ordinal_dates_are_parsed():
+    # «23 rd» с телефона — клиент так и написал (2026-08-18), а слитный
+    # шаблон это пропускал: календарь нужного дня не загружался вовсе.
+    from datetime import datetime
+    from webhook_app import _detect_explicit_date
+
+    now = datetime(2026, 8, 18, 12, 0)
+    assert _detect_explicit_date("23 rd", now) == "2026-08-23"
+    assert _detect_explicit_date("23rd", now) == "2026-08-23"
+    assert _detect_explicit_date("sunday 23rd at 6:00 pm", now) == "2026-08-23"
+    assert _detect_explicit_date("1 st of september", now) == "2026-09-01"
+    # Адрес — не дата.
+    assert _detect_explicit_date("gate tower, 21 st floor", now) is None
+
+
+def test_busy_time_in_a_reply_is_rewritten(monkeypatch):
+    # Живой провал: агент подтвердил «Sunday 23rd at 6:00 PM», когда у мастера
+    # на 18:00 уже стоял 90-минутный визит.
+    import asyncio
+    import types as _t
+    import webhook_app as wh
+
+    class _YC:
+        async def is_slot_available(self, area, date, hhmm, dur):
+            return hhmm != "18:00"          # 18:00 занято, остальное свободно
+        async def get_available_slots_summary(self, **kw):
+            return "Available:\nEliza (Al Ain): 10:00 AM, 11:00 AM"
+
+    import bot as bot_module
+    monkeypatch.setattr(bot_module, "yclients_service", _YC(), raising=False)
+
+    ctx = _t.SimpleNamespace(booking_data={"service_duration": 50}, client_data={})
+    ctx.slot_truth = {}
+    out = asyncio.run(wh._verify_reply_times_against_calendar(
+        "Sunday 23rd at 6:00 PM is fine\n\nPlease type your address",
+        ctx, "al_ain", who="test"))
+    assert "6:00 PM" not in out
+    assert "10:00 AM" in out                # предложены реальные окна
