@@ -1253,6 +1253,119 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
     return response_text
 
 
+_PRICE_IN_REPLY_RE = re.compile(r"(\d[\d,\s]{1,7})\s*AED", re.I)
+
+
+def _allowed_prices() -> set:
+    """Все цифры, которые агент вообще имеет право произнести.
+
+    Каталог + рекламные офферы (цена и «было») + ТОЛЬКО продаваемые пакеты.
+    Пакеты с quotable=False (3 000 / 2 590 / 2 200) сюда не попадают — их
+    никто из админов никогда не называл, и клиент их не подтверждал.
+    """
+    from prices import PACKAGES, SERVICE_CATALOG, SPECIAL_OFFERS
+
+    ok = set()
+    for svc in SERVICE_CATALOG.values():
+        if svc.get("price"):
+            ok.add(int(svc["price"]))
+    for offer in SPECIAL_OFFERS.values():
+        for f in ("price", "was"):
+            if offer.get(f):
+                ok.add(int(offer[f]))
+    for pkg in PACKAGES.values():
+        if pkg.get("quotable"):
+            for f in ("price", "was"):
+                if pkg.get(f):
+                    ok.add(int(pkg[f]))
+    return ok
+
+
+def _banned_prices() -> set:
+    """Цифры, которые запрещено произносить (неподтверждённые пакеты)."""
+    from prices import PACKAGES
+
+    return {int(p["price"]) for p in PACKAGES.values()
+            if not p.get("quotable") and p.get("price")}
+
+
+def _enforce_price_sanity(response_text: str, who: str = "") -> str:
+    """Последний рубеж по ценам: запрещённое не уходит, чужое — под сигнал.
+
+    Два разных случая и два разных действия, потому что слепое переписывание
+    навредило бы: агент имеет право назвать СУММУ двух услуг (350 + 370),
+    которой нет в каталоге, и это не ошибка.
+
+    · ЗАПРЕЩЁННАЯ цифра (3 000 / 2 590 / 2 200 — легаси-пакеты, которые
+      клиент никогда не подтверждал; именно их получил живой лид 2026-08-15)
+      → ответ заменяется целиком, такое не должно долететь ни при каких
+      обстоятельствах.
+    · НЕЗНАКОМАЯ цифра → в ночной лог и в предупреждение, чтобы утром
+      увидеть выдумку, но диалог не ломать.
+    """
+    if not response_text:
+        return response_text
+    said = set()
+    for raw in _PRICE_IN_REPLY_RE.findall(response_text):
+        try:
+            said.add(int(re.sub(r"[,\s]", "", raw)))
+        except ValueError:
+            continue
+    if not said:
+        return response_text
+
+    banned = said & _banned_prices()
+    if banned:
+        logger.error(f"price gate: ЗАПРЕЩЁННАЯ цена {sorted(banned)} в ответе "
+                     f"клиенту {who} — ответ заменён")
+        _night_event("banned_price_blocked", who=who,
+                     text=f"{sorted(banned)} | {response_text[:200]}")
+        return ("Our team will confirm the package details for you dear 🌹\n"
+                "Which service are you interested in?")
+
+    unknown = said - _allowed_prices()
+    if unknown:
+        logger.warning(f"price gate: незнакомая цена {sorted(unknown)} в ответе "
+                       f"клиенту {who} (возможна сумма услуг): {response_text[:120]}")
+        _night_event("unknown_price", who=who,
+                     text=f"{sorted(unknown)} | {response_text[:200]}")
+    return response_text
+
+
+_AD_OFFER_PRICES = (420, 350, 370, 275)
+
+
+def _enforce_summer_offers(response_text: str, ad_prefill) -> str:
+    """На summer-префилле обязаны прозвучать рекламные акции, а не что попало.
+
+    Клиент пришёл по объявлению об акции: ответ с ценами, в котором нет ни
+    одной из четырёх рекламируемых, означает, что агент увёл разговор в
+    обычный прайс. До гейта правило жило только в инъекции — а история с
+    чисткой показала, что инъекцию модель может проигнорировать.
+    """
+    if ad_prefill != "summer" or not response_text:
+        return response_text
+    if not _PRICE_IN_REPLY_RE.search(response_text):
+        return response_text  # цен нет — вмешиваться не в чем
+    if any(str(p) in response_text for p in _AD_OFFER_PRICES):
+        return response_text  # хотя бы один рекламный оффер назван
+
+    from prices import format_ad_offers_for_prompt  # noqa: F401  (единый источник)
+    from prices import SPECIAL_OFFERS as _SO
+
+    lines = []
+    for o in _SO.values():
+        if not o.get("ad"):
+            continue
+        dur = f", {int(o['duration'])} min" if o.get("duration") else ""
+        lines.append(f"{o['name'].replace('NEW OFFER - ', '')} — "
+                     f"{int(o['price'])} AED instead of {int(o['was'])}{dur}")
+    logger.warning("summer gate: ответ с ценами без единого рекламного оффера "
+                   "— офферы добавлены")
+    return ("Our current offers 🌹\n" + "\n".join(lines)
+            + "\n\n---MESSAGE_SPLIT---\n\n" + response_text)
+
+
 _CLEANSING_ASK_RE = re.compile(r"cleansing|cleaning|чистк", re.I)
 _FACIAL_MASSAGE_PRICE_RE = re.compile(r"\b370\b|\b50\s*min", re.I)
 
@@ -3646,6 +3759,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Спросили про чистку — цена и длительность обязаны быть от чистки.
         response_text = _enforce_cleansing_facts(response_text, text)
+
+        # На summer-префилле обязаны звучать рекламные акции.
+        response_text = _enforce_summer_offers(
+            response_text, (context.booking_data or {}).get("ad_prefill"))
+
+        # Последний рубеж: запрещённая цена не уходит, незнакомая — под сигнал.
+        response_text = _enforce_price_sanity(response_text, who=phone)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

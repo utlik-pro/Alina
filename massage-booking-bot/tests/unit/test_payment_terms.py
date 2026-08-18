@@ -192,3 +192,32 @@ def test_cleansing_question_never_gets_the_facial_massage_price():
     assert _enforce_cleansing_facts(wrong, "facial massage price?") == wrong
     # Русское «чистка» тоже ловится.
     assert "420" in _enforce_cleansing_facts(wrong, "сколько стоит чистка лица?")
+
+
+def test_banned_price_never_reaches_a_client():
+    # 3 000 / 2 590 / 2 200 — легаси-пакеты, которых нет в продаже; именно их
+    # получил живой лид 2026-08-15.
+    from webhook_app import _enforce_price_sanity
+
+    bad = "Body massage package 10 x 60 min — 3,000 AED"
+    out = _enforce_price_sanity(bad)
+    assert "3,000" not in out and "3000" not in out
+    assert "team will confirm" in out.lower()
+    good = "60 min - 350 AED\n90 min - 460 AED"
+    assert _enforce_price_sanity(good) == good
+    # Сумма двух услуг незнакома каталогу, но это не ошибка — не режем.
+    total = "Body + facial together — 720 AED"
+    assert _enforce_price_sanity(total) == total
+
+
+def test_summer_prefill_reply_always_carries_an_ad_offer():
+    from webhook_app import _enforce_summer_offers
+
+    drifted = "Manicure is 200 AED and pedicure is 220 AED"
+    out = _enforce_summer_offers(drifted, "summer")
+    assert "420" in out and "275" in out
+    assert drifted in out
+    ok = "Body massage 60 min — 350 AED instead of 500"
+    assert _enforce_summer_offers(ok, "summer") == ok
+    assert _enforce_summer_offers(drifted, "consult") == drifted
+    assert _enforce_summer_offers("Which city dear?", "summer") == "Which city dear?"

@@ -365,6 +365,8 @@ async def run(scenario):
         final = wh._enforce_package_offer_first(
             final, ctx.booking_data.get("ad_prefill"))
         final = wh._enforce_cleansing_facts(final, msg)
+        final = wh._enforce_summer_offers(final, ctx.booking_data.get("ad_prefill"))
+        final = wh._enforce_price_sanity(final, who="sim")
 
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
