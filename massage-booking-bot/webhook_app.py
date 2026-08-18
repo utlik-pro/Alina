@@ -144,20 +144,17 @@ async def _persist_night_event(ts: str, kind: str, data: dict) -> None:
     """Write one night event to Postgres; swallow every failure."""
     try:
         import json as _json
-        import bot as bot_module
         from database import NightEvent, get_db
 
         who = str(data.get("who") or "")
         text = data.get("text")
         extra = {k: v for k, v in data.items() if k not in ("who", "text")}
-        async for db in get_db():
+        async with get_db().session() as db:
             db.add(NightEvent(
                 ts=ts, kind=kind, who=who or None,
                 text=str(text) if text is not None else None,
                 data=_json.dumps(extra, ensure_ascii=False) if extra else None,
             ))
-            await db.commit()
-            break
     except Exception as e:
         logger.debug(f"night event persist skipped: {e}")
 
@@ -4244,7 +4241,7 @@ async def admin_night_log(request: Request, limit: int = 200, kind: str = ""):
         from sqlalchemy import select as _select
         from database import NightEvent, get_db
 
-        async for db in get_db():
+        async with get_db().session() as db:
             rows = (await db.execute(
                 _select(NightEvent).order_by(NightEvent.id.desc()).limit(max(limit, 1000))
             )).scalars().all()
@@ -4260,7 +4257,6 @@ async def admin_night_log(request: Request, limit: int = 200, kind: str = ""):
                     except Exception:
                         pass
                 events.append(e)
-            break
     except Exception as e:
         logger.warning(f"night-log DB read failed, serving the ring: {e}")
         events = list(NIGHT_LOG or [])
