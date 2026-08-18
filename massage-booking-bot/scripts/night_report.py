@@ -80,22 +80,28 @@ def main() -> None:
     # Кто вёл диалог. Без этого разделения отчёт врёт: сообщения клиента,
     # которому отвечал ЖИВОЙ админ из Instagram, выглядели как «агент
     # промолчал» (дважды ввело в заблуждение 2026-08-18).
-    human_led, agent_led, unanswered = [], [], []
+    human_led, agent_led, daytime_only, unanswered = [], [], [], []
     for who, evs in by_contact.items():
-        if not any(e["kind"] == "inbound" for e in evs):
+        ins = [e for e in evs if e["kind"] == "inbound"]
+        if not ins:
             continue
+        in_window = [e for e in ins if e.get("live")]
         if any(e["kind"] == "human_led_skip" for e in evs):
             human_led.append(who)
         elif any(e["kind"] == "sent" for e in evs):
             agent_led.append(who)
+        elif not in_window:
+            # Писал только днём — молчание штатное, это НЕ проблема.
+            daytime_only.append(who)
+        elif len(in_window) >= 3:
+            # 3+ сообщения в окне без единого нашего ответа — клиента почти
+            # наверняка вёл человек (админы пишут из Instagram напрямую).
+            human_led.append(who)
         else:
-            in_window = [e for e in evs
-                         if e["kind"] == "inbound" and e.get("live")]
-            # 3+ сообщения в окне без единого нашего ответа — почти наверняка
-            # клиента вёл человек, просто до нашей проверки очередь не дошла.
-            (human_led if len(in_window) >= 3 else unanswered).append(who)
+            unanswered.append(who)
 
-    print(f"\nВЁЛ АГЕНТ: {len(agent_led)}   ВЁЛ ЧЕЛОВЕК: {len(human_led)}")
+    print(f"\nВЁЛ АГЕНТ: {len(agent_led)}   ВЁЛ ЧЕЛОВЕК: {len(human_led)}   "
+          f"писали только днём: {len(daytime_only)}")
     if human_led:
         print("  диалоги админов (агент молчал — это норма):")
         for who in human_led[:20]:
@@ -103,11 +109,11 @@ def main() -> None:
             print(f"    {who}: {first.get('text', '')[:70]!r}")
 
     if unanswered:
-        print(f"\nWROTE BUT GOT NO REPLY: {len(unanswered)}")
+        print(f"\n⚠️  БЕЗ ОТВЕТА В ОКНЕ — разобрать: {len(unanswered)}")
         for who in unanswered[:20]:
-            first = next(e for e in by_contact[who] if e["kind"] == "inbound")
-            print(f"  {who}: {first.get('text', '')[:80]!r} "
-                  f"(live={first.get('live')})")
+            first = next(e for e in by_contact[who] if e["kind"] == "inbound"
+                         and e.get("live"))
+            print(f"  {who}: {first.get('text', '')[:80]!r}")
 
     if args.full:
         print("\nALL EVENTS")
