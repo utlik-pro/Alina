@@ -1218,6 +1218,31 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
     return response_text
 
 
+_PKG_PRICES_RE = re.compile(r"1[,.\s]?550|1[,.\s]?650")
+
+
+def _enforce_package_offer_first(response_text: str, ad_prefill) -> str:
+    """On the cupping-ad prefill the 275 offer must be heard BEFORE (or with)
+    any package price. The prompt asks; the first live night proved the model
+    ignores it — three package leads (00:19/01:19/02:47, 2026-08-18) were
+    quoted 1,550/1,650 and the ad's own offer never came up. Deterministic
+    now: a package-priced reply without 275 gets the offer prepended.
+    """
+    if ad_prefill != "package" or not response_text:
+        return response_text
+    if "275" in response_text or not _PKG_PRICES_RE.search(response_text):
+        return response_text
+    from prices import SPECIAL_OFFERS as _SO
+    c = _SO["lymphatic_cupping_combo"]
+    logger.warning("package prefill: reply had package prices without the 275 "
+                   "offer — prepended")
+    return (
+        f"Our discount offer 🙌🏼\nLymphatic drainage + cupping + head massage "
+        f"— {int(c['price'])} AED instead of {int(c['was'])}, "
+        f"{int(c['duration'])} min\n\n---MESSAGE_SPLIT---\n\n" + response_text
+    )
+
+
 _PAYMENT_MENU_RE = re.compile(
     r"^(\s*(?:[-•*]\s*)?(?:💵|🏦|💳)?\s*)(cash|bank transfer)\s*$", re.IGNORECASE)
 _PRICE_RE = re.compile(r"\b(\d{2,5})\s*AED\b", re.IGNORECASE)
@@ -3368,6 +3393,19 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     "client says they can come to one of OUR cities."
                 )
 
+        # The client asked about the deep cleansing — pin its facts. Live
+        # 2026-08-18 04:50: "Deep Facial cleansing in Abu Dhabi?" was answered
+        # "50 min - 370 AED" — the FACIAL MASSAGE pair, a wrong price to a
+        # ready buyer.
+        if "cleansing" in text.lower() or "чистк" in text.lower():
+            context.extra_system_info += (
+                "\n\n🎯 THE CLIENT IS ASKING ABOUT DEEP FACIAL CLEANSING. Its "
+                "facts: 8 steps, 120 min (2 hours), 420 AED instead of 770, "
+                "specialist with medical education. NEVER quote 370 AED or "
+                "50 min for cleansing — those are the FACIAL MASSAGE numbers, "
+                "a different service."
+            )
+
         # The client wrote in a script the admins can't read (Arabic etc.) —
         # instruct THIS turn explicitly: answer the substance in English and
         # ask to switch. Russian is exempt (the admins speak it).
@@ -3520,6 +3558,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # English-only guard: the admins must be able to read and continue
         # every chat, so a non-English-script reply never leaves the building.
         response_text = _enforce_english_reply(response_text, text)
+
+        # The cupping ad's own offer is never silently skipped.
+        response_text = _enforce_package_offer_first(
+            response_text, (context.booking_data or {}).get("ad_prefill"))
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

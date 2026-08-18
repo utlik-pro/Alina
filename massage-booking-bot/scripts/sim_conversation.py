@@ -342,6 +342,16 @@ async def run(scenario):
             already_booked_sig=getattr(ctx, "last_booking_sig", None),
             group_requested=bool(ctx.booking_data.get("group_requested")),
             needs_phone=_needs_phone, is_ig=is_ig)
+        # Mirror prod: the cleansing facts pin (asked about cleansing →
+        # 420/120, never the facial-massage pair).
+        if "cleansing" in msg.lower() or "чистк" in msg.lower():
+            ctx.extra_system_info = (ctx.extra_system_info or "") + (
+                "\n\n🎯 THE CLIENT IS ASKING ABOUT DEEP FACIAL CLEANSING. Its "
+                "facts: 8 steps, 120 min (2 hours), 420 AED instead of 770, "
+                "specialist with medical education. NEVER quote 370 AED or "
+                "50 min for cleansing — those are the FACIAL MASSAGE numbers, "
+                "a different service."
+            )
         # Mirror prod: no invented times survive to the client.
         final = wh._enforce_slot_reality(final, ctx, actions.booking_call)
         # Mirror prod's binding payment-terms pass (labels on the menu, the
@@ -352,6 +362,9 @@ async def run(scenario):
         if _pay:
             ctx.booking_data["payment_method"] = _pay
         final = wh._enforce_payment_terms(final, _pay)
+        final = wh._enforce_package_offer_first(
+            final, ctx.booking_data.get("ad_prefill"))
+
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
         bc = actions.booking_call

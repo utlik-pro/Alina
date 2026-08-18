@@ -495,6 +495,21 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   reaches day/time. Also that night: "lead with 275 on the package prefill"
   is only half-obeyed (first reply often quotes 1,550/1,650 without 275) —
   known, minor, prompt-level.
+- 🌃 **FIRST AD NIGHT (17→18.08): 10 contacts, 33 replies, 0 send failures,
+  0 bookings; one lead reached the name step and went silent.** Two leads
+  wrote minutes BEFORE 21:00 and never returned — messages arriving before
+  the window are NOT reprocessed at open (known edge; catch-up = backlog
+  candidate). «سلام» got English + "In English please 🙏" live ✅. Two prompt
+  disobediences found and made DETERMINISTIC (day deploy 18.08):
+  · package prefill answered with 1,550/1,650 and NO 275 in all three night
+    cases → `_enforce_package_offer_first()` prepends the offer to any
+    package-priced reply that lacks it;
+  · "Deep Facial cleansing in Abu Dhabi?" was answered "50 min - 370" (the
+    FACIAL MASSAGE pair) → a cleansing keyword in the client text now pins
+    the facts (120 min / 420 / was 770) in the context.
+  Night evidence archiver: `scripts/archive_night_log.py` + launchd
+  `com.crystal-lab.night-archive` (every 5 min → logs/night_archive/<shift
+  date>.jsonl, restart-proof, dedup by ts+kind+who+text).
 - 📌 **DETAILS ARRIVE IN ANY ORDER — NEVER RESTART THE FUNNEL (client
   complaint 2026-08-16: «она уже дала номер, зачем по второму кругу диалог
   вести?»).** A typed UAE number (`_detect_phone_in_text`, any spelling →

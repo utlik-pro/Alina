@@ -159,3 +159,18 @@ def test_uae_phone_is_captured_in_any_format():
     assert _detect_phone_in_text("350 AED") is None
     assert _detect_phone_in_text("60 min") is None
     assert _detect_phone_in_text("20 August") is None
+
+
+def test_package_prefill_reply_always_carries_the_275_offer():
+    # First live ad night (2026-08-18): three package leads were quoted
+    # 1,550/1,650 and the cupping ad's own 275 offer never came up.
+    from webhook_app import _enforce_package_offer_first
+
+    bare = "Body massage package 5 sessions — 1,550 AED\nFace 5 — 1,650 AED"
+    out = _enforce_package_offer_first(bare, "package")
+    assert "275" in out and out.index("275") < out.index("1,550")
+    # Already compliant / other campaigns / no package prices → untouched.
+    good = "Our offer — 275 AED\n\nPackages: 1,550 AED"
+    assert _enforce_package_offer_first(good, "package") == good
+    assert _enforce_package_offer_first(bare, "consult") == bare
+    assert _enforce_package_offer_first("60 min - 350 AED", "package") == "60 min - 350 AED"
