@@ -2,6 +2,7 @@
 
 from .models import (
     Base, Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList,
+    NightEvent,
 )
 from .db import Database, get_db, init_db
 from .services import (
@@ -23,6 +24,7 @@ __all__ = [
     "Package",
     "MasterAccount",
     "WaitingList",
+    "NightEvent",
     "Database",
     "get_db",
     "init_db",

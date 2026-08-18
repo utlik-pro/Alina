@@ -239,3 +239,25 @@ class WaitingList(Base):
 
     def __repr__(self):
         return f"<WaitingList(id={self.id}, client={self.client_id}, status={self.status})>"
+
+
+class NightEvent(Base):
+    """Телеметрия ночной смены — постоянная, переживает деплой.
+
+    Раньше жила только в памяти прода (deque на 1000) и в файле контейнера:
+    каждый деплой стирал ночь целиком (2026-08-15 три пуша съели полчаса
+    живого окна; 2026-08-18 ресёрч подтвердил sqlite-в-контейнере). Теперь
+    каждое событие пишется и сюда; /admin/night-log читает отсюда.
+    """
+    __tablename__ = "night_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(String(40), nullable=False)              # ISO, Abu Dhabi clock
+    kind = Column(String(40), nullable=False, index=True)
+    who = Column(String(80), nullable=True, index=True)
+    text = Column(Text, nullable=True)
+    data = Column(Text, nullable=True)                   # JSON of extra fields
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<NightEvent(id={self.id}, kind={self.kind}, who={self.who})>"

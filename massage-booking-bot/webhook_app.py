@@ -109,7 +109,14 @@ NIGHT_LOG: "deque" = None  # initialised below (deque import is local)
 
 
 def _night_event(kind: str, **data) -> None:
-    """Append one event to the night log; never let logging break a turn."""
+    """Append one event to the night log; never let logging break a turn.
+
+    Two sinks: the in-memory ring (fast reads, dies with the process) and the
+    NightEvent table (permanent — the 2026-08-18 research showed every deploy
+    was erasing the whole night, because BOTH old sinks lived inside the
+    container). The DB write is fire-and-forget: observability must never
+    slow down or break a client turn.
+    """
     global NIGHT_LOG
     try:
         from collections import deque
@@ -123,8 +130,36 @@ def _night_event(kind: str, **data) -> None:
             if isinstance(v, str) and len(v) > 400:
                 data[k] = v[:400] + "…"
         NIGHT_LOG.append({"ts": ts, "kind": kind, **data})
+
+        import asyncio as _aio
+        try:
+            _aio.get_running_loop().create_task(_persist_night_event(ts, kind, data))
+        except RuntimeError:
+            pass  # no loop (unit tests, sync callers) — ring still has it
     except Exception:  # observability must never break the pipeline
         pass
+
+
+async def _persist_night_event(ts: str, kind: str, data: dict) -> None:
+    """Write one night event to Postgres; swallow every failure."""
+    try:
+        import json as _json
+        import bot as bot_module
+        from database import NightEvent, get_db
+
+        who = str(data.get("who") or "")
+        text = data.get("text")
+        extra = {k: v for k, v in data.items() if k not in ("who", "text")}
+        async for db in get_db():
+            db.add(NightEvent(
+                ts=ts, kind=kind, who=who or None,
+                text=str(text) if text is not None else None,
+                data=_json.dumps(extra, ensure_ascii=False) if extra else None,
+            ))
+            await db.commit()
+            break
+    except Exception as e:
+        logger.debug(f"night event persist skipped: {e}")
 
 
 def _is_ig_key(phone: str) -> bool:
@@ -4042,6 +4077,19 @@ async def _manychat_shadow_log(subscriber_id: str, text: str) -> None:
     """
     from agents.instagram_agent import generate_ig_reply, log_ig_turn
 
+    # Persist the DAYTIME inbound into the client's history. Found in the
+    # 2026-08-18 research: the shadow path returned before save_message, so a
+    # client's daytime words never reached the history — at night the agent
+    # had no idea what they had discussed with the admins hours earlier, and
+    # opened from scratch («зачем по второму кругу диалог вести?»).
+    try:
+        import bot as bot_module
+        telegram_id = f"{IG_KEY_PREFIX}{subscriber_id}"
+        await bot_module.client_service.get_or_create_client(telegram_id)
+        await bot_module.message_service.save_message(telegram_id, "user", text)
+    except Exception as e:
+        logger.warning(f"daytime inbound not persisted for {subscriber_id}: {e}")
+
     try:
         reply = await generate_ig_reply(f"mc:{subscriber_id}", text)
         log_ig_turn("manychat", subscriber_id, text, reply, False)
@@ -4186,7 +4234,38 @@ async def admin_night_log(request: Request, limit: int = 200, kind: str = ""):
     ):
         return Response(content="forbidden", status_code=403)
 
-    events = list(NIGHT_LOG or [])
+    # Postgres is the source of truth (survives deploys — the in-memory ring
+    # dies with every restart, which used to erase whole nights). The ring
+    # stays as a fallback when the DB is unreachable.
+    events: list = []
+    source = "db"
+    try:
+        import json as _json
+        from sqlalchemy import select as _select
+        from database import NightEvent, get_db
+
+        async for db in get_db():
+            rows = (await db.execute(
+                _select(NightEvent).order_by(NightEvent.id.desc()).limit(max(limit, 1000))
+            )).scalars().all()
+            for r in reversed(rows):
+                e = {"ts": r.ts, "kind": r.kind}
+                if r.who:
+                    e["who"] = r.who
+                if r.text is not None:
+                    e["text"] = r.text
+                if r.data:
+                    try:
+                        e.update(_json.loads(r.data))
+                    except Exception:
+                        pass
+                events.append(e)
+            break
+    except Exception as e:
+        logger.warning(f"night-log DB read failed, serving the ring: {e}")
+        events = list(NIGHT_LOG or [])
+        source = "ring"
+
     if kind:
         wanted = {k.strip() for k in kind.split(",") if k.strip()}
         events = [e for e in events if e.get("kind") in wanted]
@@ -4198,7 +4277,8 @@ async def admin_night_log(request: Request, limit: int = 200, kind: str = ""):
         "summary": summary,
         "unique_contacts": len(clients),
         "bookings": [e for e in events if e["kind"] == "booking_created"],
-        "total_kept": len(NIGHT_LOG or []),
+        "total_kept": len(events),
+        "source": source,
         "events": events[-limit:],
     }
 
