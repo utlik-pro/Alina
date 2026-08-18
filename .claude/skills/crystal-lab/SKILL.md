@@ -526,6 +526,28 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   dumping all five — that was the complaint). ⚠️ This prefill carries NO
   emirate — ask the city later in the normal flow. Audit covers it
   (MISSING 420 check); sim mirrors it.
+- 🧠 **PERSISTENT MEMORY SHIPPED (2026-08-18, fc292d3+eaf2461) — the deploy
+  amnesia is over.** Research proved every deploy wiped EVERYTHING: Render
+  env had `DATABASE_URL=sqlite:////data/…` with NO disk behind it (disks API
+  404), the night ring lived in RAM, ig_turns.jsonl in the container. Twelve
+  deploys in three days = twelve total wipes (dialogue history, client
+  fields, bookings, telemetry) — the real root of «зачем по второму кругу».
+  Now: **managed Postgres `crystal-lab-db` (dpg-da23u9u417fc73bvnlmg-a,
+  basic_256mb/1GB, oregon, PG16, ~$7/mo)**; DATABASE_URL switched to
+  `postgresql+asyncpg://` (old value backed up in
+  `~/.render/old_database_url.backup`; external conn string in
+  `~/.render/crystal_db_external.txt`; Render API key in
+  `~/.render/manual.key`). Service created all 7 tables on boot. Plus:
+  `NightEvent` table — `_night_event` fire-and-forgets every event to
+  Postgres (ring stays as fast fallback), `/admin/night-log` reads the DB
+  first and reports `source: db|ring`; the daytime shadow path now persists
+  client inbound into message history (night agent finally knows the
+  daytime context). E2E-proven: probe event → full redeploy → still there.
+  ⚠️ Gotcha: `get_db()` returns the Database object — sessions via
+  `async with get_db().session() as db:`, NEVER `async for`.
+  ⚠️ Local sqlite `crystal_lab.db` stays for dev only.
+  🔴 STILL OPEN: Render workspace shows «Payment failed» — update the card
+  or the whole service (and this DB) gets suspended.
 - 🎯 **INSTAGRAM IS THE MAIN CHANNEL NOW (owner, 2026-08-16: «сейчас у нас
   главное это инстаграм»).** All effort goes to the IG night shift. The
   WhatsApp (Wappi) agent channel is DORMANT: the subscription lapsed
