@@ -364,8 +364,12 @@ async def run(scenario):
         if _pay:
             ctx.booking_data["payment_method"] = _pay
         final = wh._enforce_payment_terms(final, _pay)
+        _shown = bool(ctx.booking_data.get("offer_275_shown"))
         final = wh._enforce_package_offer_first(
-            final, ctx.booking_data.get("ad_prefill"))
+            final, ctx.booking_data.get("ad_prefill"),
+            inbound_text=msg, already_shown=_shown)
+        if not _shown and "275" in final:
+            ctx.booking_data["offer_275_shown"] = True
         final = wh._enforce_cleansing_facts(final, msg)
         final = wh._enforce_summer_offers(final, ctx.booking_data.get("ad_prefill"))
         final = wh._enforce_price_sanity(final, who="sim")

@@ -1491,16 +1491,26 @@ def _enforce_cleansing_facts(response_text: str, inbound_text: str) -> str:
 _PKG_PRICES_RE = re.compile(r"1[,.\s]?550|1[,.\s]?650")
 
 
-def _enforce_package_offer_first(response_text: str, ad_prefill) -> str:
-    """On the cupping-ad prefill the 275 offer must be heard BEFORE (or with)
-    any package price. The prompt asks; the first live night proved the model
-    ignores it — three package leads (00:19/01:19/02:47, 2026-08-18) were
-    quoted 1,550/1,650 and the ad's own offer never came up. Deterministic
-    now: a package-priced reply without 275 gets the offer prepended.
+def _enforce_package_offer_first(response_text: str, ad_prefill,
+                                 inbound_text: str = "",
+                                 already_shown: bool = False) -> str:
+    """Клиент с баночной рекламы обязан услышать оффер 275 — при ЛЮБОЙ цене.
+
+    Первая версия ловила только ответы с пакетными ценами (1 550 / 1 650), и
+    осталась дыра, на которую указала владелица 2026-08-18: «он не видит
+    банки, а предлагает массаж за 350». Действительно — ответ «60 min - 350
+    AED» проходил мимо гейта, потому что пакетных цен в нём нет.
+
+    Теперь: на баночном префилле ИЛИ на прямой вопрос про банки любой ответ
+    с ценами, где не звучит 275, получает оффер первым блоком. Один раз за
+    диалог (`already_shown`) — чтобы не повторять его в каждом сообщении.
     """
-    if ad_prefill != "package" or not response_text:
+    if not response_text or already_shown:
         return response_text
-    if "275" in response_text or not _PKG_PRICES_RE.search(response_text):
+    wants_combo = bool(inbound_text) and _detect_combo_choice(inbound_text)
+    if ad_prefill != "package" and not wants_combo:
+        return response_text
+    if "275" in response_text or not _PRICE_IN_REPLY_RE.search(response_text):
         return response_text
     from prices import SPECIAL_OFFERS as _SO
     c = _SO["lymphatic_cupping_combo"]
@@ -3844,9 +3854,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _is_ig_key(phone) and "📍" in response_text:
             response_text = response_text.replace(" 📍", "").replace("📍", "")
 
-        # The cupping ad's own offer is never silently skipped.
+        # Оффер 275 обязан прозвучать хотя бы раз — при любой названной цене.
+        _offer_shown = bool((context.booking_data or {}).get("offer_275_shown"))
         response_text = _enforce_package_offer_first(
-            response_text, (context.booking_data or {}).get("ad_prefill"))
+            response_text, (context.booking_data or {}).get("ad_prefill"),
+            inbound_text=text, already_shown=_offer_shown)
+        if not _offer_shown and "275" in response_text:
+            dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
 
         # Спросили про чистку — цена и длительность обязаны быть от чистки.
         response_text = _enforce_cleansing_facts(response_text, text)

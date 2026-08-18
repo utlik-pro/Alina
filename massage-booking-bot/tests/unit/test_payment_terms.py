@@ -162,18 +162,28 @@ def test_uae_phone_is_captured_in_any_format():
 
 
 def test_package_prefill_reply_always_carries_the_275_offer():
-    # First live ad night (2026-08-18): three package leads were quoted
-    # 1,550/1,650 and the cupping ad's own 275 offer never came up.
+    # Ночь 2026-08-18: три баночных лида получили 1 550/1 650 без 275.
+    # А владелица указала на вторую дыру: «он не видит банки, а предлагает
+    # массаж за 350» — обычная цена тоже обязана тянуть за собой оффер.
     from webhook_app import _enforce_package_offer_first
 
     bare = "Body massage package 5 sessions — 1,550 AED\nFace 5 — 1,650 AED"
     out = _enforce_package_offer_first(bare, "package")
     assert "275" in out and out.index("275") < out.index("1,550")
-    # Already compliant / other campaigns / no package prices → untouched.
+
+    plain = "60 min - 350 AED\n90 min - 460 AED"
+    assert "275" in _enforce_package_offer_first(plain, "package")
+    # Прямой вопрос про банки — даже без префилла.
+    assert "275" in _enforce_package_offer_first(
+        plain, None, inbound_text="do you have cupping?")
+    # Один раз за диалог, дальше не повторяем.
+    assert _enforce_package_offer_first(
+        plain, "package", already_shown=True) == plain
+    # Уже содержит оффер / другая кампания / без цен — не трогаем.
     good = "Our offer — 275 AED\n\nPackages: 1,550 AED"
     assert _enforce_package_offer_first(good, "package") == good
     assert _enforce_package_offer_first(bare, "consult") == bare
-    assert _enforce_package_offer_first("60 min - 350 AED", "package") == "60 min - 350 AED"
+    assert _enforce_package_offer_first("Body or facial dear?", "package") == "Body or facial dear?"
 
 
 def test_cleansing_question_never_gets_the_facial_massage_price():
