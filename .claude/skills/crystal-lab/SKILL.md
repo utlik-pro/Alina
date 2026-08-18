@@ -79,6 +79,16 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
   mapping-only `{"reply": ...}` (no v2 content — avoids double-render);
   shadow returns the `[SHADOW]` sentinel because ManyChat's mapper errors
   on empty strings ("Invalid value type in json path"). E2E verified 2026-08-11.
+- 📨 **BODY OF THE EXTERNAL REQUEST — `text` IS NOW SENT (2026-08-18).** Until
+  today the body carried only `{"secret", "subscriber_id"}`, so every turn the
+  bridge had to fetch the message separately via the ManyChat API
+  (`fetch_manychat_last_text`). That worked, but cost an extra call per turn
+  and raced when a client sent messages back-to-back («6» then «Pm» — exactly
+  the dialogue the owner complained about). Body is now
+  `{"secret":"…","subscriber_id":"{{Contact Id}}","text":"{{Last Text Input}}"}`
+  — added in the ManyChat editor and published (Update). The API fallback
+  stays in code, so both shapes work. Verified live: prod accepts it and the
+  event lands in Postgres.
 - 📋 **TATYANA'S RULES for the IG track (2026-07-28 thread, relayed
   2026-08-14 — client-confirmed, authoritative):**
   1. **Variant A confirmed: FULL booking inside Instagram Direct** — the
