@@ -11,7 +11,7 @@ import re
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import List, Optional
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
@@ -1456,6 +1456,100 @@ _ASKS_ABOUT_DAY_RE = re.compile(
     r"today or tomorrow|какой день|когда", re.I)
 _BOOKING_INTENT_RE = re.compile(
     r"\bbook\b|booking|appointment|reserve|записа|хочу", re.I)
+
+
+_CLAIMS_NO_SLOTS_RE = re.compile(
+    # Апостроф в ответе модели типографский («don’t»), а не ASCII — на этом
+    # гейт молча промахнулся при первой же живой проверке 2026-08-19.
+    r"(?:no|do\s?n['’‘`]?t have|do not have|not have)\s+(?:any\s+)?"
+    r"(?:free\s+|available\s+)?"
+    r"(?:slots?|times?|availability|openings?)"
+    r"|fully\s+booked|no\s+availability"
+    r"|нет\s+(?:свободных\s+)?(?:мест|окон|времени)", re.I)
+
+
+def _display_times_from_summary(summary: str, limit: int = 3) -> List[str]:
+    """Времена из сводки календаря в том виде, в каком их показывают клиенту.
+
+    Берём разброс по дню, а не первые подряд: три окна в пределах получаса
+    выглядят как «только утро», хотя мастер свободен до девяти вечера.
+    """
+    seen: List[str] = []
+    for h, m, mer in _AMPM_TIMES_RE.findall(summary or ""):
+        s = f"{int(h)}:{m or '00'} {mer.upper()}"
+        if s not in seen:
+            seen.append(s)
+    if len(seen) <= limit:
+        return seen
+    step = (len(seen) - 1) / (limit - 1) if limit > 1 else 1
+    return [seen[round(i * step)] for i in range(limit)]
+
+
+async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
+                                        who: str = "") -> str:
+    """Сказали «мест нет» — обязаны тут же назвать, когда они есть.
+
+    Живой тест 2026-08-19, 20:30: лид с платной рекламы в Аль-Айне услышал
+    «Today and tomorrow we don't have free slots 🙏 When would suit you dear?»
+    Факт был верным (у Элизы действительно пусто два дня), но мяч вернули
+    клиенту. Админ в этом месте не спрашивает, а предлагает: ближайшее окно
+    было в пятницу с 13:30, и достать его — пять секунд.
+
+    Ночью человек читает переписку в постели: если следующий шаг требует от
+    него думать и печатать, он чаще всего просто не отвечает.
+    """
+    if not response_text or not area:
+        return response_text
+    if not _CLAIMS_NO_SLOTS_RE.search(response_text):
+        return response_text
+    if _ampm_times_set(response_text):
+        return response_text      # конкретика уже названа — не мешаем
+
+    from datetime import datetime as _dtm, timedelta as _tdm, timezone as _tzm
+    import bot as bot_module
+
+    now = _dtm.now(_tzm(_tdm(hours=4)))
+    dur = (context.booking_data or {}).get("service_duration") or 60
+    svc = (context.booking_data or {}).get("service_type")
+
+    async def _day(offset: int):
+        d = (now + _tdm(days=offset)).strftime("%Y-%m-%d")
+        try:
+            s = await bot_module.yclients_service.get_available_slots_summary(
+                date=d, service_category=svc, area=area, service_duration=dur)
+        except Exception:
+            return None
+        if not s or "TEMPORARILY UNAVAILABLE" in s or not _ampm_times_set(s):
+            return None
+        return (offset, s)
+
+    try:
+        # Дни проверяем разом: последовательный обход упёрся бы в лимит ответа.
+        found = await asyncio.wait_for(
+            asyncio.gather(*[_day(i) for i in range(0, 7)]), timeout=14)
+    except Exception:
+        return response_text      # календарь не ответил — молчим, не врём
+
+    hit = next((f for f in found if f), None)
+    if not hit:
+        return response_text      # неделя занята — обещать нечего
+
+    offset, summary = hit
+    when = now + _tdm(days=offset)
+    times = _display_times_from_summary(summary)
+    if not times:
+        return response_text
+    label = {0: "today", 1: "tomorrow"}.get(
+        offset, when.strftime("%A %-d %b"))
+    listed = ", ".join(times[:-1]) + f" or {times[-1]}" if len(times) > 1 else times[0]
+
+    # Открытый вопрос про день теперь лишний — вместо него конкретика.
+    kept = [ln for ln in response_text.split("\n")
+            if not _ASKS_ABOUT_DAY_RE.search(ln)]
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip() or response_text.strip()
+
+    logger.info(f"nearest-day gate: предложен {label} ({listed}) для {who}")
+    return f"{body}\n\nThe nearest we have is {label}: {listed} 🌹\nWhich suits you? 😊"
 
 
 async def _ensure_booking_momentum(response_text: str, context, area: str,
@@ -4190,6 +4284,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, who=phone)
         if response_text != _mom_before:
             dialog_manager.update_booking_data(user_id, "momentum_shown", True)
+
+        # Сказали «мест нет» — обязаны назвать, когда они есть.
+        response_text = await _offer_nearest_day_when_empty(
+            response_text, context, (context.client_data or {}).get("area") or "",
+            who=phone)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

@@ -351,3 +351,56 @@ def test_momentum_does_not_repeat_availability_the_model_already_offered():
                     "Which day would you like dear? 😊",
                     "Our discount offer is 275 AED instead of 430"):
         assert not R.search(neutral), neutral
+
+
+def test_no_slots_reply_must_name_the_nearest_ones():
+    """Живой тест 2026-08-19, 20:30: лид с платной рекламы в Аль-Айне получил
+    «Today and tomorrow we don't have free slots 🙏 When would suit you dear?»
+
+    Факт верный — у единственного мастера действительно два дня заняты, — но
+    следующий шаг переложили на клиента. Ближайшее окно было в пятницу с
+    13:30, и достать его — пять секунд.
+    """
+    import asyncio, types
+    import webhook_app as wh
+
+    # Распознаём заявление о занятости на обоих языках и в разных формах.
+    for said in ("Today and tomorrow we don't have free slots in Al Ain 🙏",
+                 # Апостроф у модели типографский — на нём гейт промахнулся.
+                 "Today and tomorrow we don’t have free slots in Al Ain 🙏",
+                 "We have no availability tomorrow",
+                 "That day is fully booked dear",
+                 "Сегодня нет свободных окон"):
+        assert wh._CLAIMS_NO_SLOTS_RE.search(said), said
+    for neutral in ("Tomorrow we have 10:00 AM or 3:00 PM",
+                    "Facial massage is 370 AED dear"):
+        assert not wh._CLAIMS_NO_SLOTS_RE.search(neutral), neutral
+
+    # Времена берутся с разбросом по дню, а не первые три подряд.
+    summary = ("Eliza (Al Ain): 1:30 PM, 2:00 PM, 6:30 PM, 7:00 PM, "
+               "7:30 PM, 8:00 PM, 8:30 PM, 9:00 PM")
+    picked = wh._display_times_from_summary(summary)
+    assert picked[0] == "1:30 PM" and picked[-1] == "9:00 PM"
+    assert len(picked) == 3
+
+    # Календарь недоступен → ответ не трогаем, ничего не выдумываем.
+    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    text = "We don't have free slots today dear 🙏"
+    import bot as bot_module
+    saved = getattr(bot_module, "yclients_service", None)
+
+    class _Dead:
+        async def get_available_slots_summary(self, **kw):
+            raise RuntimeError("yclients down")
+
+    bot_module.yclients_service = _Dead()
+    try:
+        out = asyncio.run(wh._offer_nearest_day_when_empty(text, ctx, "al_ain"))
+    finally:
+        bot_module.yclients_service = saved
+    assert out == text
+
+    # Конкретика уже названа — второй раз не дописываем.
+    named = "Tomorrow is fully booked, but we have 5:00 PM on Friday"
+    assert asyncio.run(
+        wh._offer_nearest_day_when_empty(named, ctx, "al_ain")) == named
