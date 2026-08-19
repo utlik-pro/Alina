@@ -209,6 +209,11 @@ async def run(scenario):
         cur = ctx.booking_data.get("service_type") or ""
         if kind and wh._is_massage_service(cur) and not wh._massage_kind_known(cur):
             ctx.booking_data["service_type"] = f"{kind}_massage"
+        # Mirror prod: «face» снимает баночное комбо (оно телесное), «body» —
+        # подтверждает. Штатные детекторы комбо не видят, отсюда отдельная ветка.
+        if kind == "face" and ctx.booking_data.get("service_type") == wh._COMBO_KEY:
+            ctx.booking_data["service_type"] = "face_massage"
+            ctx.booking_data["service_duration"] = None
         # Mirror prod: a typed phone number is sticky from the moment it appears.
         _ph = wh._detect_phone_in_text(msg)
         if _ph:

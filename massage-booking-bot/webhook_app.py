@@ -3460,6 +3460,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 user_id, "service_type", f"{_kind_now}_massage")
             logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
 
+        # Баночное комбо ставится автоматически по рекламному префиллу, и
+        # клиент должен иметь право передумать. «Face» его снимает: комбо
+        # телесное, и держать его дальше значило бы считать лицевой массаж по
+        # 275 за 45 минут вместо 370 за 50. «Body» комбо, наоборот,
+        # подтверждает — снимать нечего.
+        #
+        # Обычные детекторы тут бессильны: категория для «facial please» —
+        # общее «massage», а _is_massage_service комбо не признаёт, так что
+        # оба апгрейда выше молчат. Найдено при подготовке прогонов, до того
+        # как это увидел живой клиент.
+        if (_kind_now == "face"
+                and context.booking_data.get("service_type") == _COMBO_KEY):
+            dialog_manager.update_booking_data(user_id, "service_type", "face_massage")
+            dialog_manager.update_booking_data(user_id, "service_duration", None)
+            logger.info("клиент выбрал лицо — комбо с банками снято")
+
         # A phone number typed at ANY point is kept: saved to the client
         # record so the phone gate sees it and the flow never re-asks.
         # Названные клиентом день и время сохраняются сразу — по тому же

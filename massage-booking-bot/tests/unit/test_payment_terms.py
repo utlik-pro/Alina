@@ -311,3 +311,21 @@ def test_new_booking_keys_are_actually_saved():
     # Существующие ключи по-прежнему обновляются.
     dm.update_booking_data(uid, "service_duration", 90)
     assert dm.get_or_create_context(uid).booking_data["service_duration"] == 90
+
+
+def test_cupping_ad_client_may_still_switch_to_facial():
+    """Автоподстановка комбо не должна запирать клиента на теле.
+
+    Баночный префилл ставит service_type = комбо (иначе агент спрашивал
+    «тело или лицо?» там, где выбора нет). Но клиент вправе передумать, а
+    штатные детекторы этого не ловят: категория для «facial please» — общее
+    «massage», а _is_massage_service комбо не признаёт. Без явного правила
+    лицевой массаж считался бы по 275 AED за 45 минут вместо 370 за 50.
+    """
+    import webhook_app as wh
+
+    # Предпосылки, из-за которых оба штатных апгрейда молчат.
+    assert wh._is_massage_service(wh._COMBO_KEY) is False
+    assert wh._detect_service_category("facial please") == "massage"
+    assert wh._massage_kind_from_text("facial please") == "face"
+    assert wh._massage_kind_from_text("body please") == "body"
