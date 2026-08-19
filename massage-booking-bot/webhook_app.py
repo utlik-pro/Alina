@@ -261,6 +261,15 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "(which comes AFTER the client has picked a time, never before), ask "
         "them to TYPE the address (area, building, apartment). Never say "
         "'share your location': a pin does not reach us from Instagram.\n"
+        "- 🎯 EVERY PRICE MUST MOVE TOWARD A BOOKING. The admins never stop at "
+        "a number: they add availability ('We have available slots for today "
+        "and tomorrow') and ask for the next step in the SAME message. Seven "
+        "night dialogues died right after the price because the reply ended "
+        "with a bare question (2026-08-19) — one client had already written "
+        "'Please i want to book'. If the client shows intent ('I want to "
+        "book', 'right now', 'can I book'), never answer with the price "
+        "alone: name it, say we have places, and ask the one thing you still "
+        "need (duration, or the day).\n"
         "- 🚫 OUT OF SERVICE AREA (Sharjah, Ajman, RAK, Fujairah, UAQ…): say "
         "once, warmly, that we only serve Abu Dhabi, Al Ain and Dubai — and "
         "then CLOSE the conversation gracefully. No 'what service are you "
@@ -1394,6 +1403,62 @@ async def _verify_reply_times_against_calendar(response_text: str, context,
         return f"On {nice} we have {shown} 🌹\nWhich suits you?"
     return (f"On {nice} we're fully booked dear 🙏\n"
             f"Would another day work for you?")
+
+
+_ASKS_ABOUT_DAY_RE = re.compile(
+    r"which day|what day|when would|when do you|which date|what time|"
+    r"today or tomorrow|какой день|когда", re.I)
+_BOOKING_INTENT_RE = re.compile(
+    r"\bbook\b|booking|appointment|reserve|записа|хочу", re.I)
+
+
+async def _ensure_booking_momentum(response_text: str, context, area: str,
+                                   inbound_text: str = "", who: str = "") -> str:
+    """После названной цены разговор должен двигаться к записи, а не вставать.
+
+    Ночь 2026-08-19: семь диалогов, ни один не дошёл до выбора времени.
+    Клиент писал «Please i want to book» и «If I want 1 session right now»,
+    получал прайс и вопрос «60 or 90 min?» — и уходил. Админы в этом месте
+    всегда добавляют доступность («We have available slots for today and
+    tomorrow»), и это то, что удерживает разговор.
+
+    Конкретные времена здесь называть НЕЛЬЗЯ: пока не выбрана длительность,
+    окна для 60 и 90 минут разные, и предложенное время может отвалиться
+    (ради этого и стоит duration-гейт). Поэтому добавляем только ФАКТ
+    доступности — и лишь после проверки календаря, чтобы не пообещать день,
+    в котором всё занято.
+    """
+    if not response_text or not area:
+        return response_text
+    if not _PRICE_IN_REPLY_RE.search(response_text):
+        return response_text          # цены нет — двигать нечего
+    if _ampm_times_set(response_text) or _ASKS_ABOUT_DAY_RE.search(response_text):
+        return response_text          # время уже названо или спрошено
+    if (context.booking_data or {}).get("momentum_shown"):
+        return response_text          # один раз за диалог
+
+    from datetime import datetime as _dtm, timedelta as _tdm, timezone as _tzm
+    import bot as bot_module
+
+    now = _dtm.now(_tzm(_tdm(hours=4)))
+    dur = (context.booking_data or {}).get("service_duration") or 60
+    days = []
+    for offset, label in ((0, "today"), (1, "tomorrow")):
+        d = (now + _tdm(days=offset)).strftime("%Y-%m-%d")
+        try:
+            s = await bot_module.yclients_service.get_available_slots_summary(
+                date=d, service_category=(context.booking_data or {}).get("service_type"),
+                area=area, service_duration=dur)
+        except Exception:
+            return response_text      # календарь недоступен — молчим, не врём
+        if s and "TEMPORARILY UNAVAILABLE" not in s and _ampm_times_set(s):
+            days.append(label)
+    if not days:
+        return response_text
+
+    when = " and ".join(days) if len(days) == 2 else days[0]
+    logger.info(f"booking momentum: добавлена доступность ({when}) для {who}")
+    return response_text.rstrip() + f"\n\nWe have free slots {when} 🌹"
 
 
 _PRICE_IN_REPLY_RE = re.compile(r"(\d[\d,\s]{1,7})\s*AED", re.I)
@@ -3929,6 +3994,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Последний рубеж: запрещённая цена не уходит, незнакомая — под сигнал.
         response_text = _enforce_price_sanity(response_text, who=phone)
+
+        # Названа цена — разговор должен идти дальше, к записи.
+        _mom_before = response_text
+        response_text = await _ensure_booking_momentum(
+            response_text, context, (context.client_data or {}).get("area") or "",
+            inbound_text=text, who=phone)
+        if response_text != _mom_before:
+            dialog_manager.update_booking_data(user_id, "momentum_shown", True)
 
         # Payment terms are a money-facing promise: a quoted price must always
         # carry its footnote once the client has picked how they pay. The chosen

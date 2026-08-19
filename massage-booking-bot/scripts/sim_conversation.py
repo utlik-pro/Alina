@@ -373,6 +373,11 @@ async def run(scenario):
         final = wh._enforce_cleansing_facts(final, msg)
         final = wh._enforce_summer_offers(final, ctx.booking_data.get("ad_prefill"))
         final = wh._enforce_price_sanity(final, who="sim")
+        _mom = final
+        final = await wh._ensure_booking_momentum(
+            final, ctx, ctx.client_data.get("area") or "", inbound_text=msg, who="sim")
+        if final != _mom:
+            ctx.booking_data["momentum_shown"] = True
 
         ctx.recent_messages.append({"role": "assistant", "content": final})
 
