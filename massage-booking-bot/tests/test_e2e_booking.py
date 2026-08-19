@@ -466,9 +466,12 @@ class TestDataPreprocessing:
         if "cash" in msg.lower():
             dm.update_booking_data(user_id, "payment_method", "cash")
 
-        assert ctx.booking_data.get("payment_method") is None  # "payment_method" is not a default key
-        # Actually, looking at dialog_context.py, booking_data doesn't have "payment_method" key by default
-        # So update_booking_data won't work. This is expected behavior — only predefined keys are updated.
+        # Раньше здесь ожидался None: update_booking_data молча выбрасывал
+        # любой ключ, которого нет в стартовом словаре, и тест закреплял это
+        # как «expected behavior». На деле так терялись payment_method,
+        # ad_prefill и offer_275_shown — ночью 2026-08-19 три баночных лида
+        # из-за этого не увидели оффер 275. Ключ обязан сохраняться.
+        assert ctx.booking_data.get("payment_method") == "cash"
 
     def test_duration_extraction_60min(self):
         dm = DialogManager()

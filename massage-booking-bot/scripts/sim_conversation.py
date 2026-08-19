@@ -249,9 +249,27 @@ async def run(scenario):
         # Mirror prod: which ad creative sent this client, kept sticky, and the
         # offer they must hear first. The prefill arrives in message #1 while
         # the price question comes later, so a per-turn read would miss it.
+        # Mirror prod: что клиент назвал — то сохранено и не переспрашивается.
+        from datetime import datetime as _dt_n, timedelta as _td_n, timezone as _tz_n
+        _said_date = wh._detect_explicit_date(
+            msg.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
+        if _said_date:
+            ctx.booking_data["date"] = _said_date
+        _said_time = wh._detect_requested_time(msg)
+        if _said_time:
+            ctx.booking_data["time"] = _said_time
+
         _ad = wh._detect_ad_prefill(msg)
         if _ad and not ctx.booking_data.get("ad_prefill"):
             ctx.booking_data["ad_prefill"] = _ad
+        # Mirror prod: баночная реклама называет услугу за клиента (комбо 275
+        # телесное), иначе реплей увидит «тело или лицо?» там, где на проде
+        # этого вопроса уже нет.
+        if (_ad == "package" and not ctx.booking_data.get("service_type")
+                and not wh._massage_kind_from_text(msg)):
+            from prices import SPECIAL_OFFERS as _SO
+            ctx.booking_data["service_type"] = wh._COMBO_KEY
+            ctx.booking_data["service_duration"] = int(_SO[wh._COMBO_KEY]["duration"])
         # Mirror prod: the ALREADY-KNOWN recap keeps the model from restarting.
         _known = []
         if ctx.client_data.get("phone"):
@@ -370,6 +388,9 @@ async def run(scenario):
             inbound_text=msg, already_shown=_shown)
         if not _shown and "275" in final:
             ctx.booking_data["offer_275_shown"] = True
+        final = wh._enforce_package_service_known(
+            final, ctx.booking_data.get("ad_prefill"), booking=ctx.booking_data)
+        final = wh._enforce_offer_was_price(final)
         final = wh._enforce_cleansing_facts(final, msg)
         final = wh._enforce_summer_offers(final, ctx.booking_data.get("ad_prefill"))
         final = wh._enforce_price_sanity(final, who="sim")

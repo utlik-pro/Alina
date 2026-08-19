@@ -186,6 +186,62 @@ def test_package_prefill_reply_always_carries_the_275_offer():
     assert _enforce_package_offer_first("Body or facial dear?", "package") == "Body or facial dear?"
 
 
+def test_package_prefill_never_asks_body_or_facial():
+    # Живой тест 2026-08-19: на баночной рекламе агент спросил «Body massage or
+    # facial dear?» — выбора нет, оффер 275 телесный, лицевых банок в каталоге
+    # не существует. Клиент ответил датой и временем и получил тот же вопрос
+    # второй раз: воронка встала.
+    from webhook_app import _enforce_package_service_known
+
+    reply = ("Lymphatic drainage + cupping + head massage — 275 AED, 45 min\n\n"
+             "Body massage or facial dear? 😊")
+    out = _enforce_package_service_known(reply, "package")
+    assert "facial" not in out.lower()
+    assert "275" in out                      # цена остаётся
+    assert "which day" in out.lower()        # вместо выбора — следующий шаг
+    # Второй ход: преамбула про выбор уходит целиком, не оставляя огрызка.
+    stuck = ("24 Aug at 6:00 PM noted dear 🌹\n\n"
+             "For massage, we just need to choose which one first 😊\n\n"
+             "Body massage or facial dear?")
+    out2 = _enforce_package_service_known(stuck, "package")
+    assert "choose which one" not in out2.lower()
+    assert "6:00 PM" in out2                 # уже названное время не теряем
+    # ...и день переспрашивать нельзя: он назван. Слепая подстановка «which
+    # day» гоняла клиента по кругу — реплей поймал это на ходах 2 и 3.
+    assert "which day" not in out2.lower()
+    assert "book it" in out2.lower()          # шаг вперёд, а не назад
+    # Другая кампания и ответы без этого вопроса — не трогаем.
+    assert _enforce_package_service_known(reply, "cleansing") == reply
+    clean = "Which day would you like dear? 😊"
+    assert _enforce_package_service_known(clean, "package") == clean
+
+
+def test_package_next_step_follows_what_is_already_known():
+    from webhook_app import _package_next_step_question as q
+
+    assert "which day" in q("Our offer — 275 AED", {}).lower()
+    assert "what time" in q("24 August is possible dear 🌹", {}).lower()
+    assert "what time" in q("Our offer — 275 AED", {"date": "2026-08-24"}).lower()
+    assert "book it" in q("24 August at 6:00 PM is possible 🌹", {}).lower()
+
+
+def test_offer_275_always_carries_its_old_price():
+    # Реклама обещает скидку; «275 AED» без «было 430» читается как обычный
+    # прайс. Живой тест 2026-08-19: модель назвала оффер верно, но «было»
+    # потеряла, и гейт 275 промолчал — цифра-то на месте.
+    from webhook_app import _enforce_offer_was_price
+
+    assert _enforce_offer_was_price("… — 275 AED, 45 min") == (
+        "… — 275 AED instead of 430, 45 min")
+    # Уже со старой ценой — не дублируем.
+    good = "275 AED instead of 430, 45 min"
+    assert _enforce_offer_was_price(good) == good
+    # Подставляем один раз, даже если цена названа дважды.
+    assert _enforce_offer_was_price("275 AED … total 275 AED").count("430") == 1
+    # Оффера в ответе нет — молчим.
+    assert _enforce_offer_was_price("60 min - 350 AED") == "60 min - 350 AED"
+
+
 def test_cleansing_question_never_gets_the_facial_massage_price():
     # Живой случай 2026-08-18 03:50: «Deep Facial cleansing in Abu Dhabi?»
     # → «50 min - 370 AED» (цена лифтинг-массажа лица, другая услуга).

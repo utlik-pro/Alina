@@ -680,7 +680,7 @@ def _detect_combo_choice(text: str) -> bool:
 
     Live-caught 2026-08-16, 02:48 UAE: a lead said "I like the special offer /
     Cupping" and the duration gate — which only knows 60-or-90 massages —
-    asked "60 or 90 min dear?". The combo's length is FIXED (30+15+15 = 60),
+    asked "60 or 90 min dear?". The combo's length is FIXED (30+15+15 = 45),
     so the question reads as nonsense; the client answered "But it includes
     massage" and walked away. Choosing the combo must set the service AND its
     fixed duration in code so no gate ever asks about either again.
@@ -1651,6 +1651,86 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
         f"— {int(c['price'])} AED instead of {int(c['was'])}, "
         f"{int(c['duration'])} min\n\n---MESSAGE_SPLIT---\n\n" + response_text
     )
+
+
+_PKG_CHOICE_LINE_RE = re.compile(
+    r"body\s*(?:massage)?\s*(?:or|/|,)\s*(?:the\s+)?fac(?:e|ial)"
+    r"|fac(?:e|ial)\s*(?:massage)?\s*(?:or|/|,)\s*(?:the\s+)?body"
+    r"|which\s+one\s+first"
+    r"|тело\s*(?:или|/)\s*лицо|лицо\s*(?:или|/)\s*тело", re.IGNORECASE)
+
+
+def _package_next_step_question(text: str, booking=None) -> str:
+    """Следующий шаг воронки — по тому, что УЖЕ известно из ответа агента.
+
+    Слепая подстановка «Which day would you like?» ловится на том же пороке,
+    что и вырезанный вопрос: реплей 2026-08-19 показал, как клиенту, который
+    только что назвал «24 aug» и «6 pm», предлагали выбрать день ещё раз.
+
+    Источник истины — booking_data (день и время туда пишутся сразу, как
+    только клиент их произнёс); текст ответа лишь дополняет его, когда время
+    названо самим агентом в этом же сообщении.
+    """
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+
+    b = booking or {}
+    if b.get("time") or _ampm_times_set(text):
+        return "Shall I book it for you dear? 😊"
+    now = _d.now(_tz(_td(hours=4)))
+    if b.get("date") or _detect_explicit_date(text, now):
+        return "What time works for you dear? 😊"
+    return "Which day would you like dear? 😊"
+
+
+def _enforce_package_service_known(response_text: str, ad_prefill,
+                                   booking=None) -> str:
+    """На баночной рекламе выбор «тело или лицо» — вопрос ни о чём.
+
+    Оффер 275 телесный по определению (лимфодренаж тела + банки + голова), а
+    лицевых банок в каталоге нет. Живой тест 2026-08-19: агент всё равно
+    спросил «Body massage or facial dear?»; клиент ответил «24 aug» и «6 pm»,
+    и его вернули к тому же выбору — ровно та претензия владелицы, что и
+    «она уже дала номер, зачем по второму кругу вести диалог».
+
+    Инъекция в промпт тут не годится: история с чисткой показала, что модель
+    инструкцию может проигнорировать, — поэтому вопрос снимается кодом.
+    """
+    if ad_prefill != "package" or not response_text:
+        return response_text
+    lines = response_text.split("\n")
+    kept = [ln for ln in lines if not _PKG_CHOICE_LINE_RE.search(ln)]
+    if len(kept) == len(lines):
+        return response_text          # такого вопроса нет — не вмешиваемся
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    if "?" not in text:
+        # Разговор не может закончиться на утверждении: вместо снятого вопроса
+        # ставим следующий шаг воронки — тот, что ещё не пройден. Все три
+        # формулировки ловятся _ASKS_ABOUT_DAY_RE, поэтому momentum свою
+        # строку уже не добавит и дублирования не будет.
+        text = (text + "\n\n" + _package_next_step_question(text, booking)).strip()
+    logger.warning("package prefill: снят вопрос про выбор услуги — "
+                   "оффер 275 телесный, выбирать нечего")
+    return text
+
+
+def _enforce_offer_was_price(response_text: str) -> str:
+    """Скидка без старой цены — не скидка.
+
+    Клиент приходит по объявлению со словом discount, а «275 AED» без «было
+    430» читается как обычный прайс. Живой тест 2026-08-19: модель назвала
+    оффер сама и правильно, но «было» потеряла — гейт 275 при этом молчал,
+    потому что сама цифра на месте. 275 в каталоге больше нигде не встречается,
+    так что подстановка однозначна.
+    """
+    if not response_text or "275" not in response_text or "430" in response_text:
+        return response_text
+    out, n = re.subn(
+        r"\b275(\s*AED)?",
+        lambda m: f"275{m.group(1) or ' AED'} instead of 430",
+        response_text, count=1)
+    if n:
+        logger.info("offer gate: к 275 возвращена старая цена (было 430)")
+    return out
 
 
 _PAYMENT_MENU_RE = re.compile(
@@ -3276,6 +3356,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "ad_prefill", _ad_prefill)
             logger.info(f"ad prefill detected: {_ad_prefill}")
 
+        # Баночная реклама называет услугу ЗА клиента: оффер 275 — это тело
+        # (лимфодренаж 30 + банки 15 + голова 15), лицевых банок в каталоге нет
+        # вовсе. _detect_combo_choice ниже ловит только слова клиента («cupping»,
+        # «275»), а в тексте объявления их нет — поэтому услуга оставалась
+        # неизвестной. Живой тест 2026-08-19: агент спросил «Body massage or
+        # facial dear?», клиент ответил датой и временем и получил тот же вопрос
+        # второй раз — воронка встала на пустом месте.
+        if (_ad_prefill == "package"
+                and not context.booking_data.get("service_type")
+                and not _massage_kind_from_text(text)):
+            from prices import SPECIAL_OFFERS as _SO
+            dialog_manager.update_booking_data(user_id, "service_type", _COMBO_KEY)
+            dialog_manager.update_booking_data(
+                user_id, "service_duration", int(_SO[_COMBO_KEY]["duration"]))
+            logger.info("package prefill → услуга известна: комбо с банками, 45 мин")
+
         # Master preference / replacement — persist to the client record so it
         # survives across sessions ("same as last time" works; an avoided master
         # is never offered again). Injected into the agent context below + a hard
@@ -3332,6 +3428,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # A phone number typed at ANY point is kept: saved to the client
         # record so the phone gate sees it and the flow never re-asks.
+        # Названные клиентом день и время сохраняются сразу — по тому же
+        # принципу, что и телефон ниже: что человек уже сказал, у него не
+        # переспрашивают. До этого `date` писался лишь в одной ветке загрузки
+        # слотов, а `time` не писался нигде, и гейтам приходилось угадывать
+        # состояние по тексту ответа. Реплей 2026-08-19: клиент назвал «24 aug»
+        # и «6 pm», а следующий ход снова спросил «Which day would you like?».
+        from datetime import datetime as _dt_n, timedelta as _td_n, timezone as _tz_n
+        _said_date = _detect_explicit_date(text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
+        if _said_date and _said_date != context.booking_data.get("date"):
+            dialog_manager.update_booking_data(user_id, "date", _said_date)
+            logger.info(f"клиент назвал день → {_said_date}")
+        _said_time = _detect_requested_time(text)
+        if _said_time and _said_time != context.booking_data.get("time"):
+            dialog_manager.update_booking_data(user_id, "time", _said_time)
+            logger.info(f"клиент назвал время → {_said_time}")
+
         _phone_in_msg = _detect_phone_in_text(text)
         if _phone_in_msg and _phone_in_msg != (context.client_data or {}).get("phone"):
             dialog_manager.update_client_data(user_id, "phone", _phone_in_msg)
@@ -3364,7 +3476,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "service_type", _COMBO_KEY)
             dialog_manager.update_booking_data(
                 user_id, "service_duration", int(_SO[_COMBO_KEY]["duration"]))
-            logger.info("combo choice detected → lymphatic_cupping_combo, 60 min fixed")
+            logger.info("combo choice detected → lymphatic_cupping_combo, 45 min fixed")
 
         # Reset the injected-slots block EVERY turn before rebuilding it. It is
         # per-turn ground truth (dated "TODAY — <date>"); if this turn's fetch is
@@ -3991,6 +4103,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, already_shown=_offer_shown)
         if not _offer_shown and "275" in response_text:
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+        # Оффер 275 — телесный, выбирать «тело или лицо» не из чего.
+        response_text = _enforce_package_service_known(
+            response_text, (context.booking_data or {}).get("ad_prefill"),
+            booking=context.booking_data)
+
+        # Названа цена оффера — старая цена обязана стоять рядом.
+        response_text = _enforce_offer_was_price(response_text)
 
         # Спросили про чистку — цена и длительность обязаны быть от чистки.
         response_text = _enforce_cleansing_facts(response_text, text)
