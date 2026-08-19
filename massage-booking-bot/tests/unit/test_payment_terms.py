@@ -372,9 +372,17 @@ def test_no_slots_reply_must_name_the_nearest_ones():
                  "That day is fully booked dear",
                  "Сегодня нет свободных окон"):
         assert wh._CLAIMS_NO_SLOTS_RE.search(said), said
+    # Живая проверка 20:40: модель сказала это третьим способом. Ловить
+    # формулировки бесполезно — их бесконечно много, поэтому основной вход
+    # у гейта структурный (открытый вопрос про день без конкретных времён),
+    # а список фраз лишь дополняет его.
+    assert wh._CLAIMS_NO_SLOTS_RE.search(
+        "Today and tomorrow are already full in Al Ain 🙏")
     for neutral in ("Tomorrow we have 10:00 AM or 3:00 PM",
                     "Facial massage is 370 AED dear"):
         assert not wh._CLAIMS_NO_SLOTS_RE.search(neutral), neutral
+    # Ответ, уже обещающий места, гейт не трогает — это работа momentum.
+    assert wh._OFFERS_AVAILABILITY_RE.search("We have free slots tomorrow 🌹")
 
     # Времена берутся с разбросом по дню, а не первые три подряд.
     summary = ("Eliza (Al Ain): 1:30 PM, 2:00 PM, 6:30 PM, 7:00 PM, "

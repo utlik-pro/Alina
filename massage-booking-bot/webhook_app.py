@@ -1464,7 +1464,8 @@ _CLAIMS_NO_SLOTS_RE = re.compile(
     r"(?:no|do\s?n['’‘`]?t have|do not have|not have)\s+(?:any\s+)?"
     r"(?:free\s+|available\s+)?"
     r"(?:slots?|times?|availability|openings?)"
-    r"|fully\s+booked|no\s+availability"
+    r"|(?:fully|already|all)\s+(?:booked|full)|(?:is|are)\s+(?:already\s+)?full"
+    r"|no\s+availability|nothing\s+available"
     r"|нет\s+(?:свободных\s+)?(?:мест|окон|времени)", re.I)
 
 
@@ -1500,10 +1501,19 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
     """
     if not response_text or not area:
         return response_text
-    if not _CLAIMS_NO_SLOTS_RE.search(response_text):
-        return response_text
     if _ampm_times_set(response_text):
         return response_text      # конкретика уже названа — не мешаем
+    if _OFFERS_AVAILABILITY_RE.search(response_text):
+        return response_text      # места уже обещаны — это работа momentum
+    # Ловить формулировку бесполезно: «no free slots», «fully booked», «are
+    # already full» — способов сказать одно и то же у модели бесконечно, и
+    # первые две живые проверки гейт провалил именно на этом. Признак берём
+    # структурный: открытый вопрос про день, за которым не стоит ни одного
+    # конкретного времени. Заявление о занятости оставляем вторым входом —
+    # оно позволяет ещё и поправить ответ, если модель соврала о занятости.
+    _claims = bool(_CLAIMS_NO_SLOTS_RE.search(response_text))
+    if not _claims and not _ASKS_ABOUT_DAY_RE.search(response_text):
+        return response_text
 
     from datetime import datetime as _dtm, timedelta as _tdm, timezone as _tzm
     import bot as bot_module
@@ -1535,6 +1545,10 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
         return response_text      # неделя занята — обещать нечего
 
     offset, summary = hit
+    if offset <= 1 and not _claims:
+        # Ближайшее — сегодня или завтра, и модель ни на что не жаловалась:
+        # доступность в этом случае добавляет momentum, дублировать нечего.
+        return response_text
     when = now + _tdm(days=offset)
     times = _display_times_from_summary(summary)
     if not times:
