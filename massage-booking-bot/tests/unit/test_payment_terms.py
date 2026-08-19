@@ -329,3 +329,25 @@ def test_cupping_ad_client_may_still_switch_to_facial():
     assert wh._detect_service_category("facial please") == "massage"
     assert wh._massage_kind_from_text("facial please") == "face"
     assert wh._massage_kind_from_text("body please") == "body"
+
+
+def test_momentum_does_not_repeat_availability_the_model_already_offered():
+    """Живой тест 2026-08-19: «We have available slots tomorrow in Dubai …
+    We have free slots tomorrow 🌹» — одно и то же в одном сообщении.
+
+    Гейт воронки умел молчать, когда названы времена или спрошен день, но не
+    замечал, что модель уже пообещала доступность своими словами.
+    """
+    from webhook_app import _OFFERS_AVAILABILITY_RE as R
+
+    for said in ("We have available slots tomorrow in Dubai",
+                 "We have free slots today and tomorrow 🌹",
+                 "Slots available tomorrow dear",
+                 "We have availability for tomorrow",
+                 "У нас есть свободные окна завтра"):
+        assert R.search(said), said
+    # Не путаем с обычным текстом, где доступности не обещали.
+    for neutral in ("Facial massage is 370 AED dear 🌹",
+                    "Which day would you like dear? 😊",
+                    "Our discount offer is 275 AED instead of 430"):
+        assert not R.search(neutral), neutral

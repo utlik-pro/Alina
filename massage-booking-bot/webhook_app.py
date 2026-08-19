@@ -1446,6 +1446,11 @@ async def _verify_reply_times_against_calendar(response_text: str, context,
             f"Would another day work for you?")
 
 
+_OFFERS_AVAILABILITY_RE = re.compile(
+    r"(?:available|free|open)\s+(?:slots?|times?|spots?)"
+    r"|slots?\s+(?:available|open|free)"
+    r"|we\s+have\s+availability"
+    r"|свободн\w*\s+(?:мест|окн|врем)", re.I)
 _ASKS_ABOUT_DAY_RE = re.compile(
     r"which day|what day|when would|when do you|which date|what time|"
     r"today or tomorrow|какой день|когда", re.I)
@@ -1475,6 +1480,12 @@ async def _ensure_booking_momentum(response_text: str, context, area: str,
         return response_text          # цены нет — двигать нечего
     if _ampm_times_set(response_text) or _ASKS_ABOUT_DAY_RE.search(response_text):
         return response_text          # время уже названо или спрошено
+    if _OFFERS_AVAILABILITY_RE.search(response_text):
+        # Модель сама сказала «у нас есть свободные места» — вторая такая же
+        # строка от гейта звучит как заевшая пластинка. Живой тест 2026-08-19:
+        # «We have available slots tomorrow in Dubai … We have free slots
+        # tomorrow 🌹» в одном сообщении.
+        return response_text
     if (context.booking_data or {}).get("momentum_shown"):
         return response_text          # один раз за диалог
 
