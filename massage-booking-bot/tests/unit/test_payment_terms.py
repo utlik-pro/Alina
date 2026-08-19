@@ -231,3 +231,27 @@ def test_summer_prefill_reply_always_carries_an_ad_offer():
     assert _enforce_summer_offers(ok, "summer") == ok
     assert _enforce_summer_offers(drifted, "consult") == drifted
     assert _enforce_summer_offers("Which city dear?", "summer") == "Which city dear?"
+
+
+def test_new_booking_keys_are_actually_saved():
+    """Ключи, добавленные после первой версии словаря, обязаны сохраняться.
+
+    update_booking_data игнорировал новые ключи (`if key in booking_data`),
+    поэтому ad_prefill/offer_275_shown/payment_method не доживали до гейтов:
+    ночью 2026-08-19 три баночных лида получили обычный прайс вместо оффера
+    275, хотя юнит-тесты были зелёными — они зовут гейт напрямую и эту
+    строку не проходят.
+    """
+    from dialog_context import DialogManager
+
+    dm = DialogManager()
+    uid = 4242
+    for key, value in (("ad_prefill", "package"),
+                       ("offer_275_shown", True),
+                       ("payment_method", "bank_transfer"),
+                       ("out_of_area", "sharjah")):
+        dm.update_booking_data(uid, key, value)
+        assert dm.get_or_create_context(uid).booking_data[key] == value, key
+    # Существующие ключи по-прежнему обновляются.
+    dm.update_booking_data(uid, "service_duration", 90)
+    assert dm.get_or_create_context(uid).booking_data["service_duration"] == 90

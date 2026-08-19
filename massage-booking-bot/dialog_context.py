@@ -149,12 +149,20 @@ class DialogManager:
             logger.warning(f"⚕️ Медицинская заметка для {user_id}: {value}")
 
     def update_booking_data(self, user_id: int, key: str, value: Any) -> None:
-        """Обновить данные бронирования"""
-        context = self.get_or_create_context(user_id)
+        """Обновить данные бронирования.
 
-        if key in context.booking_data:
-            context.booking_data[key] = value
-            logger.info(f"Обновлено бронирование {user_id}: {key} = {value}")
+        Раньше здесь стояло `if key in context.booking_data` — запись НОВОГО
+        ключа молча игнорировалась, без ошибки и без лога. Из-за этого не
+        сохранялись все поля, добавленные после первой версии словаря:
+        `ad_prefill`, `offer_275_shown`, `payment_method`, `out_of_area`.
+        Живое следствие (ночь 2026-08-19): гейт читал ad_prefill=None, решал,
+        что клиент пришёл НЕ с баночной рекламы, и три лида подряд получили
+        обычный прайс вместо оффера 275 — при зелёных юнит-тестах, которые
+        передают значение аргументом и эту строку не проходят.
+        """
+        context = self.get_or_create_context(user_id)
+        context.booking_data[key] = value
+        logger.info(f"Обновлено бронирование {user_id}: {key} = {value}")
 
     def update_state(self, user_id: int, new_state: str) -> None:
         """Обновить состояние диалога"""
