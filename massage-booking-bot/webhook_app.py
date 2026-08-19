@@ -217,6 +217,40 @@ async def _human_led_dialogue(subscriber_id: str, hours: int = 6) -> bool:
     return (newest - oldest).total_seconds() >= HUMAN_LED_GAP_SECONDS
 
 
+async def _ad_originated_dialogue(subscriber_id: str, text: str) -> bool:
+    """Диалог пришёл с рекламы — только такие агент ведёт ночью.
+
+    Правило владельца (2026-08-19): «агент отвечает только новым по рекламе
+    после 21-00». Органика, спам и просьбы прислать фото девушек остаются
+    админам на утро. В ночь на 19-е так вышло само — все семь диалогов были
+    рекламными, — но совпадение правилом не является, поэтому гейт.
+
+    История берётся из NightEvent, а не из контекста в памяти: контексты
+    живут в RAM и обнуляются на каждом деплое, и после перезапуска лид с
+    рекламы выглядел бы посторонним — агент бросил бы его на полуслове.
+    """
+    if _detect_ad_prefill(text):
+        return True
+    try:
+        from sqlalchemy import select as _select
+        from database import NightEvent, get_db
+
+        async with get_db().session() as db:
+            rows = (await db.execute(
+                _select(NightEvent)
+                .where(NightEvent.who.in_(
+                    [str(subscriber_id), f"{IG_KEY_PREFIX}{subscriber_id}"]))
+                .where(NightEvent.kind == "inbound")
+                .order_by(NightEvent.id.desc()).limit(40)
+            )).scalars().all()
+    except Exception as e:
+        # База недоступна — открываемся, а не глушим. Молчание из-за сбоя
+        # инфраструктуры стоит дороже лишнего ответа: лид уходит навсегда.
+        logger.debug(f"ad-origin check skipped: {e}")
+        return True
+    return any(_detect_ad_prefill(str(r.text or "")) for r in rows)
+
+
 def _is_ig_key(phone: str) -> bool:
     """True for synthetic Instagram identities ("ig:<ManyChat subscriber id>")."""
     return isinstance(phone, str) and phone.startswith(IG_KEY_PREFIX)
@@ -4718,6 +4752,14 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         _night_event("human_led_skip", who=subscriber_id, text=text[:120])
         logger.info(f"human-led dialogue {subscriber_id} — агент молчит")
         return {"reply": SHADOW_SENTINEL, "human_led": True}
+
+    # Ночная смена агента — ТОЛЬКО лиды с рекламы (правило владельца
+    # 2026-08-19). Органику и мусор разбирают админы утром.
+    if (ig_live_now() and not _is_ig_test_subscriber(subscriber_id)
+            and not await _ad_originated_dialogue(subscriber_id, text)):
+        _night_event("not_ad_skip", who=subscriber_id, text=text[:120])
+        logger.info(f"диалог не с рекламы {subscriber_id} — агент молчит")
+        return {"reply": SHADOW_SENTINEL, "not_ad": True}
 
     # Тестовые аккаунты работают и днём — иначе проверить агента можно только
     # ночью, а правки мы делаем в рабочее время. Для реальных клиентов окно

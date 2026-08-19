@@ -313,3 +313,71 @@ def test_daytime_silence_holds_for_clients_but_testers_can_work(monkeypatch):
     # Пустой список = никаких исключений вообще.
     monkeypatch.setattr(config, "IG_TEST_SUBSCRIBERS", "", raising=False)
     assert wh._is_ig_test_subscriber("868311272") is False
+
+
+# 12 — ночная смена агента: только лиды с рекламы (правило владельца
+# 2026-08-19 «агент отвечает только новым по рекламе после 21-00»).
+def test_12_night_agent_answers_only_ad_leads(nighttime):
+    nighttime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    nighttime.setattr(webhook_app.config, "MANYCHAT_API_KEY", "key")
+    nighttime.setattr(webhook_app.config, "IG_BOOKING_ENABLED", True)
+    nighttime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272")
+    nighttime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+    nighttime.setattr(webhook_app, "_human_led_dialogue", AsyncMock(return_value=False))
+    # База пуста → судим только по тексту текущего сообщения.
+    nighttime.setattr(webhook_app, "_ad_originated_dialogue",
+                      lambda sid, txt: _origin(sid, txt))
+
+    async def _origin(sid, txt):
+        return bool(webhook_app._detect_ad_prefill(txt))
+
+    routed = []
+    async def fake_buffer(phone, text, sender_name):
+        routed.append(phone)
+    nighttime.setattr(webhook_app, "_buffer_and_process_wappi", fake_buffer)
+
+    client = TestClient(webhook_app.app)
+
+    def post(sid, text):
+        return client.post("/webhook/manychat", json={
+            "secret": "s3cret", "subscriber_id": sid, "text": text}).json()
+
+    # Лид с рекламы — агент работает.
+    ad = post("111", "Hello i would like to sign up for a massage package "
+                     "in Abu Dhabi at a discount")
+    assert ad.get("not_ad") is None and "111" in str(routed)
+
+    # Органика ночью — молчим, в пайплайн не уходит.
+    org = post("222", "Hi, how much for a massage?")
+    assert org["reply"] == instagram_agent.SHADOW_SENTINEL
+    assert org.get("not_ad") is True
+    assert "222" not in str(routed)
+
+    # Мусор ночью — тоже молчим.
+    assert post("333", "Can i see girl pic")["reply"] == instagram_agent.SHADOW_SENTINEL
+
+    # Свой тестовый аккаунт проверяет агента без рекламного текста.
+    tester = post("868311272", "hi")
+    assert tester.get("not_ad") is None
+    assert "868311272" in str(routed)
+
+
+# 13 — недоступная база не должна глушить рекламного лида
+def test_13_db_outage_does_not_silence_a_lead():
+    async def _boom(*a, **kw):
+        raise RuntimeError("db down")
+
+    with patch("database.get_db", _boom):
+        ok = asyncio.run(webhook_app._ad_originated_dialogue("999", "hi there"))
+    assert ok is True, "при сбое БД открываемся, а не теряем лида"
+
+
+# 14 — рекламный текст распознаётся без обращения к базе вообще
+def test_14_ad_prefill_needs_no_database():
+    import database
+
+    with patch.object(database, "get_db") as get_db:
+        ok = asyncio.run(webhook_app._ad_originated_dialogue(
+            "999", "Hello i would like to sign up for the summer promotion in Dubai"))
+    assert ok is True
+    assert not get_db.called, "рекламный префилл виден по тексту, запрос лишний"
