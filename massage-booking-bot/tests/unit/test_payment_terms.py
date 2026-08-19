@@ -383,6 +383,13 @@ def test_no_slots_reply_must_name_the_nearest_ones():
         assert not wh._CLAIMS_NO_SLOTS_RE.search(neutral), neutral
     # Ответ, уже обещающий места, гейт не трогает — это работа momentum.
     assert wh._OFFERS_AVAILABILITY_RE.search("We have free slots tomorrow 🌹")
+    # ...но ОТРИЦАНИЕ переворачивает смысл: «we don’t have free slots» тоже
+    # содержит «free slots», и проверка, стоявшая раньше жалобы, глушила
+    # гейт на ровном месте (третий провал живой проверки, 20:49).
+    denial = "Today and tomorrow we don’t have free slots in Al Ain 🙏"
+    assert wh._OFFERS_AVAILABILITY_RE.search(denial)
+    assert wh._CLAIMS_NO_SLOTS_RE.search(denial), (
+        "жалоба обязана распознаваться раньше, чем «места обещаны»")
 
     # Времена берутся с разбросом по дню, а не первые три подряд.
     summary = ("Eliza (Al Ain): 1:30 PM, 2:00 PM, 6:30 PM, 7:00 PM, "

@@ -1503,8 +1503,6 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
         return response_text
     if _ampm_times_set(response_text):
         return response_text      # конкретика уже названа — не мешаем
-    if _OFFERS_AVAILABILITY_RE.search(response_text):
-        return response_text      # места уже обещаны — это работа momentum
     # Ловить формулировку бесполезно: «no free slots», «fully booked», «are
     # already full» — способов сказать одно и то же у модели бесконечно, и
     # первые две живые проверки гейт провалил именно на этом. Признак берём
@@ -1514,6 +1512,13 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
     _claims = bool(_CLAIMS_NO_SLOTS_RE.search(response_text))
     if not _claims and not _ASKS_ABOUT_DAY_RE.search(response_text):
         return response_text
+    # ВАЖЕН ПОРЯДОК: «места уже обещаны» проверяем только когда жалобы не
+    # было. «We don’t have free slots» содержит слова «free slots», и
+    # проверка, стоявшая выше, глушила гейт на ровном месте — третий провал
+    # живой проверки подряд, 2026-08-19 20:49. Отрицание переворачивает
+    # смысл, а выражение его не видит.
+    if not _claims and _OFFERS_AVAILABILITY_RE.search(response_text):
+        return response_text      # доступность уже обещана — работа momentum
 
     from datetime import datetime as _dtm, timedelta as _tdm, timezone as _tzm
     import bot as bot_module
