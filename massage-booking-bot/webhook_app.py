@@ -380,9 +380,16 @@ async def _send_to_client(phone: str, text: str) -> bool:
         # Instagram client — booking turns, reminders, alerts, resets — goes
         # through here, so this single check makes a daytime send impossible
         # regardless of which code path produced the text.
+        #
+        # ЕДИНСТВЕННОЕ исключение — аккаунты из IG_TEST_SUBSCRIBERS: наши
+        # собственные тестовые Instagram-аккаунты, чтобы можно было проверять
+        # агента днём, не дожидаясь 21:00. Для любого реального клиента
+        # тишина остаётся абсолютной; их записи всё равно помечаются [TEST].
         from agents.instagram_agent import ig_live_now
 
-        if not ig_live_now():
+        if not ig_live_now() and _is_ig_test_subscriber(phone[len(IG_KEY_PREFIX):]):
+            logger.info(f"IG send разрешён вне окна — ТЕСТЕР {phone}")
+        elif not ig_live_now():
             logger.warning(
                 f"IG send BLOCKED (outside live window) for {phone}: {text[:80]!r}"
             )
@@ -4592,7 +4599,11 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.info(f"human-led dialogue {subscriber_id} — агент молчит")
         return {"reply": SHADOW_SENTINEL, "human_led": True}
 
-    if config.MANYCHAT_API_KEY and ig_live_now() and (
+    # Тестовые аккаунты работают и днём — иначе проверить агента можно только
+    # ночью, а правки мы делаем в рабочее время. Для реальных клиентов окно
+    # остаётся обязательным (правило владельца о дневной тишине).
+    _may_reply = ig_live_now() or _is_ig_test_subscriber(subscriber_id)
+    if config.MANYCHAT_API_KEY and _may_reply and (
         config.IG_BOOKING_ENABLED or _is_ig_test_subscriber(subscriber_id)
     ):
         # Variant A (full IG booking): live-window DMs run through the SAME

@@ -73,10 +73,12 @@ def test_5_tester_gets_no_daytime_booking(daytime):
     daytime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272")
     daytime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
 
-    async def never(*a, **kw):
-        raise AssertionError("booking pipeline must not run during the day")
+    routed = {}
 
-    daytime.setattr(webhook_app, "_buffer_and_process_wappi", never)
+    async def fake_buffer(phone, text, sender_name):
+        routed["args"] = (phone, text, sender_name)
+
+    daytime.setattr(webhook_app, "_buffer_and_process_wappi", fake_buffer)
     daytime.setattr(instagram_agent, "generate_ig_reply",
                     AsyncMock(return_value="would-be"))
     client = TestClient(webhook_app.app)
@@ -84,8 +86,10 @@ def test_5_tester_gets_no_daytime_booking(daytime):
                     json={"secret": "s3cret", "subscriber_id": "868311272",
                           "text": "book me today"})
     assert r.status_code == 200
-    assert r.json()["reply"] == instagram_agent.SHADOW_SENTINEL
-    assert r.json().get("shadow") is True
+    # Свой тестовый аккаунт работает и днём — иначе агента нельзя проверить
+    # в рабочее время (2026-08-19). Для клиентов тишина осталась абсолютной,
+    # это проверяет соседний тест.
+    assert routed.get("args") is not None
 
 
 # 6 — a normal client during the day: instant sentinel, no generation awaited
@@ -288,3 +292,24 @@ def test_14_ambiguous_massage_asks_kind_first():
         assert wh._massage_kind_known(known) is True, known
     assert "Body massage or facial" in wh.MASSAGE_KIND_GATE_MSG
     assert "do NOT repeat" in wh.DURATION_FIRST_GATE_MSG
+
+
+def test_daytime_silence_holds_for_clients_but_testers_can_work(monkeypatch):
+    """Днём молчим для всех, КРОМЕ своих тестовых аккаунтов.
+
+    Правило владельца о полной дневной тишине остаётся: реальный клиент днём
+    не получает ничего. Но проверять агента можно только днём — правки мы
+    делаем в рабочее время, а ждать 21:00 на каждую проверку нельзя.
+    """
+    import webhook_app as wh
+    from config import config
+
+    monkeypatch.setattr(config, "IG_TEST_SUBSCRIBERS", "868311272", raising=False)
+
+    assert wh._is_ig_test_subscriber("868311272") is True
+    assert wh._is_ig_test_subscriber("2012561461") is False   # реальный клиент
+    assert wh._is_ig_test_subscriber("") is False
+
+    # Пустой список = никаких исключений вообще.
+    monkeypatch.setattr(config, "IG_TEST_SUBSCRIBERS", "", raising=False)
+    assert wh._is_ig_test_subscriber("868311272") is False

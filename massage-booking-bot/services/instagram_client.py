@@ -136,9 +136,14 @@ async def manychat_send_text(subscriber_id: str, text: str) -> bool:
     # window, but this is the single funnel every ManyChat delivery passes
     # through — so no future code path can accidentally break the silence
     # the client demanded (owner request 2026-08-15).
+    #
+    # Исключение — только наши тестовые аккаунты (IG_TEST_SUBSCRIBERS), чтобы
+    # агента можно было проверять днём. Реальных клиентов это не касается.
     from agents.instagram_agent import ig_live_now
 
-    if not ig_live_now():
+    _testers = {s.strip() for s in (config.IG_TEST_SUBSCRIBERS or "").split(",")
+                if s.strip()}
+    if not ig_live_now() and str(subscriber_id).strip() not in _testers:
         logger.warning(
             f"ManyChat send BLOCKED (outside live window) to {subscriber_id}: "
             f"{text[:80]!r}"
