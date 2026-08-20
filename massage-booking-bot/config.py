@@ -111,6 +111,15 @@ class Config:
     # FULL booking pipeline at any hour regardless of the flags above, and
     # their YClients records are created with the [TEST] prefix.
     IG_TEST_SUBSCRIBERS: str = os.getenv("IG_TEST_SUBSCRIBERS", "")
+    # Ночью отвечать ТОЛЬКО лидам с рекламных префиллов (правило владельца
+    # 2026-08-19). ВЫКЛЮЧЕНО по умолчанию 2026-08-20: происхождение мы
+    # определяем по ТЕКСТУ первого сообщения, а Instagram помечает как
+    # «Ad Inquiry» и тех, кто стёр подставленный текст и написал своими
+    # словами («Price», «Hi», «U charges»). В первую же ночь правило
+    # заглушило семерых из девяти, включая женщину с фиброзом после
+    # липосакции, приславшую телефон. Спама среди ночных обращений при этом
+    # почти не было — правило било по своей же цели.
+    IG_AD_LEADS_ONLY: bool = os.getenv("IG_AD_LEADS_ONLY", "false").lower() == "true"
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
 

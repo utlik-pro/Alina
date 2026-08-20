@@ -121,6 +121,23 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      Regression suite: `tests/unit/test_daytime_silence.py` (8 paths).
      Known accepted consequence: a dialogue still open at 08:00 gets no
      further replies, and IG clients get no reminders at all.
+     ⚠️ **Tester exception re-opened 2026-08-19** (owner: «а можешь меня
+     добавить чтобы я днём мог тестировать?»): IDs in `IG_TEST_SUBSCRIBERS`
+     (currently only Dmitry, 868311272) DO bypass the window in all three
+     code guards. Real clients are unaffected — keep that list clean, an
+     ordinary client landing in it would start getting daytime replies.
+  3b. 🎯 **NIGHT SHIFT = AD LEADS ONLY (owner rule 2026-08-19: «агент
+     отвечает только новым по рекламе после 21-00»).** In the live window
+     the agent answers a dialogue ONLY if it originated from one of the ad
+     prefills; organic DMs, spam and «Can i see girl pic» stay silent and
+     go to the admins in the morning. Owner chose this explicitly over
+     "answer anyone new at night". Origin is read from **NightEvent in
+     Postgres, not the in-RAM context** — contexts die on every deploy, and
+     an ad lead would otherwise look like a stranger and be dropped
+     mid-conversation. A DB outage OPENS the gate (silence caused by our
+     infrastructure costs more than one extra reply). Testers exempt.
+     `_ad_originated_dialogue` + `not_ad_skip` events; measured impact the
+     day it shipped: 19 of 28 contacts were ad-originated.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

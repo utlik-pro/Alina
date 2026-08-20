@@ -4898,9 +4898,15 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.info(f"human-led dialogue {subscriber_id} — агент молчит")
         return {"reply": SHADOW_SENTINEL, "human_led": True}
 
-    # Ночная смена агента — ТОЛЬКО лиды с рекламы (правило владельца
-    # 2026-08-19). Органику и мусор разбирают админы утром.
-    if (ig_live_now() and not _is_ig_test_subscriber(subscriber_id)
+    # Ночная смена агента — только лиды с рекламы (правило владельца
+    # 2026-08-19). ВЫКЛЮЧЕНО флагом 2026-08-20: происхождение читается по
+    # ТЕКСТУ первого сообщения, а Instagram помечает «Ad Inquiry» и тех, кто
+    # стёр подставленный текст («Price», «Hi», «U charges»). В первую же ночь
+    # правило заглушило семерых из девяти — включая женщину с фиброзом после
+    # липосакции, приславшую телефон. Включать обратно только вместе с
+    # НАСТОЯЩИМ признаком рекламы (тег из ManyChat), а не догадкой по тексту.
+    if (config.IG_AD_LEADS_ONLY and ig_live_now()
+            and not _is_ig_test_subscriber(subscriber_id)
             and not await _ad_originated_dialogue(subscriber_id, text)):
         _night_event("not_ad_skip", who=subscriber_id, text=text[:120])
         logger.info(f"диалог не с рекламы {subscriber_id} — агент молчит")

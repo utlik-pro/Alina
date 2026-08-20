@@ -323,6 +323,9 @@ def test_12_night_agent_answers_only_ad_leads(nighttime):
     nighttime.setattr(webhook_app.config, "IG_BOOKING_ENABLED", True)
     nighttime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "868311272")
     nighttime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+    # Правило выключено по умолчанию (см. IG_AD_LEADS_ONLY) — здесь включаем
+    # явно, чтобы проверить саму механику, если её когда-нибудь вернут.
+    nighttime.setattr(webhook_app.config, "IG_AD_LEADS_ONLY", True)
     nighttime.setattr(webhook_app, "_human_led_dialogue", AsyncMock(return_value=False))
     # База пуста → судим только по тексту текущего сообщения.
     nighttime.setattr(webhook_app, "_ad_originated_dialogue",
@@ -381,3 +384,35 @@ def test_14_ad_prefill_needs_no_database():
             "999", "Hello i would like to sign up for the summer promotion in Dubai"))
     assert ok is True
     assert not get_db.called, "рекламный префилл виден по тексту, запрос лишний"
+
+
+# 15 — по умолчанию ночью агент отвечает ЛЮБОМУ новому, а не только рекламе
+def test_15_night_answers_everyone_by_default(nighttime):
+    """Ночь 19→20 августа: правило «только реклама» заглушило 7 из 9.
+
+    Происхождение определялось по ТЕКСТУ префилла, а Instagram помечает
+    «Ad Inquiry» и тех, кто стёр подставленный текст и написал своими
+    словами. Среди заглушённых были «Price», «U charges» и женщина с
+    фиброзом после липосакции, приславшая телефон. Пока нет настоящего
+    признака рекламы, правило выключено — и это проверяется здесь.
+    """
+    assert webhook_app.config.IG_AD_LEADS_ONLY is False
+
+    nighttime.setattr(webhook_app.config, "MANYCHAT_WEBHOOK_SECRET", "s3cret")
+    nighttime.setattr(webhook_app.config, "MANYCHAT_API_KEY", "key")
+    nighttime.setattr(webhook_app.config, "IG_BOOKING_ENABLED", True)
+    nighttime.setattr(webhook_app.config, "IG_TEST_SUBSCRIBERS", "")
+    nighttime.setattr(webhook_app.config, "IG_ASYNC_SEND", False)
+    nighttime.setattr(webhook_app, "_human_led_dialogue", AsyncMock(return_value=False))
+
+    routed = []
+
+    async def fake_buffer(phone, text, sender_name):
+        routed.append(phone)
+
+    nighttime.setattr(webhook_app, "_buffer_and_process_wappi", fake_buffer)
+    client = TestClient(webhook_app.app)
+    body = client.post("/webhook/manychat", json={
+        "secret": "s3cret", "subscriber_id": "887696381", "text": "Price"}).json()
+    assert body.get("not_ad") is None, "лид с «Price» больше не глушится"
+    assert "887696381" in str(routed)
