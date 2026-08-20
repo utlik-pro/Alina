@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from datetime import datetime, time as dtime, timezone
+from datetime import datetime, timedelta, time as dtime, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional
 from zoneinfo import ZoneInfo
@@ -77,6 +77,25 @@ def ig_live_now(now: Optional[datetime] = None) -> bool:
     if start < end:
         return start <= t < end
     return t >= start or t < end  # wraps midnight
+
+
+def ig_window_start(now: Optional[datetime] = None) -> Optional[datetime]:
+    """Момент, когда открылось ТЕКУЩЕЕ ночное окно (None, если оно закрыто).
+
+    Нужен гейту «диалог ведёт админ»: тот судит по накоплению сообщений
+    клиента без наших ответов, а днём мы молчим ПО ПРАВИЛУ, и это молчание
+    ничего не говорит о том, отвечает ли человек. Считать надо только внутри
+    текущей ночи.
+    """
+    tz = ZoneInfo(config.IG_ACTIVE_TZ)
+    now = (now or datetime.now(tz)).astimezone(tz)
+    if not ig_live_now(now):
+        return None
+    start = _parse_hhmm(config.IG_ACTIVE_FROM, dtime(21, 0))
+    today = now.replace(hour=start.hour, minute=start.minute,
+                        second=0, microsecond=0)
+    # Окно пересекает полночь: до утреннего края мы всё ещё во вчерашнем окне.
+    return today if now >= today else today - timedelta(days=1)
 
 
 def log_ig_turn(channel: str, sender_id: str, text: str, reply: str, live: bool) -> None:

@@ -205,6 +205,32 @@ async def _human_led_dialogue(subscriber_id: str, hours: int = 6) -> bool:
             break  # дошли до нашего ответа (или нашей поломки) — хвост кончился
         if r.kind == "inbound":
             tail.append(r.ts)
+
+    # Считаем ТОЛЬКО внутри текущего ночного окна. Днём агент молчит по
+    # правилу владельца, и это молчание ничего не говорит о том, отвечает ли
+    # человек — а выглядит ровно как накопление «админ ведёт диалог». К
+    # вечеру 2026-08-20 так набралось 47 контактов с висящим хвостом, включая
+    # рекламных лидов того же дня: их следующее сообщение агент бы не увидел.
+    from datetime import datetime as _dtp
+    from agents.instagram_agent import ig_window_start
+
+    # Время в NightEvent пишется по Абу-Даби (UTC+4), а окно живёт по Минску
+    # (UTC+3) — сравнивать строками нельзя, промах ровно на час. Разбираем обе
+    # стороны в даты с зоной.
+    _ws = ig_window_start()
+    if _ws is not None:
+        _kept = []
+        for ts in tail:
+            try:
+                _t = _dtp.fromisoformat(str(ts))
+            except (ValueError, TypeError):
+                continue
+            if _t.tzinfo is None:
+                _t = _t.replace(tzinfo=_ws.tzinfo)
+            if _t >= _ws:
+                _kept.append(ts)
+        tail = _kept
+
     if len(tail) < 2:
         return False
 

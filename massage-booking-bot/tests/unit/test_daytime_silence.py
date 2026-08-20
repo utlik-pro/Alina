@@ -416,3 +416,41 @@ def test_15_night_answers_everyone_by_default(nighttime):
         "secret": "s3cret", "subscriber_id": "887696381", "text": "Price"}).json()
     assert body.get("not_ad") is None, "лид с «Price» больше не глушится"
     assert "887696381" in str(routed)
+
+
+# 16 — дневное молчание не должно выглядеть как «диалог ведёт админ»
+def test_16_human_led_counts_only_inside_the_night_window():
+    """К вечеру 20.08 набралось 47 контактов с висящим хвостом: днём агент
+    молчит ПО ПРАВИЛУ, и это молчание гейт читал как работу живого админа.
+    Их следующее ночное сообщение агент бы не увидел — включая рекламных
+    лидов того же дня.
+
+    Считать надо только внутри текущего окна, и сравнивать даты с зоной:
+    NightEvent пишется по Абу-Даби (UTC+4), окно живёт по Минску (UTC+3).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from agents.instagram_agent import ig_window_start
+
+    minsk = timezone(timedelta(hours=3))
+    uae = timezone(timedelta(hours=4))
+
+    # Внутри окна (23:30 по Минску) старт — сегодняшние 21:00.
+    ws = ig_window_start(datetime(2026, 8, 20, 23, 30, tzinfo=minsk))
+    assert ws is not None and (ws.hour, ws.minute) == (21, 0)
+    assert ws.day == 20
+
+    # Под утро (06:00) мы всё ещё во ВЧЕРАШНЕМ окне.
+    ws2 = ig_window_start(datetime(2026, 8, 21, 6, 0, tzinfo=minsk))
+    assert ws2 is not None and ws2.day == 20 and ws2.hour == 21
+
+    # Днём окна нет вовсе.
+    assert ig_window_start(datetime(2026, 8, 20, 14, 0, tzinfo=minsk)) is None
+
+    # Дневное сообщение (17:51 Минск = 18:51 Абу-Даби) осталось ЗА границей,
+    # ночное (22:10 Минск = 23:10 Абу-Даби) — внутри. Разница зон в час не
+    # должна путать сравнение.
+    day_msg = datetime(2026, 8, 20, 18, 51, tzinfo=uae)
+    night_msg = datetime(2026, 8, 20, 23, 10, tzinfo=uae)
+    assert day_msg < ws, "дневное сообщение обязано отсекаться"
+    assert night_msg >= ws, "ночное сообщение обязано учитываться"
