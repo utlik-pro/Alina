@@ -162,8 +162,14 @@ def test_busy_time_in_a_reply_is_rewritten(monkeypatch):
 
     ctx = _t.SimpleNamespace(booking_data={"service_duration": 50}, client_data={})
     ctx.slot_truth = {}
+    # Дата считается от сегодня: раньше здесь стояло «Sunday 23rd», и 24.08
+    # тест начал падать сам по себе — гейт справедливо не рассматривает
+    # прошедший день, а проверить он должен занятость времени.
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    _soon = _d.now(_tz(_td(hours=4))) + _td(days=3)
+    _when = f"{_soon.day} {_soon:%B}"
     out = asyncio.run(wh._verify_reply_times_against_calendar(
-        "Sunday 23rd at 6:00 PM is fine\n\nPlease type your address",
+        f"{_when} at 6:00 PM is fine\n\nPlease type your address",
         ctx, "al_ain", who="test"))
     assert "6:00 PM" not in out
     assert "10:00 AM" in out                # предложены реальные окна

@@ -419,3 +419,35 @@ def test_no_slots_reply_must_name_the_nearest_ones():
     named = "Tomorrow is fully booked, but we have 5:00 PM on Friday"
     assert asyncio.run(
         wh._offer_nearest_day_when_empty(named, ctx, "al_ain")) == named
+
+
+def test_courses_boilerplate_becomes_a_selling_line():
+    """«Courses are arranged personally by our team» — ответ на незаданный вопрос.
+
+    Строка появилась, чтобы не называть курсовые цены (модель выдумывала
+    пакеты по 3 000 и 2 590). Задачу решает, но клиенту читается как
+    отговорка: он спрашивал про скидку, а ему объясняют порядок формирования
+    курсов. Владелец 2026-08-24: «фраза не оч корректная, можно просто, что
+    с нами работают top Russian».
+    """
+    from webhook_app import TOP_RUSSIAN_LINE, _enforce_courses_wording
+
+    # Все формулировки, реально встреченные в ночных логах.
+    for said in ("Courses are arranged personally by our team 🙌",
+                 "For massage packages, the courses are arranged personally by the team",
+                 "For courses, our team arranges them personally 💎",
+                 "Courses are arranged personally by the team dear 🌹"):
+        out = _enforce_courses_wording(f"275 AED instead of 430\n{said}\n\nWhich day dear?")
+        assert "arranged personally" not in out.lower()
+        assert "arranges them personally" not in out.lower()
+        assert TOP_RUSSIAN_LINE in out
+        assert "275 AED instead of 430" in out      # цена не теряется
+        assert "Which day dear?" in out             # следующий шаг тоже
+
+    # Продающая строка не дублируется, если уже есть.
+    already = f"{TOP_RUSSIAN_LINE}\nCourses are arranged personally by the team"
+    assert _enforce_courses_wording(already).count("top Russian") == 1
+
+    # Обычные ответы не трогаем.
+    clean = "60 min - 350 AED\n90 min - 460 AED\n\nWhich one dear?"
+    assert _enforce_courses_wording(clean) == clean

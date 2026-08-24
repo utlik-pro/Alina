@@ -1837,6 +1837,43 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
     )
 
 
+_COURSES_BOILERPLATE_RE = re.compile(
+    r"^.*\bcourses?\b.*\b(?:arrang\w+|organis\w+|organiz\w+)\b.*$"
+    r"|^.*\b(?:arrang\w+|organis\w+|organiz\w+)\b.*\bcourses?\b.*$",
+    re.IGNORECASE | re.MULTILINE)
+
+TOP_RUSSIAN_LINE = "We work with top Russian therapists 🌹"
+
+
+def _enforce_courses_wording(response_text: str) -> str:
+    """«Courses are arranged personally by our team» — ответ на незаданный вопрос.
+
+    Строка появилась как способ не называть курсовые цены (после того как
+    модель выдумала пакеты по 3 000 и 2 590). Задачу она решает, но клиенту
+    читается как уклончивая отговорка: он спрашивал про скидку, а ему
+    сообщают про порядок формирования курсов. Владелец 2026-08-24: «фраза не
+    оч корректная, можно просто, что с нами работают top Russian».
+
+    Заменяем на продающую строку голосом самих админов («Top Russian
+    Therapist» — их собственный шаблон). Запрет на курсовые цены при этом
+    никуда не девается: он живёт в инъекции и в _enforce_price_sanity.
+    """
+    if not response_text or not _COURSES_BOILERPLATE_RE.search(response_text):
+        return response_text
+    lines = response_text.split("\n")
+    kept, replaced = [], False
+    for ln in lines:
+        if _COURSES_BOILERPLATE_RE.search(ln):
+            if not replaced and TOP_RUSSIAN_LINE.lower() not in response_text.lower():
+                kept.append(TOP_RUSSIAN_LINE)
+                replaced = True
+            continue
+        kept.append(ln)
+    out = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    logger.info("courses gate: отговорка про курсы заменена продающей строкой")
+    return out or TOP_RUSSIAN_LINE
+
+
 _PKG_CHOICE_LINE_RE = re.compile(
     r"body\s*(?:massage)?\s*(?:or|/|,)\s*(?:the\s+)?fac(?:e|ial)"
     r"|fac(?:e|ial)\s*(?:massage)?\s*(?:or|/|,)\s*(?:the\s+)?body"
@@ -4183,8 +4220,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 f"(was {int(_combo['was'])}), {_combo['duration']} min. "
                 "Quote it as soon as they say what they want, BEFORE the plain "
                 "per-session prices. NEVER quote course/abonement prices on "
-                "this prefill — say courses are arranged personally by the "
-                "team. The emirate is already in their message: never re-ask it."
+                "this prefill. Do NOT explain what happens with courses unless "
+                "the client asks — an unprompted 'courses are arranged "
+                "personally' answers a question nobody asked and reads as "
+                "evasive (owner 2026-08-24). Instead add ONE selling line: "
+                "we work with top Russian therapists. The emirate is already "
+                "in their message: never re-ask it."
             )
 
         response_text: str = ""
@@ -4303,6 +4344,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, already_shown=_offer_shown)
         if not _offer_shown and "275" in response_text:
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+        # «Курсы подбираются индивидуально» — отговорка вместо продажи.
+        response_text = _enforce_courses_wording(response_text)
 
         # Оффер 275 — телесный, выбирать «тело или лицо» не из чего.
         response_text = _enforce_package_service_known(
