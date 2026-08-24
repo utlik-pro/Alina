@@ -220,6 +220,16 @@ def test_human_led_dialogue_detection(monkeypatch):
     def _set(rows):
         monkeypatch.setattr(database, "get_db", lambda: _db_with(rows), raising=False)
 
+    # Хвост считается только внутри текущего ночного окна, поэтому его начало
+    # фиксируем — иначе тест проходил днём и падал после 21:00, когда фильтр
+    # включался и отбрасывал захардкоженные метки (поймано 2026-08-24).
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    from agents import instagram_agent as _ia
+
+    monkeypatch.setattr(
+        _ia, "ig_window_start",
+        lambda now=None: _d(2026, 8, 18, 21, 0, tzinfo=_tz(_td(hours=4))))
+
     T = "2026-08-18T22:%02d:00+04:00"
     # Клиент написал дважды с разрывом 4 минуты, мы молчали -> ведёт человек.
     _set([_Row("inbound", T % 10), _Row("inbound", T % 6), _Row("sent", T % 1)])

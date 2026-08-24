@@ -451,3 +451,56 @@ def test_courses_boilerplate_becomes_a_selling_line():
     # Обычные ответы не трогаем.
     clean = "60 min - 350 AED\n90 min - 460 AED\n\nWhich one dear?"
     assert _enforce_courses_wording(clean) == clean
+
+
+def test_agent_never_sends_a_client_to_an_invented_account():
+    """Ночь 2026-08-23: клиентка трижды спросила «а можно посмотреть на
+    специалистов», и агент трижды отправил её на «@crystallab.beauty» —
+    ника, которого нет ни в одной строке наших данных.
+
+    Это дороже неверной цены: рекламный лид уходит на чужой аккаунт и не
+    возвращается. Проверять цены и слоты оказалось мало — запрет ставится на
+    КЛАСС: любая ссылка, ник или домен вне белого списка вырезается вместе с
+    подводкой к ним.
+    """
+    from webhook_app import NO_LINK_FALLBACK, _enforce_no_invented_links
+
+    # Точный текст из живого диалога.
+    for said in ("I can send you the Instagram page\n@crystallab.beauty",
+                 "You can see our team on Instagram\n@crystallab.beauty",
+                 "Visit crystallab.beauty for photos",
+                 "Check https://example.com/team dear",
+                 "Follow us at www.crystal-lab.ae"):
+        out = _enforce_no_invented_links(said, who="t")
+        assert "crystallab" not in out.lower()
+        assert "example.com" not in out.lower()
+        assert "@" not in out
+
+    # Полезная часть ответа переживает вырезание.
+    out = _enforce_no_invented_links(
+        "You can see our team on Instagram\n@crystallab.beauty\n\n"
+        "What time suits you dear?", who="t")
+    assert out == "What time suits you dear?"
+
+    # Если вырезать нечего — ответ не трогаем.
+    clean = "60 min - 350 AED\n90 min - 460 AED"
+    assert _enforce_no_invented_links(clean) == clean
+    ok = "Yes dear, all our specialists are certified Russian female therapists 🌹"
+    assert _enforce_no_invented_links(ok) == ok
+
+    # Ответ, состоявший ТОЛЬКО из ссылки, не уходит пустым.
+    assert _enforce_no_invented_links("@crystallab.beauty") == NO_LINK_FALLBACK
+
+
+def test_configured_contacts_are_still_allowed(monkeypatch):
+    """Белый список работает: вписанный ник и наш wa.me проходят."""
+    import webhook_app as wh
+
+    monkeypatch.setattr(wh.config, "IG_PUBLIC_HANDLE", "crystal_lab_ae")
+    monkeypatch.setattr(wh.config, "WHATSAPP_CTA_NUMBER", "971501234567")
+    good = "Our page is @crystal_lab_ae dear 🌹"
+    assert wh._enforce_no_invented_links(good) == good
+    wa = "Write us here https://wa.me/971501234567?text=Hi"
+    assert wh._enforce_no_invented_links(wa) == wa
+    # А чужой — всё равно вырезается.
+    assert "other_salon" not in wh._enforce_no_invented_links("See @other_salon").lower()

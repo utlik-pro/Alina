@@ -1837,6 +1837,72 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
     )
 
 
+_LINK_TOKEN_RE = re.compile(
+    r"https?://\S+"
+    r"|www\.[^\s,]+"
+    r"|@[A-Za-z0-9._]{2,30}"
+    r"|\b[A-Za-z0-9][A-Za-z0-9-]{1,40}\."
+    r"(?:com|net|org|ae|ru|me|io|co|beauty|shop|site|online|app|link)\b[^\s,]*",
+    re.IGNORECASE)
+
+# Строки-подводки: «I can send you the Instagram page» без самого ника
+# превращается в обрубок, поэтому убираются вместе с ним.
+_LINK_LEADIN_RE = re.compile(
+    r"instagram|page|profile|website|channel|link|follow us|see (?:our|the) team",
+    re.IGNORECASE)
+
+NO_LINK_FALLBACK = "All our specialists are certified Russian therapists dear 🌹"
+
+
+def _allowed_link_tokens() -> set:
+    """Что агенту РАЗРЕШЕНО называть: только явно настроенное."""
+    out = set()
+    num = "".join(ch for ch in (config.WHATSAPP_CTA_NUMBER or "") if ch.isdigit())
+    if num:
+        out.add(f"wa.me/{num}")
+    handle = (getattr(config, "IG_PUBLIC_HANDLE", "") or "").strip().lstrip("@").lower()
+    if handle:
+        out.add("@" + handle)
+    return out
+
+
+def _enforce_no_invented_links(response_text: str, who: str = "") -> str:
+    """Наружу уходит только тот адрес, который мы сами прописали.
+
+    Ночь 2026-08-23: клиентка трижды спросила «а можно посмотреть на
+    специалистов», и агент трижды отправил её на «@crystallab.beauty» —
+    ника, которого нет ни в одной строке наших данных. Настоящий аккаунт
+    другой. Цена такой выдумки выше, чем у неверной цены: рекламный лид
+    уходит на чужой аккаунт и уже не возвращается.
+
+    Проверять цены и слоты было мало — сочинить модель может что угодно,
+    поэтому здесь запрет на КЛАСС: любая ссылка, ник или домен, которых нет
+    в белом списке, вырезается вместе с подводкой к ним.
+    """
+    if not response_text:
+        return response_text
+    allowed = _allowed_link_tokens()
+
+    def _ok(tok: str) -> bool:
+        low = tok.lower()
+        return any(a in low for a in allowed)
+
+    bad = [t for t in _LINK_TOKEN_RE.findall(response_text) if not _ok(t)]
+    if not bad:
+        return response_text
+
+    kept = []
+    for ln in response_text.split("\n"):
+        toks = [t for t in _LINK_TOKEN_RE.findall(ln) if not _ok(t)]
+        if toks or (_LINK_LEADIN_RE.search(ln) and bad):
+            continue
+        kept.append(ln)
+    out = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    logger.warning(f"link gate: вырезано {bad} из ответа клиенту {who}")
+    _night_event("invented_link", who=who, text=" | ".join(bad)[:200])
+    return out or NO_LINK_FALLBACK
+
+
 _COURSES_BOILERPLATE_RE = re.compile(
     r"^.*\bcourses?\b.*\b(?:arrang\w+|organis\w+|organiz\w+)\b.*$"
     r"|^.*\b(?:arrang\w+|organis\w+|organiz\w+)\b.*\bcourses?\b.*$",
@@ -4344,6 +4410,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, already_shown=_offer_shown)
         if not _offer_shown and "275" in response_text:
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+        # Ни одной ссылки или ника, которых нет в наших данных.
+        response_text = _enforce_no_invented_links(response_text, who=phone)
 
         # «Курсы подбираются индивидуально» — отговорка вместо продажи.
         response_text = _enforce_courses_wording(response_text)

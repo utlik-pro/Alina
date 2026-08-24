@@ -122,6 +122,12 @@ class Config:
     IG_AD_LEADS_ONLY: bool = os.getenv("IG_AD_LEADS_ONLY", "false").lower() == "true"
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
+    # Публичный аккаунт салона, который агенту РАЗРЕШЕНО называть клиенту.
+    # Пусто по умолчанию: 2026-08-23 модель выдумала «@crystallab.beauty» и
+    # трижды отправила туда рекламного лида, хотя настоящий аккаунт другой.
+    # Пока сюда не вписан проверенный ник, агент не называет никаких ссылок
+    # и аккаунтов вообще — см. _enforce_no_invented_links.
+    IG_PUBLIC_HANDLE: str = os.getenv("IG_PUBLIC_HANDLE", "")
 
     # Driver / logistics notifications (Telegram chat id of the driver group)
     DRIVER_TELEGRAM_CHAT_ID: Optional[str] = os.getenv("DRIVER_TELEGRAM_CHAT_ID")
