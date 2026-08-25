@@ -138,6 +138,44 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      infrastructure costs more than one extra reply). Testers exempt.
      `_ad_originated_dialogue` + `not_ad_skip` events; measured impact the
      day it shipped: 19 of 28 contacts were ad-originated.
+  3d. 📞 **PHONE IS MANDATORY FOR A BOOKING (Tatyana 2026-08-23).** «Запись
+     считается неполной, если нет номера телефона. Телефон взять обязательно
+     нужно. Если прошёл адрес и время, но телефона нет, то напоминаем через
+     некоторое время.» So: address + time WITHOUT a phone is not a finished
+     booking — the agent must come back and ask again rather than close the
+     dialogue. (Phone is already sticky once typed — `_detect_phone_in_text`.)
+  3e. 👩 **BOOK TO A NAMED MASTER, AND SAY THE NAME (Tatyana 2026-08-23).**
+     «Сейчас запись прошла в графу администраторы. Давайте пробовать
+     записывать к мастеру: то есть время выбрали и в конце — вы записаны в
+     такое время, мастер такой.» The staff picker already excludes
+     «АДМИНИСТРАТОРЫ»/«ЛИСТ ОЖИДАНИЯ» in three places, and
+     `_synthesize_tool_reply` already prints «<master> — <when> — <price>»
+     when master_name is non-empty — verify it is actually populated end to
+     end before calling this done. Checked 2026-08-24: every record in the
+     ADMINISTRATORS row was `online:false`, i.e. created by admins by hand —
+     the agent has never booked into it.
+  3f. ☀️ **ALL-DAY TRIAL IS THE NEXT STEP (Tatyana 2026-08-23).** «Если всё
+     хорошо, пробуем на целый день включать с моим наблюдением. Ещё
+     кривовато, но уже очень радует.» This REVERSES the absolute daytime
+     silence of rule 3 — do not switch it on without her explicit go-ahead
+     for that specific day, and expect admin/agent overlap to become the main
+     risk (she watches while it runs).
+  3g. 📞➡️🕐 **PHONE FIRST, THEN THE TIME PREFERENCE, THEN THE WINDOWS
+     (Tatyana 2026-08-25 — supersedes the "phone last" gate for IG).**
+     Her words: «Да, мы сразу просим [номер], чтобы если они не ответят
+     сразу — потом писали и писали им… Давайте попробуем брать номер и тут
+     же спрашивать какое время предпочтительно и т.д. Стараться дальше
+     записывать.» And on which slots to show: «Свободные окошки. Можете
+     уточнить: утром/вечер? Какое время предпочтительно? Затем окошки и
+     программы.»
+     So the IG order becomes: offer/price → **ASK THE NUMBER** → ask
+     morning-or-evening → show only the windows matching that half of the
+     day → keep pushing to book. The phone is no longer a late gate before
+     confirm; it is asked as soon as the client has heard a price, because
+     admins chase silent leads by phone («писали и писали им»).
+     Context that produced the rule: 13 night leads, 0 processed by the
+     admins in the morning — «но они не отвечали, увы». A number is what
+     makes a silent lead recoverable.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

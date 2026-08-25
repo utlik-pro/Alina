@@ -1837,6 +1837,113 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
     )
 
 
+PHONE_FIRST_LINE = "May I have your number dear? 🌹"
+TIME_PREF_LINE = "And what time suits you better — morning or evening?"
+
+
+def _enforce_phone_first(response_text: str, context, phone_known: bool,
+                         is_ig: bool, who: str = "") -> str:
+    """Услышал цену — сразу номер, потом половина дня, и только затем окошки.
+
+    Правило Татьяны 2026-08-25: «мы сразу просим [номер], чтобы если они не
+    ответят сразу — потом писали и писали им… берём номер и тут же
+    спрашиваем какое время предпочтительно». Поводом стали 13 ночных заявок,
+    из которых утром админы не обработали ни одной: «но они не отвечали,
+    увы». Номер — единственное, что делает молчащего лида возвратным.
+
+    Гейт ЗАМЕНЯЕТ вопрос модели, а не добавляет свой: реплей 2026-08-25
+    показал, что два вопроса в одном сообщении («какой день?» + «ваш
+    номер?») клиент разруливает по одному, и воронка встаёт. Конкретные
+    времена снимаются, пока не выбрана половина дня — иначе человек выбирает
+    из стены окон, половина которых ему не подходит.
+    """
+    if not is_ig or not response_text:
+        return response_text
+    bd = context.booking_data or {}
+    pref = bd.get("time_preference")
+    need_phone = not phone_known and not bd.get("phone_asked")
+    need_pref = not pref and not bd.get("pref_asked")
+    if not (need_phone or need_pref):
+        return response_text
+    if not _PRICE_IN_REPLY_RE.search(response_text):
+        return response_text          # цены ещё не было — просить рано
+
+    kept = []
+    for ln in response_text.split("\n"):
+        if not pref and _AMPM_TIMES_RE.search(ln):
+            continue                  # половина дня не выбрана — времена рано
+        if _ASKS_ABOUT_DAY_RE.search(ln):
+            continue                  # свой вопрос модели уступает нашему
+        kept.append(ln)
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip() or response_text.strip()
+
+    ask = []
+    if need_phone:
+        ask.append(PHONE_FIRST_LINE)
+    if need_pref:
+        ask.append(TIME_PREF_LINE)
+    logger.info(f"phone-first gate: {'номер ' if need_phone else ''}"
+                f"{'половина дня' if need_pref else ''} у {who}")
+    return f"{body}\n\n" + "\n".join(ask)
+
+
+_MORNING_RE = re.compile(r"\bmorning\b|\bam\b|утр|до\s*обеда", re.I)
+_EVENING_RE = re.compile(r"\bevening\b|\bnight\b|\bpm\b|вечер|после\s*обеда", re.I)
+
+
+def _detect_time_preference(text: str) -> Optional[str]:
+    """«morning» / «evening» — половина дня, которую попросил клиент.
+
+    Правило Татьяны 2026-08-25: «Можете уточнить: утром/вечер? Какое время
+    предпочтительно? Затем окошки и программы». Показывать всё подряд нельзя
+    — у мастера бывает двадцать окон, и стена времён читается как шум.
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    # «5 PM» — это конкретное время, а не предпочтение по половине дня:
+    # его разбирает _detect_requested_time, здесь такие не трогаем.
+    if _detect_requested_time(t):
+        return None
+    has_m, has_e = bool(_MORNING_RE.search(t)), bool(_EVENING_RE.search(t))
+    if has_m and not has_e:
+        return "morning"
+    if has_e and not has_m:
+        return "evening"
+    return None
+
+
+def _filter_summary_by_preference(summary: str, pref: Optional[str]) -> str:
+    """Оставляет в сводке календаря только окна нужной половины дня.
+
+    Фильтруем ИНЪЕКЦИЮ, а не ответ: модель физически не может предложить то,
+    чего не видит. Если после фильтра не осталось ничего — возвращаем исходную
+    сводку: честнее показать неудобное время, чем сказать «мест нет».
+    """
+    if not summary or pref not in ("morning", "evening"):
+        return summary
+    out = []
+    for line in summary.split("\n"):
+        times = _AMPM_TIMES_RE.findall(line)
+        if not times:
+            out.append(line)
+            continue
+        keep = []
+        for h, m, mer in times:
+            hour = int(h)
+            if mer.upper() == "PM" and hour < 12:
+                hour += 12
+            elif mer.upper() == "AM" and hour == 12:
+                hour = 0
+            if (pref == "morning") == (hour < 14):
+                keep.append(f"{int(h)}:{m or '00'} {mer.upper()}")
+        if keep:
+            head = line.split(":")[0] if ":" in line else line
+            out.append(f"{head}: {', '.join(keep)}")
+    kept_any = any(_AMPM_TIMES_RE.search(l) for l in out)
+    return "\n".join(out) if kept_any else summary
+
+
 _LINK_TOKEN_RE = re.compile(
     r"https?://\S+"
     r"|www\.[^\s,]+"
@@ -3746,6 +3853,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _said_time and _said_time != context.booking_data.get("time"):
             dialog_manager.update_booking_data(user_id, "time", _said_time)
             logger.info(f"клиент назвал время → {_said_time}")
+        # Половина дня, которую попросил клиент (правило Татьяны 2026-08-25:
+        # «уточнить утром/вечер, затем окошки»). Липкая — спрашивать дважды
+        # значит вести диалог по второму кругу.
+        _pref = _detect_time_preference(text)
+        if _pref and _pref != context.booking_data.get("time_preference"):
+            dialog_manager.update_booking_data(user_id, "time_preference", _pref)
+            logger.info(f"клиент предпочитает {_pref}")
 
         _phone_in_msg = _detect_phone_in_text(text)
         if _phone_in_msg and _phone_in_msg != (context.client_data or {}).get("phone"):
@@ -4038,6 +4152,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                             pass
                     _all_wd = ", ".join([_today_wd, _tom_wd] + _extra_wd_list)
 
+                    # Половина дня, которую попросил клиент, режется здесь же:
+                    # модель не может предложить того, чего не видит.
+                    _pref_half = (context.booking_data or {}).get("time_preference")
+                    if _pref_half:
+                        slots_today = _filter_summary_by_preference(slots_today, _pref_half)
+                        slots_tomorrow = _filter_summary_by_preference(slots_tomorrow, _pref_half)
                     context.extra_system_info = (
                         f"\n\nREAL AVAILABLE SLOTS (ground truth — overrides anything you said before):\n"
                         f"TODAY = {_label(today)} — this is what 'today' means "
@@ -4410,6 +4530,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, already_shown=_offer_shown)
         if not _offer_shown and "275" in response_text:
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+        # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
+        _ph_known = bool((context.client_data or {}).get("phone"))
+        _pf_before = response_text
+        response_text = _enforce_phone_first(
+            response_text, context, _ph_known, _is_ig_key(phone), who=phone)
+        if response_text != _pf_before:
+            if PHONE_FIRST_LINE in response_text:
+                dialog_manager.update_booking_data(user_id, "phone_asked", True)
+            if TIME_PREF_LINE in response_text:
+                dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
         # Ни одной ссылки или ника, которых нет в наших данных.
         response_text = _enforce_no_invented_links(response_text, who=phone)

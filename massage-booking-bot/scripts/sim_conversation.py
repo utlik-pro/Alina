@@ -264,6 +264,11 @@ async def run(scenario):
         if _said_time:
             ctx.booking_data["time"] = _said_time
 
+        # Mirror prod: половина дня липкая (Татьяна 2026-08-25).
+        _pref = wh._detect_time_preference(msg)
+        if _pref:
+            ctx.booking_data["time_preference"] = _pref
+
         _ad = wh._detect_ad_prefill(msg)
         if _ad and not ctx.booking_data.get("ad_prefill"):
             ctx.booking_data["ad_prefill"] = _ad
@@ -396,6 +401,15 @@ async def run(scenario):
         final = wh._enforce_package_service_known(
             final, ctx.booking_data.get("ad_prefill"), booking=ctx.booking_data)
         final = wh._enforce_offer_was_price(final)
+        final = wh._enforce_courses_wording(final)
+        _pf = final
+        final = wh._enforce_phone_first(
+            final, ctx, bool(ctx.client_data.get("phone")), True, who="sim")
+        if final != _pf:
+            if wh.PHONE_FIRST_LINE in final:
+                ctx.booking_data["phone_asked"] = True
+            if wh.TIME_PREF_LINE in final:
+                ctx.booking_data["pref_asked"] = True
         final = wh._enforce_cleansing_facts(final, msg)
         final = wh._enforce_summer_offers(final, ctx.booking_data.get("ad_prefill"))
         final = wh._enforce_price_sanity(final, who="sim")

@@ -219,10 +219,17 @@ def test_package_prefill_never_asks_body_or_facial():
 def test_package_next_step_follows_what_is_already_known():
     from webhook_app import _package_next_step_question as q
 
+    # Дата берётся будущая: раньше здесь стояло «24 August», и 25.08 тест
+    # начал падать сам — парсер справедливо не признаёт прошедший день.
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    _soon = _d.now(_tz(_td(hours=4))) + _td(days=3)
+    _when = f"{_soon.day} {_soon:%B}"
+
     assert "which day" in q("Our offer — 275 AED", {}).lower()
-    assert "what time" in q("24 August is possible dear 🌹", {}).lower()
-    assert "what time" in q("Our offer — 275 AED", {"date": "2026-08-24"}).lower()
-    assert "book it" in q("24 August at 6:00 PM is possible 🌹", {}).lower()
+    assert "what time" in q(f"{_when} is possible dear 🌹", {}).lower()
+    assert "what time" in q("Our offer — 275 AED",
+                            {"date": _soon.strftime("%Y-%m-%d")}).lower()
+    assert "book it" in q(f"{_when} at 6:00 PM is possible 🌹", {}).lower()
 
 
 def test_offer_275_always_carries_its_old_price():
@@ -504,3 +511,87 @@ def test_configured_contacts_are_still_allowed(monkeypatch):
     assert wh._enforce_no_invented_links(wa) == wa
     # А чужой — всё равно вырезается.
     assert "other_salon" not in wh._enforce_no_invented_links("See @other_salon").lower()
+
+
+def test_phone_is_asked_right_after_the_price():
+    """Татьяна 2026-08-25: «мы сразу просим номер, чтобы если они не ответят
+    сразу — потом писали и писали им… берём номер и тут же спрашиваем какое
+    время предпочтительно».
+
+    Повод: 13 ночных заявок, из них утром админы не обработали ни одной —
+    «но они не отвечали, увы». Номер делает молчащего лида возвратным.
+    Раньше телефон спрашивали в самом конце, перед подтверждением.
+    """
+    import types
+
+    from webhook_app import (PHONE_FIRST_LINE, TIME_PREF_LINE,
+                             _enforce_phone_first)
+
+    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    priced = ("Lymphatic drainage + cupping + head massage — 275 AED instead of 430\n"
+              "Today we have 10:00 AM, 2:30 PM or 7:00 PM")
+    out = _enforce_phone_first(priced, ctx, phone_known=False, is_ig=True)
+    assert PHONE_FIRST_LINE in out and TIME_PREF_LINE in out
+    assert "275 AED" in out                     # цена остаётся
+    assert "10:00 AM" not in out                # стена времён снимается:
+    assert "7:00 PM" not in out                 # сначала половина дня
+
+    # Половина дня уже известна — второй раз не спрашиваем, времена остаются.
+    ctx2 = types.SimpleNamespace(
+        booking_data={"time_preference": "evening"}, client_data={})
+    out2 = _enforce_phone_first(priced, ctx2, phone_known=False, is_ig=True)
+    assert PHONE_FIRST_LINE in out2 and TIME_PREF_LINE not in out2
+    assert "7:00 PM" in out2
+
+    # Гейт ЗАМЕНЯЕТ вопрос модели, а не добавляет свой: реплей 2026-08-25
+    # показал, что два вопроса в одном сообщении клиент разруливает по
+    # одному, и воронка встаёт.
+    with_q = priced + "\n\nWhich day would you like dear? 😊"
+    out_q = _enforce_phone_first(with_q, types.SimpleNamespace(
+        booking_data={}, client_data={}), False, True)
+    assert "which day" not in out_q.lower()
+    assert PHONE_FIRST_LINE in out_q
+
+    # Телефон уже есть, но половина дня ещё нет — спрашиваем только её.
+    only_pref = types.SimpleNamespace(booking_data={}, client_data={})
+    out3 = _enforce_phone_first(priced, only_pref, phone_known=True, is_ig=True)
+    assert TIME_PREF_LINE in out3 and PHONE_FIRST_LINE not in out3
+
+    # Оба уже спрошены, цены нет, не Instagram — молчим.
+    done = types.SimpleNamespace(
+        booking_data={"phone_asked": True, "pref_asked": True}, client_data={})
+    assert _enforce_phone_first(priced, done, True, True) == priced
+    assert _enforce_phone_first(priced, done, False, True) == priced
+    no_price = "Body massage or facial dear? 😊"
+    assert _enforce_phone_first(no_price, ctx, False, True) == no_price
+    assert _enforce_phone_first(priced, ctx, False, False) == priced
+
+
+def test_only_the_requested_half_of_the_day_is_offered():
+    """Татьяна 2026-08-25: «Свободные окошки. Можете уточнить: утром/вечер?
+    Какое время предпочтительно? Затем окошки и программы».
+
+    Фильтруется ИНЪЕКЦИЯ, а не ответ — модель не может предложить того,
+    чего не видит.
+    """
+    from webhook_app import (_detect_time_preference,
+                            _filter_summary_by_preference)
+
+    assert _detect_time_preference("morning please") == "morning"
+    assert _detect_time_preference("вечером") == "evening"
+    assert _detect_time_preference("утром удобнее") == "morning"
+    # Конкретное время — это не половина дня, его разбирает другой детектор.
+    assert _detect_time_preference("5 PM") is None
+    assert _detect_time_preference("anytime") is None
+    assert _detect_time_preference("morning or evening") is None
+
+    summ = "Eliza (Al Ain): 10:00 AM, 11:30 AM, 1:00 PM, 6:30 PM, 8:00 PM"
+    morning = _filter_summary_by_preference(summ, "morning")
+    assert "10:00 AM" in morning and "8:00 PM" not in morning
+    evening = _filter_summary_by_preference(summ, "evening")
+    assert "6:30 PM" in evening and "10:00 AM" not in evening
+    assert _filter_summary_by_preference(summ, None) == summ
+    # Если в нужной половине пусто — честнее показать неудобное время,
+    # чем сказать «мест нет».
+    only_pm = "Eliza: 7:00 PM, 8:00 PM"
+    assert _filter_summary_by_preference(only_pm, "morning") == only_pm
