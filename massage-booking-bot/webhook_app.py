@@ -2303,6 +2303,16 @@ async def lifespan(application: FastAPI):
     # "offers tomorrow then goes silent" complaint.)
     async def _send_follow_up(user_id: str, text: str):
         try:
+            # Instagram (Татьяна 2026-08-25: «Напоминание тоже давайте
+            # пробовать делать. Если не отвечает — ещё раз спрашивать:
+            # интересуются ли они услугой и что есть свободные окошки»,
+            # «давайте попробуем через 5 минут»). Раньше ig-ключ падал в
+            # ветку Telegram на int(user_id) и напоминания до Instagram не
+            # доходили вовсе. Окно тишины соблюдается: _send_to_client
+            # откажет днём сам.
+            if str(user_id).startswith("ig_"):
+                await _send_to_client(f"{IG_KEY_PREFIX}{str(user_id)[len('ig_'):]}", text)
+                return
             if str(user_id).startswith("wappi_"):
                 phone = str(user_id)[len("wappi_"):]
                 if wappi_client:

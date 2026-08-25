@@ -454,3 +454,44 @@ def test_16_human_led_counts_only_inside_the_night_window():
     night_msg = datetime(2026, 8, 20, 23, 10, tzinfo=uae)
     assert day_msg < ws, "дневное сообщение обязано отсекаться"
     assert night_msg >= ws, "ночное сообщение обязано учитываться"
+
+
+# 17 — напоминание для Instagram: одно, через 5 минут, и НЕ днём
+def test_17_instagram_nudge_routes_and_respects_the_window(daytime):
+    """Татьяна 2026-08-25: «Напоминание тоже давайте пробовать делать. Если
+    не отвечает — ещё раз спрашивать: интересуются ли они услугой и что есть
+    свободные окошки», «давайте попробуем через 5 минут», «а потом я ещё раз
+    по ним пройдусь».
+
+    Это ОТМЕНЯЕТ прежнее «напоминания не делать» — но только внутри окна:
+    днём тишина остаётся абсолютной, и напоминание тоже под неё попадает.
+    """
+    from services.follow_up import FOLLOW_UP_DELAYS
+    from services.lost_client_messages import get_ig_nudge
+
+    # Первое напоминание — ровно через 5 минут, как она попросила.
+    assert FOLLOW_UP_DELAYS[0].total_seconds() == 300
+
+    # Текст спрашивает про интерес и сообщает о свободных окнах.
+    nudge = get_ig_nudge()
+    assert "interested" in nudge.lower()
+    assert "free slots" in nudge.lower()
+
+    # Днём напоминание в Instagram НЕ уходит: маршрут идёт через
+    # _send_to_client, а тот отказывает вне окна.
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client("ig:555", nudge))
+    assert ok is False
+    assert not send.called, "днём напоминание клиенту уходить не должно"
+
+
+# 18 — ночью то же напоминание доставляется
+def test_18_instagram_nudge_is_delivered_at_night(nighttime):
+    from services.lost_client_messages import get_ig_nudge
+
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client("ig:555", get_ig_nudge()))
+    assert ok is True
+    assert send.called

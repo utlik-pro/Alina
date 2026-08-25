@@ -167,8 +167,14 @@ class FollowUpService:
             user_key = str(user_id)
             state = self.follow_up_state.get(user_key, {"count": 0, "last_sent": None})
 
-            # Check if we've exhausted follow-ups
-            if state["count"] >= MAX_FOLLOW_UPS:
+            # Instagram: ОДНО напоминание, не серия. Татьяна 2026-08-25:
+            # «Если не отвечает — ещё раз спрашивать… а потом я ещё раз по
+            # ним пройдусь» — дальше молчунов разбирает она сама, и пять
+            # догонов с эскалацией тона тут были бы лишними.
+            _is_ig = str(getattr(context, "telegram_id", "") or "").startswith("ig") \
+                or str(user_id).startswith("ig")
+            _cap = 1 if _is_ig else MAX_FOLLOW_UPS
+            if state["count"] >= _cap:
                 continue
 
             # Pick delay schedule based on booking stage
@@ -195,15 +201,21 @@ class FollowUpService:
             # Check if client was asking about massage — send trial session offer
             is_massage_inquiry = self._is_massage_inquiry(context)
 
-            if attempt == 1 and is_massage_inquiry and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE):
+            if (attempt == 1 and is_massage_inquiry and not _is_ig
+                    and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE)):
                 message = TRIAL_SESSION_MESSAGE
                 logger.info(f"Sending trial session follow-up with photo to user {user_id}")
+            elif _is_ig:
+                from services.lost_client_messages import get_ig_nudge
+                message = get_ig_nudge()
+                logger.info(f"Instagram nudge to {user_id}")
             else:
                 message = get_lost_client_message_by_attempt(attempt)
                 logger.info(f"Sending follow-up #{attempt} to user {user_id}")
 
             try:
-                if attempt == 1 and is_massage_inquiry and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE):
+                if (attempt == 1 and is_massage_inquiry and not _is_ig
+                        and self.send_photo and os.path.exists(TRIAL_SESSION_IMAGE)):
                     await self.send_photo(str(user_id), TRIAL_SESSION_IMAGE, message)
                 else:
                     await self.send_message(str(user_id), message)

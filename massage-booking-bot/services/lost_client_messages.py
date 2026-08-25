@@ -132,3 +132,19 @@ if __name__ == "__main__":
     print("\n=== По номеру попытки ===\n")
     for attempt in [1, 3, 6]:
         print(f"Попытка {attempt}: {get_lost_client_message_by_attempt(attempt, slots)}\n")
+
+
+# ── Instagram nudge (Tatyana 2026-08-25) ──────────────────────────────────
+# Её формулировка: «Если не отвечает — ещё раз спрашивать: интересуются ли
+# они услугой и что есть свободные окошки». Одно напоминание через 5 минут,
+# дальше она проходится по молчунам сама («а потом я ещё раз по ним
+# пройдусь») — поэтому серии из пяти догонов, как на WhatsApp, здесь нет.
+IG_NUDGE = (
+    "Dear, are you still interested in the service? 🌹\n"
+    "We have free slots available — just tell us which time suits you 😊"
+)
+
+
+def get_ig_nudge() -> str:
+    """Единственное напоминание для Instagram-лида."""
+    return IG_NUDGE

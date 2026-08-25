@@ -176,6 +176,19 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      Context that produced the rule: 13 night leads, 0 processed by the
      admins in the morning — «но они не отвечали, увы». A number is what
      makes a silent lead recoverable.
+  3h. ⏰ **ONE NUDGE AFTER 5 MINUTES OF SILENCE (Tatyana 2026-08-25) —
+     REVERSES the earlier "no reminders for IG".** Her words: «Напоминание
+     тоже давайте пробовать делать. Если не отвечает — ещё раз спрашивать:
+     интересуются ли они услугой и что есть свободные окошки», delay «давайте
+     попробуем через 5 минут», and after that «а потом я ещё раз по ним
+     пройдусь» — so IG gets exactly ONE nudge, not the WhatsApp series of
+     five with escalating tone. Text: are you still interested + we have free
+     slots. Implementation: `_send_follow_up` now routes `ig_` keys through
+     `_send_to_client` (they used to die on `int(user_id)`), the follow-up
+     loop caps IG at 1 and uses `get_ig_nudge()`, and the trial-session photo
+     offer is skipped for IG (it is not one of the advertised creatives).
+     ⚠️ The nudge still obeys the window — `_send_to_client` refuses by day,
+     so a lead who goes quiet at 07:55 is NOT nudged at 08:00.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
