@@ -438,7 +438,7 @@ def format_special_offers_for_prompt(include_packages: bool = True) -> str:
             if not pkg.get("quotable"):
                 continue
             lines.append(f"- {pkg['name']}: {pkg['sessions']} x {pkg['duration']}min - {pkg['price']:,} AED (was {pkg['was']:,})")
-        lines.append("Any other course length is arranged personally by the team — "
+        lines.append("For any other course length the team will offer options individually — "
                      "never invent or quote a price for it.")
 
     return "\n".join(lines)

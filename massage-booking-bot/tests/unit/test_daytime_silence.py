@@ -495,3 +495,74 @@ def test_18_instagram_nudge_is_delivered_at_night(nighttime):
         ok = asyncio.run(webhook_app._send_to_client("ig:555", get_ig_nudge()))
     assert ok is True
     assert send.called
+
+
+# 19 — сквозной прогон напоминания: 5 минут, один раз, и не сжигается днём
+def test_19_ig_nudge_fires_at_5_minutes_end_to_end(monkeypatch):
+    """Аудит 2026-08-26 поймал три дефекта, которые юниты пропускали, потому
+    что проверяли константы, а не живой цикл: (1) ворота «потеряшек» пускали
+    IG-лида не раньше ЧАСА тишины — 5-минутная задержка Татьяны была мёртвым
+    кодом; (2) лид с 1–2 сообщениями не проходил фильтр message_count>2
+    вообще; (3) дневная попытка записывала count=1 и сжигала единственное
+    напоминание без доставки. Этот тест гоняет НАСТОЯЩИЙ
+    _check_inactive_clients с настоящим dialog_manager.
+    """
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from dialog_context import dialog_manager
+    from services.follow_up import FollowUpService
+
+    uid = "ig_909090"
+    dialog_manager.contexts.pop(uid, None)
+    dialog_manager.add_user_message(uid, "Price")          # одно сообщение
+    ctx = dialog_manager.get_or_create_context(uid)
+    ctx.last_activity = datetime.now() - timedelta(minutes=6)
+
+    sent = []
+
+    async def recorder(user_id, text):
+        sent.append((user_id, text))
+
+    svc = FollowUpService(send_message=recorder)
+
+    # Днём: не отправляем И НЕ СЖИГАЕМ — счётчик остаётся нулевым.
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: False)
+    asyncio.run(svc._check_inactive_clients())
+    assert sent == []
+    assert svc.follow_up_state.get(uid, {}).get("count", 0) == 0, \
+        "дневная попытка не имеет права сжечь единственное напоминание"
+
+    # Ночью: одно напоминание через 5 минут, с текстом Татьяны.
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    asyncio.run(svc._check_inactive_clients())
+    assert len(sent) == 1 and sent[0][0] == uid
+    assert "interested" in sent[0][1].lower()
+    assert svc.follow_up_state[uid]["count"] == 1
+
+    # Второй цикл: повтора нет — ровно ОДНО («потом я ещё раз по ним пройдусь»).
+    asyncio.run(svc._check_inactive_clients())
+    assert len(sent) == 1
+
+    dialog_manager.contexts.pop(uid, None)
+
+
+# 20 — «I am interested» не значит «утром»
+def test_20_i_am_is_not_a_morning_preference():
+    """Аудит 2026-08-26: голое \\bam\\b в детекторе половины дня ловило
+    английский глагол — «I am interested» молча ставило «утро», резало все
+    вечерние окна из инъекции и навсегда снимало вопрос «morning or
+    evening?». Клиент, начавший фразу с «I am…», больше никогда не видел
+    вечерних времён.
+    """
+    from webhook_app import _detect_time_preference as d
+
+    for phrase in ("I am interested in the offer", "Yes I am",
+                   "Am I able to book tomorrow?", "I am at Villa 23",
+                   "внутренний район города"):
+        assert d(phrase) is None, phrase
+    # Настоящие предпочтения работают по-прежнему.
+    assert d("morning please") == "morning"
+    assert d("evening") == "evening"
+    assert d("утром удобнее") == "morning"
+    assert d("вечером") == "evening"

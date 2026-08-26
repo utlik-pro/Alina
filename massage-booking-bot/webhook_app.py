@@ -303,10 +303,12 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         + (
             f"- Client's phone on file: {known_phone} (don't re-ask).\n"
             if known_phone
-            else "- Before the FINAL confirmation, ask for their phone "
-                 "number (WhatsApp number) — the booking cannot be "
-                 "created without it. Pass it as client_phone in "
-                 "book_appointment.\n"
+            else "- Ask for their phone number (WhatsApp number) RIGHT "
+                 "AFTER the first price you quote — admins take the number "
+                 "early so a silent lead can be chased later (Tatyana "
+                 "2026-08-25). The booking cannot be created without it. "
+                 "Pass it as client_phone in book_appointment. Never "
+                 "re-ask once given.\n"
         )
         + "- After the booking is created, close with EXACTLY this "
         "style: 'Your booking is confirmed ✔ [service, date, time]. "
@@ -357,7 +359,8 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "- ORDER IS FIXED, one question per message: service → body/face → "
         "duration → TIMES (offer them as soon as the duration is known — the "
         "client must see real times before anything else is asked) → address "
-        "→ name → payment → phone → confirm.\n"
+        "→ name → payment → confirm (the phone was already asked right "
+        "after the first price — never re-ask it here).\n"
         "- PREGNANCY: if the client says she is pregnant — reassure her: "
         "our therapists have medical education, we offer prenatal "
         "massage (available after 4 months of pregnancy, 350 AED / "
@@ -411,10 +414,12 @@ def _ig_channel_brief(known_phone: str = "") -> str:
         "duration if it matters. If they already named it precisely ('body "
         "massage 60 min', 'lash lifting', 'deep cleansing'), skip the "
         "question and go straight to the times.\n"
-        "- 🚫 NEVER NAME A THERAPIST in this channel (owner decision "
-        "2026-08-15). Not when offering times, not in the recap, not in "
-        "the final confirmation. Say 'our therapist' / 'our specialist' "
-        "instead. The client picks a TIME, not a person.\n"
+        "- 🚫 Do NOT name therapists while OFFERING times or in the "
+        "recap — the client picks a TIME, not a person. Say 'our "
+        "specialist'. AFTER the booking is created the system itself "
+        "tells the client the assigned specialist's name (Tatyana's rule "
+        "2026-08-23: «вы записаны, мастер такой»), so never invent one "
+        "yourself.\n"
         "- OFFER TIMES, NOT A TIMETABLE: merge every free therapist's "
         "windows into ONE short list and offer 3–4 concrete times total "
         "— e.g. 'On Saturday we have 3:00 PM, 5:30 PM or 7:00 PM 🌹 "
@@ -1887,8 +1892,13 @@ def _enforce_phone_first(response_text: str, context, phone_known: bool,
     return f"{body}\n\n" + "\n".join(ask)
 
 
-_MORNING_RE = re.compile(r"\bmorning\b|\bam\b|утр|до\s*обеда", re.I)
-_EVENING_RE = re.compile(r"\bevening\b|\bnight\b|\bpm\b|вечер|после\s*обеда", re.I)
+# Голые \bam\b / \bpm\b здесь НЕЛЬЗЯ: «I am interested» ставило «утро»,
+# молча резало все вечерние окна и навсегда снимало вопрос про время
+# (аудит 2026-08-26, подтверждено на живом модуле). Конкретные «9 pm»
+# разбирает _detect_requested_time, а не этот детектор. «утр» без границы
+# ловил «внутренний» — якорим.
+_MORNING_RE = re.compile(r"\bmorning\b|\bутр|до\s*обеда", re.I)
+_EVENING_RE = re.compile(r"\bevening\b|\bnight\b|\bвечер|после\s*обеда", re.I)
 
 
 def _detect_time_preference(text: str) -> Optional[str]:
@@ -3135,6 +3145,18 @@ async def _maybe_create_booking(
                         time=str(getattr(booking_call, "time", "")),
                         master=_master_log,
                     )
+                    # Татьяна 2026-08-23: «вы записаны в такое время, мастер
+                    # такой». Подтверждение уходит клиенту РАНЬШЕ, чем система
+                    # выбирает мастера, поэтому имя досылается отдельной
+                    # строкой сразу после создания записи — из той записи,
+                    # что реально создана, а не из догадки модели.
+                    if _master_log and _is_ig_key(phone):
+                        try:
+                            await _send_to_client(
+                                phone,
+                                f"Your specialist will be {_master_log} 🌹")
+                        except Exception:
+                            pass  # имя не должно ломать созданную запись
                     # Persist the record id — cancel/reschedule mutate YClients
                     # directly and target the record through this.
                     if yc_result.get("id"):
@@ -4115,8 +4137,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                             slots = await bot_module.yclients_service.get_available_slots_summary(
                                 date=d, service_name=service_name, area=_client_area,
                                 service_duration=_service_duration)
-                            extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
+                            # Правда для слот-гейта — ПОЛНАЯ, фильтр только
+                            # для показа: иначе гейт счёл бы честные времена
+                            # выдумкой (аудит: путь «Friday» + «morning»
+                            # отдавал нефильтрованную стену).
                             _slot_truth[d] = _times_from_summary(slots)
+                            _ph2 = (context.booking_data or {}).get("time_preference")
+                            if _ph2:
+                                slots = _filter_summary_by_preference(slots, _ph2)
+                            extra_slots_text += f"\n\n{_label(d)}:\n{slots}"
                         except Exception:
                             pass
                     context.slot_truth = _slot_truth
@@ -4544,8 +4573,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))
         _pf_before = response_text
-        response_text = _enforce_phone_first(
-            response_text, context, _ph_known, _is_ig_key(phone), who=phone)
+        # Гейт молчит, когда запись только что создана (иначе он резал
+        # строку подтверждения с временем и спрашивал «утро или вечер?»
+        # ПОСЛЕ брони — аудит 2026-08-26) и для вне-зонных клиентов
+        # (Шарджа получала «May I have your number?» вместо прощания).
+        if (getattr(actions, "booking_call", None) is None
+                and not (context.booking_data or {}).get("out_of_area")):
+            response_text = _enforce_phone_first(
+                response_text, context, _ph_known, _is_ig_key(phone), who=phone)
         if response_text != _pf_before:
             if PHONE_FIRST_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "phone_asked", True)

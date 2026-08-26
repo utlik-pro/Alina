@@ -155,7 +155,32 @@ class FollowUpService:
         """Check all active dialogs for inactive clients."""
         lost_clients = dialog_manager.get_lost_clients()
 
-        for user_id in lost_clients:
+        # Instagram-лиды в общий список «потеряшек» почти не попадают:
+        # is_lost_client требует >1 ЧАСА тишины и >2 сообщений, а Татьяна
+        # просила напоминание через 5 МИНУТ — и типичный рекламный лид
+        # успевает написать одну-две реплики. Аудит 2026-08-26 показал, что
+        # из-за этих ворот 5-минутная задержка была мёртвым кодом. Поэтому
+        # IG-кандидаты отбираются отдельно, своим порогом.
+        try:
+            from agents.instagram_agent import ig_live_now
+            _ig_window_open = ig_live_now()
+        except Exception:
+            _ig_window_open = True
+        _ig_candidates = []
+        if _ig_window_open:
+            # Вне окна не пытаемся ВООБЩЕ: _send_to_client всё равно откажет,
+            # а попытка записала бы count=1 и сожгла единственное напоминание
+            # без доставки (подтверждено аудитом).
+            for _uid, _ctx in list(dialog_manager.contexts.items()):
+                if not str(_uid).startswith("ig_"):
+                    continue
+                if getattr(_ctx, "message_count", 0) < 1:
+                    continue
+                if (datetime.now() - _ctx.last_activity) >= timedelta(minutes=5):
+                    _ig_candidates.append(_uid)
+
+        for user_id in list(lost_clients) + [
+                u for u in _ig_candidates if u not in lost_clients]:
             context = dialog_manager.get_context(user_id)
             if not context:
                 continue
@@ -177,9 +202,18 @@ class FollowUpService:
             if state["count"] >= _cap:
                 continue
 
+            # Instagram вне окна: не пытаться и не сжигать (двойная защита
+            # к отбору выше — на случай, если лид пришёл из lost_clients).
+            if _is_ig and not _ig_window_open:
+                continue
+
             # Pick delay schedule based on booking stage
             is_booking_flow = context.state in BOOKING_FLOW_STATES
             delays = FOLLOW_UP_DELAYS_BOOKING if is_booking_flow else FOLLOW_UP_DELAYS
+            if _is_ig:
+                # Татьяна 2026-08-25: «через 5 минут» — независимо от стадии.
+                # Ветка BOOKING (10 мин) для IG не применяется.
+                delays = FOLLOW_UP_DELAYS
 
             # Check timing: should we send next follow-up?
             if state["count"] < len(delays):

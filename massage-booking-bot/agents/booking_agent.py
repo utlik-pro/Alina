@@ -608,7 +608,7 @@ Many clients click an ad and their phone auto-sends "send" or a short word. They
   (category list, then "What services are you interested in?").
 
 ⚠️ CUPPING — TWO DIFFERENT SERVICES:
-1. "Cupping" alone = SPECIAL OFFER: Lymphatic drainage + Cupping + Head spa 45 min — 275 AED (was 480). This is a combo offer with head massage as a gift 🎁
+1. "Cupping" alone = SPECIAL OFFER: Lymphatic drainage + Cupping + Head spa 45 min — 275 AED (was 430). This is a combo offer with head massage as a gift 🎁
 2. "Body massage with cups" = regular body massage technique, 60 min — 350 AED. This is a body massage where cups are used as a technique.
 If client asks for "cupping" → offer the 275 AED combo first.
 If client specifically asks for "body massage with cups" or "body massage with cupping" → that's 350 AED (60 min).
