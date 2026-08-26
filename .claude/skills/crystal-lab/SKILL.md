@@ -189,6 +189,15 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      offer is skipped for IG (it is not one of the advertised creatives).
      ⚠️ The nudge still obeys the window — `_send_to_client` refuses by day,
      so a lead who goes quiet at 07:55 is NOT nudged at 08:00.
+  3i. 📍 **BARE «Location» = "WHERE ARE YOU?", NOT AN ADDRESS OFFER (Tatyana
+     live correction 2026-08-26 21:36, first launch evening).** A client sent
+     the single word «Location»; the agent read it as readiness to dictate
+     THEIR address and asked for it. Tatyana hand-typed the missing half:
+     «Home service. Free transportation to your home». Full phrasings
+     ("Where is your location?") the model understands; the bare word it
+     does not — so it is a CODE gate now (`_enforce_location_answer`): any
+     location-question inbound whose reply does not explain the home-service
+     format gets HOME_SERVICE_LINE prepended. Funnel continues after it.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

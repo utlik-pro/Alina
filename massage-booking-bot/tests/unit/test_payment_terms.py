@@ -595,3 +595,37 @@ def test_only_the_requested_half_of_the_day_is_offered():
     # чем сказать «мест нет».
     only_pm = "Eliza: 7:00 PM, 8:00 PM"
     assert _filter_summary_by_preference(only_pm, "morning") == only_pm
+
+
+def test_bare_location_question_gets_the_home_service_answer():
+    """Живая корректировка Татьяны 2026-08-26 21:36, первый вечер запуска.
+
+    Клиент написал одно слово «Location» — вопрос «где вы находитесь», — а
+    агент прочёл его как готовность диктовать адрес и спросил адрес клиента.
+    Татьяна дописала руками: «Home service. Free transportation to your
+    home». Полные формулировки модель понимает, голое слово — нет.
+    """
+    from webhook_app import HOME_SERVICE_LINE, _enforce_location_answer
+
+    wrong = ("Please type your address dear\n"
+             "Area, building and apartment number\n"
+             "And your WhatsApp number please 🌹")
+    # Точный текст клиента со скриншота.
+    out = _enforce_location_answer(wrong, "Location")
+    assert out.startswith(HOME_SERVICE_LINE)
+    assert "type your address" in out          # воронка не теряется
+
+    # Другие формы того же вопроса.
+    for q in ("location?", "Where are you?", "where r u",
+              "What's the location", "где вы находитесь?", "ваш адрес?"):
+        assert _enforce_location_answer(wrong, q).startswith(HOME_SERVICE_LINE), q
+
+    # Ответ, уже объясняющий формат, не трогаем (как дописала Татьяна).
+    good = ("We come to your home, villa or hotel — free transportation 🌹\n"
+            "Please type your address dear")
+    assert _enforce_location_answer(good, "Location") == good
+
+    # НЕ вопрос о локации: адрес клиента, время, обычные реплики.
+    for msg in ("Khalifa City villa 3", "6 pm", "yes",
+                "I am interested in the location near me"):
+        assert _enforce_location_answer(wrong, msg) == wrong, msg

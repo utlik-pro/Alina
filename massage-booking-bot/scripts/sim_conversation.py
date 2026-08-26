@@ -401,6 +401,7 @@ async def run(scenario):
         final = wh._enforce_package_service_known(
             final, ctx.booking_data.get("ad_prefill"), booking=ctx.booking_data)
         final = wh._enforce_offer_was_price(final)
+        final = wh._enforce_location_answer(final, msg, who="sim")
         final = wh._enforce_courses_wording(final)
         _pf = final
         final = wh._enforce_phone_first(

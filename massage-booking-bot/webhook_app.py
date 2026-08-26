@@ -1954,6 +1954,42 @@ def _filter_summary_by_preference(summary: str, pref: Optional[str]) -> str:
     return "\n".join(out) if kept_any else summary
 
 
+_LOCATION_QUESTION_RE = re.compile(
+    r"^\s*(?:your\s+)?locations?\s*\??\s*$"          # голое «Location» / «location?»
+    r"|where\s+(?:are|r)\s+(?:you|u)\b"
+    r"|where\s+is\s+your\s+(?:location|place|studio|salon|office)"
+    r"|what(?:'?s|\s+is)\s+(?:the|your)\s+location"
+    r"|где\s+вы\s+наход|ваш\s+адрес|وين\s*مكانكم",
+    re.IGNORECASE)
+
+HOME_SERVICE_LINE = ("We do home service dear 🌹 We come to your home, villa "
+                     "or hotel — free transportation")
+
+
+def _enforce_location_answer(response_text: str, inbound_text: str,
+                             who: str = "") -> str:
+    """Спросили, ГДЕ МЫ, — ответ обязан начаться с выездного формата.
+
+    Живая корректировка Татьяны 2026-08-26 21:36, первый вечер запуска:
+    клиент написал одно слово «Location» — это вопрос «где вы находитесь»,
+    — а агент прочёл его как готовность диктовать адрес и спросил адрес
+    клиента. Татьяна дописала руками: «Home service. Free transportation
+    to your home». Полные формулировки («Where is your location?») модель
+    понимает, голое слово — нет; поэтому гейт, а не промпт.
+    """
+    if not response_text or not inbound_text:
+        return response_text
+    if not _LOCATION_QUESTION_RE.search(inbound_text.strip()):
+        return response_text
+    low = response_text.lower()
+    if any(k in low for k in ("home service", "come to your", "we come to",
+                              "transportation", "closed for maintenance")):
+        return response_text          # формат уже объяснён — не дублируем
+    logger.warning(f"location gate: вопрос о локации получил ответ без "
+                   f"объяснения выездного формата — дописано ({who})")
+    return f"{HOME_SERVICE_LINE}\n\n{response_text}"
+
+
 _LINK_TOKEN_RE = re.compile(
     r"https?://\S+"
     r"|www\.[^\s,]+"
@@ -4586,6 +4622,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 dialog_manager.update_booking_data(user_id, "phone_asked", True)
             if TIME_PREF_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)
+
+        # Вопрос «где вы находитесь» обязан получить выездной формат.
+        response_text = _enforce_location_answer(response_text, text, who=phone)
 
         # Ни одной ссылки или ника, которых нет в наших данных.
         response_text = _enforce_no_invented_links(response_text, who=phone)
