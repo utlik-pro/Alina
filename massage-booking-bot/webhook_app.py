@@ -1751,8 +1751,21 @@ def _enforce_summer_offers(response_text: str, ad_prefill) -> str:
         return response_text
     if not _PRICE_IN_REPLY_RE.search(response_text):
         return response_text  # цен нет — вмешиваться не в чем
+    if "420" in response_text:
+        return response_text  # чистка названа — рекламное требование выполнено
     if any(str(p) in response_text for p in _AD_OFFER_PRICES):
-        return response_text  # хотя бы один рекламный оффер назван
+        # Какие-то офферы есть, но ЧИСТКИ нет. Татьяна 2026-08-27 («чистку
+        # вновь не распознал»): креатив, идущий сейчас с summer-префиллом, —
+        # видео про чистку, и она обязана прозвучать первой строкой.
+        from prices import SPECIAL_OFFERS as _SOC
+        _cl = _SOC["offer_deep_cleansing"]
+        logger.warning("summer gate: в ответе нет чистки — оффер 420 добавлен "
+                       "первой строкой")
+        return (
+            f"Deep facial cleansing — {int(_cl['price'])} AED instead of "
+            f"{int(_cl['was'])}, 2 hours, 8 steps ✨\n"
+            "Now includes a FREE facial massage and a FREE hand massage 🌹"
+            "\n\n---MESSAGE_SPLIT---\n\n" + response_text)
 
     from prices import format_ad_offers_for_prompt  # noqa: F401  (единый источник)
     from prices import SPECIAL_OFFERS as _SO
@@ -1842,6 +1855,11 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
     )
 
 
+# «apartment number» / «villa number» совпадать НЕ должны — только просьба
+# дать телефон.
+_ASKS_FOR_NUMBER_RE = re.compile(
+    r"\b(?:your|whatsapp|phone)\s+(?:whatsapp\s+)?number\b|ваш\s+номер", re.I)
+
 PHONE_FIRST_LINE = "May I have your number dear? 🌹"
 TIME_PREF_LINE = "And what time suits you better — morning or evening?"
 
@@ -1881,6 +1899,14 @@ def _enforce_phone_first(response_text: str, context, phone_known: bool,
             continue                  # свой вопрос модели уступает нашему
         kept.append(ln)
     body = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip() or response_text.strip()
+
+    # Модель уже попросила номер своими словами («Please send your WhatsApp
+    # number dear») — второй запрос от гейта в том же ответе звучит как эхо
+    # (живой диалог 2026-08-27 04:53: номер спрошен дважды подряд).
+    if need_phone and _ASKS_FOR_NUMBER_RE.search(response_text):
+        need_phone = False
+    if not (need_phone or need_pref):
+        return response_text
 
     ask = []
     if need_phone:
@@ -4464,11 +4490,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # (prefill audit, 2026-08-15) and the lead simply left.
             from prices import format_ad_offers_for_prompt as _offers
             context.extra_system_info += (
-                "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. We have "
-                "no separate 'summer' price list, so lead with the discounts "
-                "that ARE running, briefly, was→now, and then ask which one "
-                "they want. Do NOT answer with a bare question — they asked "
-                "about an offer and must hear real numbers:\n"
+                "\n\n🎯 THIS CLIENT CAME FROM THE SUMMER-PROMOTION AD. "
+                "⚠️ The creative currently running with this prefill is the "
+                "DEEP-CLEANSING video (Tatyana 2026-08-27: «чистку вновь не "
+                "распознал» — the client saw the 420-instead-of-770 ad), so "
+                "LEAD with deep facial cleansing: 420 AED instead of 770, "
+                "2 hours, 8 steps — and mention it currently includes a FREE "
+                "facial massage and a FREE hand massage (end-of-month promo "
+                "from the ad). THEN briefly list the other running discounts "
+                "was→now and ask which one they want. Do NOT answer with a "
+                "bare question — they asked about an offer and must hear real "
+                "numbers:\n"
                 + _offers()
             )
         elif _ad == "package":
@@ -4618,7 +4650,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             response_text = _enforce_phone_first(
                 response_text, context, _ph_known, _is_ig_key(phone), who=phone)
         if response_text != _pf_before:
-            if PHONE_FIRST_LINE in response_text:
+            if (PHONE_FIRST_LINE in response_text
+                    or _ASKS_FOR_NUMBER_RE.search(response_text)):
                 dialog_manager.update_booking_data(user_id, "phone_asked", True)
             if TIME_PREF_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)

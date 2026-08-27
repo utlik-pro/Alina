@@ -195,7 +195,13 @@ SPECIAL_OFFERS = {
         "price": 420,
         "was": 770,
         "duration": 120,
-        "description": "8-step deep facial cleansing, 2h treatment, specialist with medical education",
+        # Бесплатные дополнения — из живого креатива «only the end of the
+        # month» (скрин Татьяны 2026-08-27). ⚠️ УБРАТЬ в сентябре или когда
+        # креатив остановят — иначе агент будет обещать несуществующий подарок.
+        "description": ("8-step deep facial cleansing, 2h treatment, specialist "
+                        "with medical education; currently includes a FREE "
+                        "facial massage and a FREE hand massage (end-of-month "
+                        "promo)"),
     },
     "offer_body_60": {
         "name": "NEW OFFER - Body massage 60 min",

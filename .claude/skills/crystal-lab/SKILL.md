@@ -198,6 +198,21 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      does not — so it is a CODE gate now (`_enforce_location_answer`): any
      location-question inbound whose reply does not explain the home-service
      format gets HOME_SERVICE_LINE prepended. Funnel continues after it.
+  3j. 🧴 **PREFILL↔CREATIVE MAPPING IS UNSTABLE — SUMMER NOW LEADS WITH
+     CLEANSING (Tatyana 2026-08-27: «Чистку вновь не распознал»).** A client
+     arrived from the DEEP-CLEANSING video creative (420 crossed 770, «+FACIAL
+     MASSAGE (FREE) +HAND MASSAGE (FREE), only the end of the month») but with
+     the SUMMER-promotion prefill text — the ad set changed and the 08-16
+     text→creative mapping broke. We can only see the TEXT, never the creative.
+     Fix: the summer injection + `_enforce_summer_offers` now LEAD with deep
+     cleansing (420/770, 2h, 8 steps, free facial+hand massage) before the
+     other three; a summer reply with prices but no 420 gets the cleansing
+     offer prepended. ⚠️ The FREE add-ons line lives in prices.py
+     offer_deep_cleansing description and in the summer/cleansing injections —
+     the creative says «only the end of the month»: REMOVE IN SEPTEMBER or
+     when the creative stops, and ask Tatyana to confirm the add-ons wording.
+     Whenever ad creatives change, the mapping here must be re-checked with
+     her — this is the second time it silently rotted.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

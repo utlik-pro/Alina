@@ -283,17 +283,52 @@ def test_banned_price_never_reaches_a_client():
     assert _enforce_price_sanity(total) == total
 
 
-def test_summer_prefill_reply_always_carries_an_ad_offer():
+def test_summer_prefill_reply_always_carries_the_cleansing_offer():
+    """Татьяна 2026-08-27: «Чистку вновь не распознал». Креатив, идущий
+    сейчас с summer-префиллом, — видео про чистку (420 вместо 770, бесплатный
+    массаж лица и рук до конца месяца), а мы видим только подставленный
+    текст. Поэтому summer-ответ с ценами ОБЯЗАН нести чистку — раньше гейт
+    довольствовался любым из четырёх офферов, и клиентка с рекламы чистки
+    получила общий список.
+    """
     from webhook_app import _enforce_summer_offers
 
     drifted = "Manicure is 200 AED and pedicure is 220 AED"
     out = _enforce_summer_offers(drifted, "summer")
     assert "420" in out and "275" in out
     assert drifted in out
-    ok = "Body massage 60 min — 350 AED instead of 500"
-    assert _enforce_summer_offers(ok, "summer") == ok
+    # Другие офферы есть, чистки нет — она добавляется первой строкой.
+    body_only = "Body massage 60 min — 350 AED instead of 500"
+    out2 = _enforce_summer_offers(body_only, "summer")
+    assert "420" in out2 and out2.index("420") < out2.index("350")
+    assert "FREE facial massage" in out2
+    # Чистка уже названа — не трогаем.
+    with_cl = "Deep facial cleansing — 420 AED instead of 770\nWhich one dear?"
+    assert _enforce_summer_offers(with_cl, "summer") == with_cl
     assert _enforce_summer_offers(drifted, "consult") == drifted
     assert _enforce_summer_offers("Which city dear?", "summer") == "Which city dear?"
+
+
+def test_phone_is_not_asked_twice_in_one_reply():
+    """Живой диалог 2026-08-27 04:53: модель попросила «Please send your
+    WhatsApp number dear» (новый бриф), а гейт добавил своё «May I have your
+    number?» следом — номер спрошен дважды подряд в одном ответе.
+    """
+    import types
+
+    from webhook_app import PHONE_FIRST_LINE, _enforce_phone_first
+
+    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    reply = ("Our offers: 420 AED instead of 770\n"
+             "---MESSAGE_SPLIT---\n"
+             "Please send your WhatsApp number dear")
+    out = _enforce_phone_first(reply, ctx, phone_known=False, is_ig=True)
+    assert PHONE_FIRST_LINE not in out          # эха нет
+    assert "morning or evening" in out          # а половину дня спросить надо
+    # «villa number» в запросе адреса — не просьба дать телефон.
+    addr = "Price is 420 AED\nPlease type your area, building and villa number"
+    out2 = _enforce_phone_first(addr, ctx, phone_known=False, is_ig=True)
+    assert PHONE_FIRST_LINE in out2
 
 
 def test_new_booking_keys_are_actually_saved():
