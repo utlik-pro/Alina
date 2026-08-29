@@ -1298,6 +1298,11 @@ def _detect_requested_time(text: str) -> Optional[str]:
         hour, minute, mer = int(m.group(1)), 0, m.group(2).lower()
     if mer == "pm" and hour < 12:
         hour += 12
+    elif not mer and hour < 12 and _EVENING_RE.search(t):
+        # «Evening at 9:00» — живой провал 28.08 00:08: парсер прочёл 09:00
+        # утра, календарь проверил утро, модель пообещала вечер, YClients
+        # отказал. Слово evening/вечер в той же фразе доводит час до вечера.
+        hour += 12
     elif mer == "am" and hour == 12:
         hour = 0
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
@@ -1859,6 +1864,11 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
 # дать телефон.
 _ASKS_FOR_NUMBER_RE = re.compile(
     r"\b(?:your|whatsapp|phone)\s+(?:whatsapp\s+)?number\b|ваш\s+номер", re.I)
+
+_CONFIRMED_MARK_RE = re.compile(r"✅|✔|\bbooked\b|\bis confirmed\b", re.I)
+BOOKING_PENDING_LINE = (
+    "One moment dear 🙏 Our team is finalizing your booking — the "
+    "administrator will contact you shortly to confirm the exact time 🌹")
 
 PHONE_FIRST_LINE = "May I have your number dear? 🌹"
 TIME_PREF_LINE = "And what time suits you better — morning or evening?"
@@ -3051,10 +3061,12 @@ async def _maybe_create_booking(
     # next identical tool call instead of being silently suppressed as a
     # duplicate (which previously left the appointment in local DB only).
     _yc_synced = True
+    context.booking_data["yc_sync_ok"] = True
 
     # Create in YClients
     if bot_module.yclients_service and not config.MOCK_YCLIENTS:
         _yc_synced = False
+        context.booking_data["yc_sync_ok"] = False
         try:
             import os as _os
             yc_service_id = await bot_module.yclients_service.find_service_id(
@@ -3181,6 +3193,7 @@ async def _maybe_create_booking(
                 )
                 if yc_result:
                     _yc_synced = True
+                    context.booking_data["yc_sync_ok"] = True
                     logger.info(
                         f"✅ YClients booking created from WhatsApp: "
                         f"#{yc_result.get('id', '?')}"
@@ -4707,6 +4720,29 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
 
+        # ── СНАЧАЛА ЗАПИСЬ, ПОТОМ ПОДТВЕРЖДЕНИЕ (Татьяна 2026-08-29: «не
+        # уходят в yclients заявки»). Ночь 28.08: Самар получила «booked ✅»
+        # на воскресенье 21:00, которого нет в расписании вовсе, — YClients
+        # отказал, но подтверждение уже ушло, и клиентка ждала мастера,
+        # которого никто не отправит. Теперь запись создаётся ДО отправки, и
+        # провал синка заменяет ложное «booked ✅» честной строкой; алерт
+        # админам уходит из _maybe_create_booking как и раньше.
+        if booking_call is not None:
+            context.booking_data["yc_sync_ok"] = False
+        await _maybe_create_booking(
+            user_id, telegram_id, phone, sender_name, context,
+            response_text, booking_call,
+        )
+        if (booking_call is not None
+                and context.booking_data.get("yc_sync_ok") is False
+                and _CONFIRMED_MARK_RE.search(response_text)):
+            logger.warning(f"YClients sync провален — ложное «booked» "
+                           f"заменено честной строкой ({phone})")
+            _night_event("booking_sync_failed", who=phone,
+                         text=f"{getattr(booking_call, 'date', '')} "
+                                f"{getattr(booking_call, 'time', '')}")
+            response_text = BOOKING_PENDING_LINE
+
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
 
@@ -4755,15 +4791,6 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 f"Wappi [{phone}]: NO wappi_client — reply NOT delivered. "
                 f"Check WAPPI_TOKEN/WAPPI_PROFILE_ID."
             )
-
-        # Post-booking: create DB + YClients record if the agent called
-        # the book_appointment tool. If it sent a ✅ confirmation WITHOUT
-        # calling the tool, _maybe_create_booking alerts the admin and
-        # doesn't create anything — no more guessing dates from text.
-        await _maybe_create_booking(
-            user_id, telegram_id, phone, sender_name, context,
-            response_text, booking_call,
-        )
 
         # Cancellation / reschedule actions (FR-5.1–5.3, 7.2).
         if actions.cancel_call is not None:

@@ -213,6 +213,20 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      when the creative stops, and ask Tatyana to confirm the add-ons wording.
      Whenever ad creatives change, the mapping here must be re-checked with
      her — this is the second time it silently rotted.
+  3k. ✅ **RECORD FIRST, CONFIRMATION SECOND (Tatyana 2026-08-29: «не уходят
+     в yclients заявки»).** Live loss 28.08 00:18: Samar completed the whole
+     funnel, the model called book_appointment — but the promised slot (Sun
+     21:00) does not exist in the schedule at all, YClients refused, the
+     local row stayed with yclients_appointment_id=None, and «booked ✅» had
+     ALREADY been sent (the send loop ran before _maybe_create_booking).
+     The client waited for a therapist nobody would send. Two fixes:
+     (a) _maybe_create_booking now runs BEFORE the send; booking_data
+     ["yc_sync_ok"] carries the verdict, and a failed sync REPLACES the
+     false confirmation with BOOKING_PENDING_LINE (admin alert unchanged);
+     (b) upstream cause — «Evening at 9:00» parsed as 09:00 (meridiem-less
+     colon time ignored the evening word), so the calendar check verified
+     the MORNING and the model promised the evening. _detect_requested_time
+     now promotes a bare hour to PM when evening/вечер is in the phrase.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

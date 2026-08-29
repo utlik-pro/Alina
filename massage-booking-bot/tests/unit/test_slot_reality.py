@@ -250,3 +250,40 @@ def test_human_led_dialogue_detection(monkeypatch):
     # Наш сбой отправки — поломка, а не админ: хвост обрывается на нём.
     _set([_Row("inbound", T % 10), _Row("send_failed", T % 9), _Row("inbound", T % 5)])
     assert asyncio.run(wh._human_led_dialogue("777")) is False
+
+
+def test_evening_context_promotes_a_bare_time_to_pm():
+    """Живой провал 2026-08-28 00:08 (Самар): клиентка написала «Evening at
+    9:00» — парсер прочёл 09:00 утра, календарь проверил утро, модель
+    пообещала вечер, YClients отказал, а «booked ✅» уже ушло. Слово
+    evening/вечер в той же фразе обязано доводить час до вечера.
+    """
+    from webhook_app import _detect_requested_time as d
+
+    assert d("Evening at 9:00") == "21:00"
+    assert d("вечером в 8:30") == "20:30"
+    # Без вечернего контекста и с явным am/pm — как раньше.
+    assert d("9:00") == "09:00"
+    assert d("morning at 9:00") == "09:00"
+    assert d("9:00 pm") == "21:00"
+    assert d("9:00 am") == "09:00"
+
+
+def test_failed_yclients_sync_never_reaches_the_client_as_booked():
+    """Татьяна 2026-08-29: «не уходят в yclients заявки». Самар получила
+    «booked ✅» на слот, которого нет в расписании: подтверждение отправлялось
+    ДО создания записи, и провал синка клиент не видел никогда. Теперь ложное
+    подтверждение заменяется честной строкой — маркеры и замена закреплены.
+    """
+    from webhook_app import BOOKING_PENDING_LINE, _CONFIRMED_MARK_RE
+
+    for confirmed in ("Your face massage is booked ✅",
+                      "Your booking is confirmed ✔ face massage",
+                      "Booked! See you Sunday"):
+        assert _CONFIRMED_MARK_RE.search(confirmed), confirmed
+    # Вопросы и отложенные шаги подтверждением не считаются — их не трогаем.
+    for question in ("May I have your name?",
+                     "Please type your address in Abu Dhabi",
+                     "So — face massage, Sunday at 9:00 PM. Shall I confirm? 🌹"):
+        assert not _CONFIRMED_MARK_RE.search(question), question
+    assert "administrator will contact you" in BOOKING_PENDING_LINE
