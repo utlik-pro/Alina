@@ -566,3 +566,29 @@ def test_20_i_am_is_not_a_morning_preference():
     assert d("evening") == "evening"
     assert d("утром удобнее") == "morning"
     assert d("вечером") == "evening"
+
+
+# 21 — прод-тестировщик: тихий режим 770099xxx
+def test_21_smoke_ids_run_the_pipeline_but_never_reach_manychat(nighttime):
+    """Смоук-ID (770099xxx) проходят весь конвейер как тестеры, но их
+    исходящие не уходят в ManyChat — только в ночной лог, откуда их читает
+    scripts/prod_smoke.py. Неделя ручных проб кончалась send_failed-шумом
+    на каждом прогоне.
+    """
+    from webhook_app import _is_ig_test_subscriber, _is_smoke_id
+
+    assert _is_smoke_id("770099001") and _is_ig_test_subscriber("770099001")
+    # Не смоук: реальные клиенты, короткие, длинные, нечисловые.
+    for sid in ("868311272", "77009900", "7700990011", "77009900a", "997733588"):
+        assert not _is_smoke_id(sid), sid
+
+    # Отправка смоуку: событие «sent» есть, HTTP-вызова в ManyChat нет.
+    webhook_app.NIGHT_LOG = None
+    with patch("services.instagram_client.manychat_send_text",
+               AsyncMock(return_value=True)) as send:
+        ok = asyncio.run(webhook_app._send_to_client("ig:770099001", "smoke hello"))
+    assert ok is True
+    assert not send.called, "в ManyChat смоук-отправка уходить не должна"
+    events = list(webhook_app.NIGHT_LOG or [])
+    assert events and events[-1]["kind"] == "sent"
+    assert events[-1]["text"] == "smoke hello"

@@ -282,9 +282,23 @@ def _is_ig_key(phone: str) -> bool:
     return isinstance(phone, str) and phone.startswith(IG_KEY_PREFIX)
 
 
+def _is_smoke_id(subscriber_id: str) -> bool:
+    """ID прод-тестировщика: 770099xxx — девятизначный, с фиксированным
+    префиксом. Такие «клиенты» проходят ВЕСЬ конвейер как тестеры, но их
+    исходящие никогда не уходят в ManyChat: смоук читает ответы из ночного
+    лога, а не из Instagram. Риск коллизии с настоящим subscriber_id ManyChat
+    принят осознанно: девятизначный номер, начинающийся на 770099, — одна
+    попадание на миллион, и худший исход — клиент получит [TEST]-запись.
+    Аналитика логов исключает префикс 7700 ещё с ручных проб."""
+    sid = str(subscriber_id).strip()
+    return sid.startswith("770099") and sid.isdigit() and len(sid) == 9
+
+
 def _is_ig_test_subscriber(subscriber_id: str) -> bool:
     """Whitelisted testers run the full IG booking pipeline at any hour;
     their YClients records get the [TEST] prefix."""
+    if _is_smoke_id(subscriber_id):
+        return True
     ids = {s.strip() for s in (config.IG_TEST_SUBSCRIBERS or "").split(",") if s.strip()}
     return str(subscriber_id).strip() in ids
 
@@ -460,6 +474,13 @@ async def _send_to_client(phone: str, text: str) -> bool:
             )
             _night_event("send_blocked_daytime", who=phone, text=text)
             return False
+        if _is_smoke_id(phone[len(IG_KEY_PREFIX):]):
+            # Смоук-тестировщик: ответ фиксируется в логе как отправленный,
+            # но в ManyChat не уходит — такого подписчика там нет, и каждый
+            # реальный вызов кончался бы send_failed-шумом (неделя ручных
+            # проб это показала).
+            _night_event("sent", who=phone, text=text)
+            return True
         from services.instagram_client import manychat_send_text
         _ok = await manychat_send_text(phone[len(IG_KEY_PREFIX):], text)
         _night_event("sent" if _ok else "send_failed", who=phone, text=text)
