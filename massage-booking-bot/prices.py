@@ -464,3 +464,68 @@ def display_service_name(raw: str) -> str:
     if item and item.get("name"):
         return item["name"]
     return key.replace("_", " ").strip().capitalize()
+
+
+# ── Быстрые ответы админов (Алина, 2026-08-30, дословно) ──────────────────
+# «Если он не отличает что отвечать — пусть отвечает тогда всё: тело и лицо
+# и чистка. Но развернуто. И пишет сразу 3 эмирата. Потом уточняет откуда
+# клиент. Потом уже предлагает время». Карточки — её собственный текст.
+ADMIN_CARD_FACE = """Hello 👋
+
+✅WE have an offer for facial massage !!!
+
+the old price -550 aed🔸 - NOW 370 aed 🌟
+
+✅Face massage package
+🔹5 sessions-1650 aed🌟
+
+✅We can do different facial massage techniques:
+🔹lifting drainage facial massage- 50 min 🕛
+🔹buccal facial massage- 50 min🕛
+🔹Myofascial massage ( non-surgical face lift) -50 min 🕛
+🔹Signature mix techniques-50 min 🕛
+
+Top Russian Therapist🇷🇺
+
+Abu Dhabi and Alain, Dubai home service 🏘️
+
+✅Free transportation"""
+
+ADMIN_CARD_BODY = """✅WE have an offer for 60min body massage
+
+✅New price 60 min - 350 aed
+
+Body package 5 sessions-1550 aed
+
+HOME SERVICE
+
+FREE TRANSPORTATION TO YOUR HOME
+
+🔸Lymphatic drainage body massage
+🔸Мaderatherapie
+🔸Anti cellulite body massage
+🔸Рostpartum
+🔸Мixed techniques
+🔸Guasha massage
+🔸Deep tissue massage
+🔸Prenatal after 4 months
+🔸Aftersurgery
+
+🇷🇺Russian female certified therapist
+
+We bring everything what is needed"""
+
+ADMIN_CARD_CLEANSING = """✅Deep facial cleansing (8 steps) — 420 aed instead of 770 🌟
+2 hours, specialist with medical education
+Now includes a FREE facial massage and a FREE hand massage"""
+
+
+def build_full_intro() -> str:
+    """Развёрнутый первый ответ по правилу Алины: все три услуги карточками,
+    три эмирата, затем вопрос «откуда вы» — время только после эмирата."""
+    return (
+        ADMIN_CARD_FACE
+        + "\n\n---MESSAGE_SPLIT---\n\n" + ADMIN_CARD_BODY
+        + "\n\n---MESSAGE_SPLIT---\n\n" + ADMIN_CARD_CLEANSING
+        + "\n\nWhich emirate are you in dear — Abu Dhabi, Al Ain or Dubai? 🌹"
+    )

@@ -154,12 +154,19 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      end before calling this done. Checked 2026-08-24: every record in the
      ADMINISTRATORS row was `online:false`, i.e. created by admins by hand —
      the agent has never booked into it.
-  3f. ☀️ **ALL-DAY TRIAL IS THE NEXT STEP (Tatyana 2026-08-23).** «Если всё
-     хорошо, пробуем на целый день включать с моим наблюдением. Ещё
-     кривовато, но уже очень радует.» This REVERSES the absolute daytime
-     silence of rule 3 — do not switch it on without her explicit go-ahead
-     for that specific day, and expect admin/agent overlap to become the main
-     risk (she watches while it runs).
+  3f. ☀️ **ALL-DAY FROM SEPTEMBER 1 — TATYANA'S EXPLICIT GO (2026-08-29:
+     «давайте попробуем с 1 сентября подключить на целый день? Я все время
+     буду мониторить. Кажется, что на ночь он не сильно косячит», Dmitry:
+     «хорошо, как скажете»).** This reverses the absolute daytime silence of
+     rule 3 starting 2026-09-01. TO PREPARE BEFORE THE SWITCH: (a) Render
+     env IG_ACTIVE_FROM/IG_ACTIVE_TO to a 24h window (equal values =
+     always-live per ig_live_now); (b) the MAIN RISK is admin/agent overlap
+     in daytime — admins answer from the Instagram app (ManyChat pause does
+     not fire), and the human-led gate counts silence tails INSIDE the
+     window only (ig_window_start semantics change with a 24h window —
+     re-check); (c) re-check every place that keys off ig_live_now: nudges,
+     reminders, tester bypasses, the daytime shadow path, night_report
+     window maths.
   3g. 📞➡️🕐 **PHONE FIRST, THEN THE TIME PREFERENCE, THEN THE WINDOWS
      (Tatyana 2026-08-25 — supersedes the "phone last" gate for IG).**
      Her words: «Да, мы сразу просим [номер], чтобы если они не ответят
@@ -227,6 +234,35 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      colon time ignored the evening word), so the calendar check verified
      the MORNING and the model promised the evening. _detect_requested_time
      now promotes a bare hour to PM when evening/вечер is in the phrase.
+  3l. 🃏 **UNKNOWN AD → FULL CARDS, THREE EMIRATES, EMIRATE BEFORE TIMES
+     (Alina 2026-08-30, после перезапуска рекламы).** Her words: «если он не
+     отличает что отвечать — пусть отвечает тогда всё: тело и лицо и чистка,
+     но развернуто. И пишет сразу 3 эмирата. Потом уточняет откуда клиент.
+     Потом уже предлагает время… Мы не можем предлагать время не зная
+     эмират». Implementation: prices.ADMIN_CARD_FACE/BODY/CLEANSING are her
+     VERBATIM quick replies (face 370/550 + package 5×1650 + 4 techniques;
+     body 350 + package 5×1550 + 9 techniques; cleansing 420/770 + free
+     add-ons); `_enforce_full_intro` replaces the first-turn «what services
+     are you interested in?» menu with build_full_intro() when NO ad prefill
+     was recognised and no service named. Emirate-before-times was ALREADY
+     enforced (`_enforce_slot_reality` rewrites times to the city question
+     when truth is empty and area unknown) — now pinned by test. Phone-first
+     still applies after the cards (Dmitry↔Alina agreed: «ватсап сразу,
+     потом время; главное чтоб перед временем сначала было откуда»).
+     NEW FACE PREFILLS (Tatyana 2026-08-30, ads relaunched): «Hello, I would
+     like to consult you about a facial massage in {Al Ain|Abu Dhabi}» —
+     resolves with ZERO code changes (consult + area + face kind → 370),
+     pinned by test. She will send the full new набор связок later — re-check
+     the mapping then.
+  3m. 🔁 **A DATE CORRECTION MUST NOT BE ANSWERED WITH A VERBATIM REPEAT
+     (M.a case 2026-08-30).** Client: «Not in 10 omg», «I till you in 12» —
+     the agent repeated the 10-September reply word for word. Fixes:
+     `_bare_day_correction` (a trailing 1–31 in a short message with a known
+     month = that month's day; address words villa/street/city/… excluded)
+     and a verbatim-repeat guard (reply identical to the previous bot reply
+     → append «tell me the exact day and time» once, night-event
+     `verbatim_repeat`). Sept 10/12 were in fact WIDE OPEN when checked —
+     «fully booked» likely reflected a not-yet-published schedule at 02:00.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

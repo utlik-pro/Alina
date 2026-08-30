@@ -664,3 +664,91 @@ def test_bare_location_question_gets_the_home_service_answer():
     for msg in ("Khalifa City villa 3", "6 pm", "yes",
                 "I am interested in the location near me"):
         assert _enforce_location_answer(wrong, msg) == wrong, msg
+
+
+def test_first_contact_without_known_ad_gets_the_full_cards():
+    """Алина 2026-08-30 (после перезапуска рекламы префиллы перестали
+    узнаваться): «пусть отвечает тогда всё — тело и лицо и чистка, но
+    развернуто. И пишет сразу 3 эмирата. Потом уточняет откуда клиент».
+    Меню «what services are you interested in?» на первом ходе заменяется
+    дословными карточками админов.
+    """
+    import types
+
+    from webhook_app import _enforce_full_intro
+
+    menu = ("Hi dear 🌹\nWelcome to Crystal Lab home service 🙌\n"
+            "What services are you interested in? We will give you all the details 🌹")
+    ctx = types.SimpleNamespace(booking_data={}, client_data={}, message_count=1)
+    out = _enforce_full_intro(menu, ctx, "Hi")
+    assert "370 aed" in out and "1650" in out            # карточка лица
+    assert "350 aed" in out and "1550" in out            # карточка тела
+    assert "420 aed" in out.lower()                      # чистка
+    assert "Abu Dhabi, Al Ain or Dubai" in out           # три эмирата + вопрос
+    assert "What services are you interested in" not in out
+
+    # Узнанная реклама, названная услуга, не первый ход, /clear — не трогаем.
+    for bd, mc, inbound in (({"ad_prefill": "package"}, 1, "Hi"),
+                            ({"service_type": "face_massage"}, 1, "Hi"),
+                            ({}, 3, "Hi"),
+                            ({}, 1, "/clear")):
+        c = types.SimpleNamespace(booking_data=bd, client_data={}, message_count=mc)
+        assert _enforce_full_intro(menu, c, inbound) == menu, (bd, mc, inbound)
+    # Модель ответила не меню — тоже не трогаем.
+    priced = "Face massage 50 min — 370 AED"
+    assert _enforce_full_intro(priced, ctx, "Hi") == priced
+
+
+def test_bare_day_corrects_the_known_month():
+    """Живой случай M.a 2026-08-30: «Not in 10 omg», «I till you in 12» —
+    агент проигнорировал поправку и дословно повторил ответ про 10-е.
+    Число в конце короткой реплики при известном месяце — день ТОГО месяца.
+    """
+    from datetime import date
+
+    from webhook_app import _bare_day_correction as bd
+
+    today = date(2026, 8, 30)
+    assert bd("I till you in 12", "2026-09-10", today) == "2026-09-12"
+    assert bd("on the 12th", "2026-09-10", today) == "2026-09-12"
+    assert bd("12", "2026-09-10", today) == "2026-09-12"
+    # Прошедший день известного месяца перекатывается вперёд.
+    assert bd("2", "2026-08-28", today) == "2026-09-02"
+    # НЕ поправки: адреса, длительности, без известного месяца, длинные фразы.
+    assert bd("villa 12 street 5", "2026-09-10", today) is None
+    assert bd("Khalifa city 12", "2026-09-10", today) is None
+    assert bd("in 12 minutes", "2026-09-10", today) is None
+    assert bd("60", "2026-09-10", today) is None
+    assert bd("12", None, today) is None
+
+
+def test_new_face_prefills_resolve_service_and_area():
+    """Татьяна 2026-08-30: новые связки на лицо. «Но думаю он и без
+    настройки должен понять, что это лицо 370» — понимает, и закрепляем.
+    """
+    from webhook_app import _detect_ad_prefill, _massage_kind_from_text, detect_area
+
+    for txt, area in (
+            ("Hello, I would like to consult you about a facial massage in Al Ain",
+             "al_ain"),
+            ("Hello, I would like to consult you about a facial massage in Abu Dhabi",
+             "abu_dhabi")):
+        assert _detect_ad_prefill(txt) == "consult"
+        assert detect_area(txt) == area
+        assert _massage_kind_from_text(txt) == "face"
+
+
+def test_no_times_ever_leave_without_a_known_emirate():
+    """Алина 2026-08-30: «Мы не можем предлагать время не зная эмират».
+    Правило уже стояло — закрепляем: пустая правда без области переписывает
+    времена в вопрос о городе.
+    """
+    import types
+
+    from webhook_app import _enforce_slot_reality
+
+    ctx = types.SimpleNamespace(slot_truth={}, booking_data={}, client_data={})
+    out = _enforce_slot_reality(
+        "Tomorrow we have 2:00 PM, 4:30 PM or 6:00 PM 🌹", ctx, None)
+    assert "2:00 PM" not in out
+    assert "Abu Dhabi" in out and "Dubai" in out

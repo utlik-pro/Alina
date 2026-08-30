@@ -1990,6 +1990,73 @@ def _filter_summary_by_preference(summary: str, pref: Optional[str]) -> str:
     return "\n".join(out) if kept_any else summary
 
 
+def _bare_day_correction(text: str, known_date, today):
+    """«I till you in 12» при уже известном месяце — это 12-е число ЕГО.
+
+    Живой случай 2026-08-30 (M.a): клиентка поправила день — «Not in 10 omg»,
+    «I till you in 12», — а парсер дат понимает только «12 September»; агент
+    проигнорировал поправку и дословно повторил ответ про 10-е. Условия
+    нарочно узкие: короткая реплика, число в самом конце, месяц уже известен
+    из диалога — «villa 12» в адресе и «in 12 minutes» не проходят.
+    """
+    from datetime import datetime as _d
+
+    t = (text or "").strip()
+    if not known_date or len(t) > 25:
+        return None
+    # Адресные слова исключаются: «villa 12 street 5» — это адрес, а не
+    # поправка дня (поймано на самотесте до деплоя).
+    if re.search(r"villa|street|building|apartment|apt|flat|tower|floor|room|city|"
+                 r"вилл|улиц|дом|кварти|этаж", t, re.I):
+        return None
+    m = re.search(r"(?:\b(?:on|in)\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s*[.!]?$", t)
+    if not m:
+        return None
+    day = int(m.group(1))
+    if not 1 <= day <= 31:
+        return None
+    try:
+        base = _d.strptime(str(known_date), "%Y-%m-%d")
+        cand = base.replace(day=day)
+    except ValueError:
+        return None
+    if cand.date() < today:
+        nm = cand.month % 12 + 1
+        try:
+            cand = cand.replace(month=nm, year=cand.year + (1 if nm == 1 else 0))
+        except ValueError:
+            return None
+    return cand.strftime("%Y-%m-%d")
+
+
+_WELCOME_MENU_RE = re.compile(r"what services? are you interested in", re.I)
+
+
+def _enforce_full_intro(response_text: str, context, inbound_text: str,
+                        who: str = "") -> str:
+    """Первый контакт без узнанной рекламы → развёрнутые карточки, не меню.
+
+    Алина 2026-08-30 (после перезапуска рекламы, когда префиллы перестали
+    узнаваться): «пусть отвечает тогда всё — тело и лицо и чистка, но
+    развернуто. И пишет сразу 3 эмирата. Потом уточняет откуда клиент.
+    Потом уже предлагает время». Карточки — дословные быстрые ответы
+    админов; вопрос «какие услуги вас интересуют?» на первом ходе больше
+    не задаётся — человек с рекламы пришёл за ценами, а не за меню.
+    """
+    if not response_text or (inbound_text or "").strip().startswith("/"):
+        return response_text
+    bd = context.booking_data or {}
+    if bd.get("ad_prefill") or bd.get("service_type") or bd.get("service_named"):
+        return response_text          # реклама узнана или услуга названа
+    if getattr(context, "message_count", 0) > 1:
+        return response_text          # не первый ход
+    if not _WELCOME_MENU_RE.search(response_text):
+        return response_text          # модель ответила не меню — не трогаем
+    from prices import build_full_intro
+    logger.info(f"full-intro gate: меню заменено карточками Алины ({who})")
+    return build_full_intro()
+
+
 _LOCATION_QUESTION_RE = re.compile(
     r"^\s*(?:your\s+)?locations?\s*\??\s*$"          # голое «Location» / «location?»
     r"|where\s+(?:are|r)\s+(?:you|u)\b"
@@ -3956,6 +4023,16 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _said_date and _said_date != context.booking_data.get("date"):
             dialog_manager.update_booking_data(user_id, "date", _said_date)
             logger.info(f"клиент назвал день → {_said_date}")
+        # Голый день месяца как ПОПРАВКА даты (живой случай M.a 2026-08-30).
+        if not _said_date:
+            _corr = _bare_day_correction(
+                text, context.booking_data.get("date"),
+                _dt_n.now(_tz_n(_td_n(hours=4))).date())
+            if _corr:
+                _said_date = _corr
+                dialog_manager.update_booking_data(user_id, "date", _corr)
+                logger.info(f"голый день «{text.strip()}» → {_corr}")
+
         _said_time = _detect_requested_time(text)
         if _said_time and _said_time != context.booking_data.get("time"):
             dialog_manager.update_booking_data(user_id, "time", _said_time)
@@ -4669,6 +4746,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             if TIME_PREF_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
+        # Первый контакт без узнанной рекламы → карточки Алины, не меню.
+        response_text = _enforce_full_intro(response_text, context, text, who=phone)
+
         # Вопрос «где вы находитесь» обязан получить выездной формат.
         response_text = _enforce_location_answer(response_text, text, who=phone)
 
@@ -4719,6 +4799,19 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _pay_now and _pay_now != _pay_known:
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
+
+        # Дословный повтор предыдущего ответа = глухота (M.a 2026-08-30:
+        # на поправку даты агент повторил тот же текст слово в слово).
+        _prev_bot = next(
+            (m.get("content") for m in
+             reversed(getattr(context, "recent_messages", []) or [])
+             if m.get("role") == "assistant"), None)
+        if (_prev_bot and _prev_bot.strip() == response_text.strip()
+                and not (context.booking_data or {}).get("repeat_acked")):
+            dialog_manager.update_booking_data(user_id, "repeat_acked", True)
+            _night_event("verbatim_repeat", who=phone, text=response_text[:120])
+            response_text += ("\n\nOr just tell me the exact day and time "
+                              "dear — I'll check it right away 🙏")
 
         # ── СНАЧАЛА ЗАПИСЬ, ПОТОМ ПОДТВЕРЖДЕНИЕ (Татьяна 2026-08-29: «не
         # уходят в yclients заявки»). Ночь 28.08: Самар получила «booked ✅»
