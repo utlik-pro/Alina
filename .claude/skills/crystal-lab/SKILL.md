@@ -263,6 +263,20 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      → append «tell me the exact day and time» once, night-event
      `verbatim_repeat`). Sept 10/12 were in fact WIDE OPEN when checked —
      «fully booked» likely reflected a not-yet-published schedule at 02:00.
+  3n. 🤖 **PRODUCTION SMOKE TESTER — `scripts/prod_smoke.py` (2026-08-30).**
+     Eight scenarios driven through the REAL prod webhook from smoke ids
+     770099xxx (`_is_smoke_id`: full tester pipeline, but outbound is logged
+     WITHOUT calling ManyChat). Every AM/PM time in replies is cross-checked
+     against live YClients; no scenario ever says «yes» → no records. Verdict
+     to Dmitry's Telegram; exit code for cron. Run:
+     `python3.11 scripts/prod_smoke.py` (`--only NAME`, `--no-telegram`).
+     Its first two runs каждый нашли по дефекту: (1) the Alina-cards gate
+     silently skipped after «/clear» — root cause was the 20s buffer GLUING
+     a reset command to the next message («/clear\nHi»), so the reset never
+     fired at all (also hit real admins typing «clear»+question; resets now
+     bypass the buffer entirely); (2) the harness itself died on Render
+     warm-up 502s (now retried). Lesson repeated: green units ≠ working
+     pipeline — only prod-driven dialogues count.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
