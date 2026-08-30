@@ -2069,8 +2069,12 @@ def _enforce_full_intro(response_text: str, context, inbound_text: str,
     bd = context.booking_data or {}
     if bd.get("ad_prefill") or bd.get("service_type") or bd.get("service_named"):
         return response_text          # реклама узнана или услуга названа
-    if getattr(context, "message_count", 0) > 1:
-        return response_text          # не первый ход
+    if bd.get("cards_intro_sent"):
+        return response_text          # карточки уже уходили — не повторяем
+    # Счётчик ходов здесь НЕ годится: первый смоук-прогон показал, что
+    # «/clear» перед «Hi» съедает «первый ход» и гейт молчит. Условие
+    # смысловое: модель ответила МЕНЮ, а о клиенте не известно ничего —
+    # значит место карточек, каким бы по счёту ход ни был.
     if not _WELCOME_MENU_RE.search(response_text):
         return response_text          # модель ответила не меню — не трогаем
     from prices import build_full_intro
@@ -4768,7 +4772,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
         # Первый контакт без узнанной рекламы → карточки Алины, не меню.
+        _fi_before = response_text
         response_text = _enforce_full_intro(response_text, context, text, who=phone)
+        if response_text != _fi_before:
+            dialog_manager.update_booking_data(user_id, "cards_intro_sent", True)
 
         # Вопрос «где вы находитесь» обязан получить выездной формат.
         response_text = _enforce_location_answer(response_text, text, who=phone)

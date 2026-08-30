@@ -681,6 +681,13 @@ def test_first_contact_without_known_ad_gets_the_full_cards():
             "What services are you interested in? We will give you all the details 🌹")
     ctx = types.SimpleNamespace(booking_data={}, client_data={}, message_count=1)
     out = _enforce_full_intro(menu, ctx, "Hi")
+    # Первый смоук-прогон: «/clear» перед «Hi» съедал «первый ход» и гейт
+    # молчал — счётчик ходов заменён смысловым условием, ход не важен.
+    late = types.SimpleNamespace(booking_data={}, client_data={}, message_count=5)
+    assert "1650" in _enforce_full_intro(menu, late, "Hi")
+    sent = types.SimpleNamespace(booking_data={"cards_intro_sent": True},
+                                 client_data={}, message_count=1)
+    assert _enforce_full_intro(menu, sent, "Hi") == menu
     assert "370 aed" in out and "1650" in out            # карточка лица
     assert "350 aed" in out and "1550" in out            # карточка тела
     assert "420 aed" in out.lower()                      # чистка
@@ -690,7 +697,7 @@ def test_first_contact_without_known_ad_gets_the_full_cards():
     # Узнанная реклама, названная услуга, не первый ход, /clear — не трогаем.
     for bd, mc, inbound in (({"ad_prefill": "package"}, 1, "Hi"),
                             ({"service_type": "face_massage"}, 1, "Hi"),
-                            ({}, 3, "Hi"),
+                            ({"cards_intro_sent": True}, 1, "Hi"),
                             ({}, 1, "/clear")):
         c = types.SimpleNamespace(booking_data=bd, client_data={}, message_count=mc)
         assert _enforce_full_intro(menu, c, inbound) == menu, (bd, mc, inbound)

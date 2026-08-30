@@ -208,7 +208,16 @@ def _post(secret: str, sid: str, text: str) -> None:
     req = urllib.request.Request(
         f"{PROD}/webhook/manychat", data=body.encode(),
         headers={"Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=35).read()
+    # Первый прогон попал в прогрев Render сразу после деплоя: три сценария
+    # умерли на 502. Смоук обязан переживать перезапуск сервиса.
+    for attempt in range(3):
+        try:
+            urllib.request.urlopen(req, timeout=35).read()
+            return
+        except urllib.error.HTTPError as e:
+            if e.code not in (502, 503) or attempt == 2:
+                raise
+            time.sleep(12)
 
 
 def _agent_texts(secret: str, sid: str, since) -> list:
