@@ -592,3 +592,29 @@ def test_21_smoke_ids_run_the_pipeline_but_never_reach_manychat(nighttime):
     events = list(webhook_app.NIGHT_LOG or [])
     assert events and events[-1]["kind"] == "sent"
     assert events[-1]["text"] == "smoke hello"
+
+
+# 22 — сброс не буферизуется и не склеивается со следующим сообщением
+def test_22_reset_bypasses_the_buffer(monkeypatch):
+    """Смоук 2026-08-30 (дважды): «/clear» и «Hi» слились в один ход
+    «/clear\\nHi» — сброс не распознан, контекст не чищен, гейт карточек
+    промолчал. Сброс обязан выполняться немедленно отдельным ходом, а
+    фрагменты, накопленные до него, — выбрасываться.
+    """
+    processed = []
+
+    async def recorder(phone, text, sender_name):
+        processed.append(text)
+
+    monkeypatch.setattr(webhook_app, "_process_wappi_message", recorder)
+
+    async def run():
+        # обычный фрагмент попадает в буфер (обработки сразу нет)
+        await webhook_app._buffer_and_process_wappi("ig:770099099", "hello", None)
+        assert processed == []
+        # сброс: немедленно, отдельным ходом, буфер с «hello» выброшен
+        await webhook_app._buffer_and_process_wappi("ig:770099099", "/clear", None)
+        assert processed == ["/clear"]
+        assert "ig:770099099" not in webhook_app._wappi_buffer
+
+    asyncio.run(run())

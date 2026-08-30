@@ -2064,7 +2064,7 @@ def _enforce_full_intro(response_text: str, context, inbound_text: str,
     админов; вопрос «какие услуги вас интересуют?» на первом ходе больше
     не задаётся — человек с рекламы пришёл за ценами, а не за меню.
     """
-    if not response_text or (inbound_text or "").strip().startswith("/"):
+    if not response_text or _is_reset_command(inbound_text or ""):
         return response_text
     bd = context.booking_data or {}
     if bd.get("ad_prefill") or bd.get("service_type") or bd.get("service_named"):
@@ -2668,6 +2668,21 @@ async def _buffer_and_process_wappi(phone: str, text: str, sender_name: str):
 
     If a new message arrives within 7s, restart the timer (PRD 4.1 rule 6).
     """
+    # Сброс НЕ буферизуется. 20-секундный буфер склеивал «/clear» со
+    # следующим сообщением в один ход («/clear\nHi»): сброс не распознавался
+    # вовсе (склейка не равна команде), контекст не чистился, а гейт карточек
+    # видел inbound, начинающийся с «/», и молчал. Пойман смоуком 2026-08-30
+    # дважды подряд; бьёт и по живым людям — админы печатают «clear» и сразу
+    # следующий вопрос. Сброс выполняется немедленно отдельным ходом, а
+    # накопленные до него фрагменты сбрасываются: человек начал заново.
+    if _is_reset_command(text):
+        stale = _wappi_buffer.pop(phone, None)
+        if stale and stale.get("timer") and not stale["timer"].done():
+            stale["timer"].cancel()
+        async with _phone_lock(phone):
+            await _process_wappi_message(phone, text.strip(), sender_name)
+        return
+
     entry = _wappi_buffer.setdefault(phone, {"messages": [], "timer": None, "sender_name": sender_name})
     entry["messages"].append(text)
     # Stamp the reset epoch at buffer time so the flush can tell if a /clear
