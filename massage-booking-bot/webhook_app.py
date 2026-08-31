@@ -2050,6 +2050,103 @@ def _bare_day_correction(text: str, known_date, today):
     return cand.strftime("%Y-%m-%d")
 
 
+def _asks_about_time(text: str) -> bool:
+    """Клиент спрашивает КОГДА — с поправкой на опечатки.
+
+    Живой случай 2026-08-30 23:18 (Um Nasser): «what tame» — арабки пишут
+    по-английски неидеально (Татьяна: «не все хорошо и грамотно пишут»), а
+    агент трижды повторил прайс вместо ответа о времени. Точным словам
+    difflib не нужен; опечатки ловятся по схожести — как «Faicial» в своё
+    время.
+    """
+    import difflib
+
+    t = (text or "").lower()
+    if any(k in t for k in ("time", "when", "какое время", "когда", "во сколько")):
+        return True
+    for w in re.findall(r"[a-z]{3,8}", t):
+        if difflib.SequenceMatcher(None, w, "time").ratio() >= 0.75:
+            return True
+    return False
+
+
+_TIME_TALK_RE = re.compile(
+    r"\b(?:today|tomorrow|morning|evening|which day|what day|fully booked|"
+    r"free slots?|available|availability|schedule)\b", re.I)
+
+
+def _enforce_time_ask_answered(response_text: str, inbound_text: str,
+                               context, who: str = "") -> str:
+    """Вопрос «когда?» не может быть отвечен прайсом.
+
+    Um Nasser (30.08 23:18) спросила «what tame» и получила прайс — третий
+    раз подряд. Если клиент спросил о времени, а в ответе нет ни времён, ни
+    слова о днях/доступности — прайс выбрасывается и разговор ведётся о
+    времени: следующий недостающий шаг воронки называется прямо.
+    """
+    if not response_text or not _asks_about_time(inbound_text):
+        return response_text
+    if _AMPM_TIMES_RE.search(response_text) or _TIME_TALK_RE.search(response_text):
+        return response_text          # о времени ответ есть — не вмешиваемся
+    bd = context.booking_data or {}
+    svc = bd.get("service_type") or ""
+    area = (context.client_data or {}).get("area")
+    if not area:
+        fix = ("Happy to check the times dear 🌹\n"
+               "Which city are you in — Abu Dhabi, Al Ain or Dubai?")
+    elif not svc or (_is_massage_service(svc) and not _massage_kind_known(svc)):
+        fix = ("The exact times depend on the service dear 🌹\n"
+               "Body massage or facial? 😊")
+    else:
+        fix = response_text.rstrip() + \
+            "\n\nWhich day suits you dear — today or tomorrow? 😊"
+        logger.info(f"time-ask gate: дописан вопрос про день ({who})")
+        return fix
+    logger.info(f"time-ask gate: прайс заменён ответом о времени ({who})")
+    return fix
+
+
+_LOOKASIDE_URL_RE = re.compile(r"^https://lookaside\.fbsbx\.com/\S+$", re.I)
+
+
+async def _transcribe_ig_audio(url: str) -> Optional[str]:
+    """Голосовое из Instagram → текст.
+
+    Клиенты-арабки шлют голосовые постоянно (Татьяна 2026-08-31: «и мы можем
+    читать голосовые?»). ManyChat отдаёт такое сообщение ССЫЛКОЙ на CDN
+    Instagram (lookaside.fbsbx.com), и до этой функции агент честно отвечал
+    «I can't open links» — на голос клиентки. Скачиваем и расшифровываем
+    Whisper'ом; арабская речь станет арабским текстом, и дальше сработает
+    штатное языковое правило (ответ по-английски + «In English please»).
+
+    None — если это не аудио (картинка/стикер) или не вышло: тогда путь
+    прежний, вежливая просьба написать текстом.
+    """
+    import aiohttp
+
+    try:
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(url, timeout=aiohttp.ClientTimeout(total=20)) as r:
+                if r.status >= 400:
+                    return None
+                ctype = (r.headers.get("Content-Type") or "").lower()
+                if ctype.startswith("image/"):
+                    return None          # картинку не читаем — прежний путь
+                data = await r.content.read(5 * 1024 * 1024)
+        ext = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "video/mp4": "mp4",
+               "audio/ogg": "ogg", "audio/aac": "aac",
+               "audio/wav": "wav"}.get(ctype.split(";")[0].strip(), "m4a")
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        result = await client.audio.transcriptions.create(
+            model="whisper-1", file=(f"voice.{ext}", data))
+        transcript = (getattr(result, "text", "") or "").strip()
+        return transcript or None
+    except Exception as e:
+        logger.warning(f"voice transcription failed: {e}")
+        return None
+
+
 ALL_EMIRATES = "Abu Dhabi, Al Ain and Dubai"
 # «home service in <один эмират>» — без запятой/and после него (перечисление
 # всех трёх не трогаем).
@@ -4490,7 +4587,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 from datetime import datetime as _dt_au, timedelta as _td_au, timezone as _tz_au
                 _asks_time = any(
                     kw in _text_lower for kw in (
-                        "when", "time", "available", "slot", "schedule",
+                        "when", "time", "tame", "tiem", "available", "slot", "schedule",
                         "today", "tomorrow", "morning", "afternoon", "evening",
                         "когда", "время", "свободн", "сегодня", "завтра",
                         "утро", "день", "вечер",
@@ -4822,6 +4919,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Строка о зоне обслуживания всегда называет все три эмирата.
         response_text = _enforce_all_emirates_line(response_text, who=phone)
+
+        # «Когда?» нельзя отвечать прайсом — даже если спрошено с опечаткой.
+        response_text = _enforce_time_ask_answered(response_text, text, context, who=phone)
 
         # Ни одной ссылки или ника, которых нет в наших данных.
         response_text = _enforce_no_invented_links(response_text, who=phone)
@@ -5450,6 +5550,15 @@ async def manychat_webhook(request: Request, background_tasks: BackgroundTasks):
         text = await fetch_manychat_last_text(subscriber_id)
     if not subscriber_id:
         return Response(content="bad request", status_code=400)
+    if text and _LOOKASIDE_URL_RE.match(text):
+        # Голосовое/вложение пришло ссылкой на CDN — пробуем расшифровать.
+        _tr = await _transcribe_ig_audio(text)
+        if _tr:
+            _night_event("voice_transcribed", who=subscriber_id, text=_tr[:200])
+            logger.info(f"голосовое расшифровано ({subscriber_id}): {_tr[:80]}")
+            text = _tr
+        else:
+            text = ""                    # не аудио/не вышло → вежливый путь ниже
     if not text:
         # Still nothing → the client sent media (photo/voice/sticker) we
         # can't read. Nudge politely in the live window, stay silent in shadow.

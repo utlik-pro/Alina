@@ -185,6 +185,20 @@ SCENARIOS = [
         ],
     },
     {
+        "name": "what_tame_is_a_time_question",
+        "sid": "770099009",
+        "area": "abu_dhabi",
+        "turns": [
+            "Hello, I would like to sign up for a massage package in Abu Dhabi at a discount.",
+            "what tame",
+        ],
+        # «Когда?» с опечаткой не может быть отвечен голым прайсом
+        # (Um Nasser 30.08). В ответе обязано быть хоть что-то о времени.
+        "asserts": [
+            _has("day", why="ответ на «what tame» обязан говорить о времени/дне"),
+        ],
+    },
+    {
         "name": "no_times_without_emirate",
         "sid": "770099008",
         "area": None,

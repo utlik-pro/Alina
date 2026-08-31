@@ -785,3 +785,40 @@ def test_home_service_line_always_names_all_three_emirates():
                  "Please type your address in Abu Dhabi\nArea, building or villa",
                  "We come to your home, hotel or villa in Dubai dear 🌹"):
         assert g(keep) == keep, keep
+
+
+def test_misspelled_time_question_is_not_answered_with_prices():
+    """Um Nasser, 2026-08-30 23:18: «what tame» — арабки пишут по-английски
+    неидеально (Татьяна), а агент трижды повторил прайс вместо ответа о
+    времени. Опечатки слова time ловятся по схожести, и вопрос «когда?»
+    не может быть отвечен прайсом.
+    """
+    import types
+
+    from webhook_app import _asks_about_time, _enforce_time_ask_answered
+
+    for q in ("what tame", "what tiem", "what time", "when?", "когда можно?"):
+        assert _asks_about_time(q), q
+    for other in ("yes", "cash", "body massage", "Khalifa City villa 3"):
+        assert not _asks_about_time(other), other
+
+    prices = "Body 350 AED / 60 min, 460 AED / 90 min\nFacial 370 AED / 50 min"
+    # Услуга не выбрана → честно: времена зависят от услуги.
+    ctx = types.SimpleNamespace(booking_data={"service_type": "massage"},
+                                client_data={"area": "abu_dhabi"})
+    out = _enforce_time_ask_answered(prices, "what tame", ctx)
+    assert "AED" not in out and "Body massage or facial" in out
+    # Эмират неизвестен → вопрос города.
+    ctx2 = types.SimpleNamespace(booking_data={}, client_data={})
+    out2 = _enforce_time_ask_answered(prices, "what tame", ctx2)
+    assert "Abu Dhabi" in out2 and "AED" not in out2
+    # Всё известно → прайс не режем, дописываем вопрос про день.
+    ctx3 = types.SimpleNamespace(booking_data={"service_type": "body_massage"},
+                                 client_data={"area": "abu_dhabi"})
+    out3 = _enforce_time_ask_answered(prices, "what tame", ctx3)
+    assert "Which day suits you" in out3 and "350 AED" in out3
+    # Ответ уже о времени — не трогаем.
+    timed = "Tomorrow we have 2:00 PM or 5:30 PM 🌹"
+    assert _enforce_time_ask_answered(timed, "what tame", ctx) == timed
+    # Вопрос не о времени — не трогаем.
+    assert _enforce_time_ask_answered(prices, "how much", ctx) == prices

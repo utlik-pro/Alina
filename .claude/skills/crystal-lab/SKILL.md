@@ -154,7 +154,11 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      end before calling this done. Checked 2026-08-24: every record in the
      ADMINISTRATORS row was `online:false`, i.e. created by admins by hand —
      the agent has never booked into it.
-  3f. ☀️ **ALL-DAY FROM SEPTEMBER 1 — TATYANA'S EXPLICIT GO (2026-08-29:
+  3f. ☀️ **ALL-DAY MODE — PREPARE ONLY ON DMITRY'S EXPLICIT COMMAND
+     (2026-08-31: «круглосуточный режим я сам скажу когда готовить, пока его
+     не вспоминай»).** Do NOT raise it, do NOT prepare it, do NOT mention the
+     September-1 date until he says so himself. Background kept below for
+     when that command comes. (2026-08-29:
      «давайте попробуем с 1 сентября подключить на целый день? Я все время
      буду мониторить. Кажется, что на ночь он не сильно косячит», Dmitry:
      «хорошо, как скажете»).** This reverses the absolute daytime silence of
@@ -287,6 +291,24 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      correct silently instead of leaving. NOT rewritten: the full listing,
      the address ask in a known emirate, «we come to your home … in X» after
      the client named X themselves.
+  3p. 🎙️ **VOICE MESSAGES ARE TRANSCRIBED (Tatyana 2026-08-31: «и мы можем
+     читать голосовые?» — yes).** An IG voice note reaches us as a bare
+     lookaside.fbsbx.com CDN URL in the text field; the agent used to answer
+     «I can't open links» — to a VOICE. Now `_transcribe_ig_audio` downloads
+     (≤5MB, 20s) and runs whisper-1; the transcript becomes the client
+     message (night event `voice_transcribed`). Arabic speech → Arabic text
+     → the standard language rule fires (English answer + «In English
+     please»). Images/stickers and failures fall back to the old polite
+     «couldn't view that, type it please».
+  3q. 🕐 **A TIME QUESTION — EVEN MISSPELLED — IS NEVER ANSWERED WITH PRICES
+     (Um Nasser 2026-08-30 23:18, Tatyana: «Это время спрашивают. Арабки не
+     все хорошо пишут… а он всё повторяет цену»).** «what tame» = «what
+     time»: `_asks_about_time` difflib-matches time typos (like Faicial
+     before it), and `_enforce_time_ask_answered` guarantees the reply talks
+     about WHEN: area unknown → city question; service/kind unknown → «times
+     depend on the service, body or facial?»; both known → the price stays
+     and «Which day suits you — today or tomorrow?» is appended. Prod-smoke
+     scenario what_tame_is_a_time_question pins it end-to-end.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
