@@ -164,6 +164,10 @@ def test_10_night_log_never_raises():
     events = list(webhook_app.NIGHT_LOG)
     assert len(events) == 2
     assert events[-1]["text"].endswith("…"), "long text must be truncated"
+    # Порог 1200: карточки админов (~450+ символов) обязаны попадать в лог
+    # целиком — на 400 смоук считал правильный ответ провальным.
+    webhook_app._night_event("ok", who="ig:1", text="y" * 800)
+    assert not list(webhook_app.NIGHT_LOG)[-1]["text"].endswith("…")
 
 
 # 11 — a lash-maker must never be offered for a massage (and vice versa)

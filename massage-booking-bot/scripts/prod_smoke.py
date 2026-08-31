@@ -153,8 +153,11 @@ SCENARIOS = [
         "turns": ["Hi"],
         "asserts": [
             _has("1650", "1550", why="карточки Алины с абонементами (30.08)"),
-            _has("Abu Dhabi", "Al Ain", "Dubai",
-                 why="три эмирата в развёрнутом ответе"),
+            # Карточки пишут «Alain», финальный вопрос — «Al Ain»: любое из
+            # написаний считается (ложная тревога 31.08).
+            _has("Abu Dhabi", "Dubai", why="эмираты в развёрнутом ответе"),
+            (lambda t: None if ("al ain" in t.lower() or "alain" in t.lower())
+             else "нет Al Ain/Alain — три эмирата в развёрнутом ответе"),
             _lacks("what services are you interested in",
                    why="меню на первом ходе заменено карточками"),
         ],

@@ -127,8 +127,11 @@ def _night_event(kind: str, **data) -> None:
         # Abu Dhabi wall clock — the same reference the salon uses
         ts = _dt.now(_tz(_td(hours=4))).isoformat(timespec="seconds")
         for k, v in list(data.items()):
-            if isinstance(v, str) and len(v) > 400:
-                data[k] = v[:400] + "…"
+            # 1200, не 400: карточки админов длиннее 400 символов, и смоук
+            # 31.08 счёл живой ПРАВИЛЬНЫЙ ответ провальным, потому что хвост
+            # с тремя эмиратами не попал в лог (ложная тревога).
+            if isinstance(v, str) and len(v) > 1200:
+                data[k] = v[:1200] + "…"
         NIGHT_LOG.append({"ts": ts, "kind": kind, **data})
 
         import asyncio as _aio
