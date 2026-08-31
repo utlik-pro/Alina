@@ -759,3 +759,29 @@ def test_no_times_ever_leave_without_a_known_emirate():
         "Tomorrow we have 2:00 PM, 4:30 PM or 6:00 PM 🌹", ctx, None)
     assert "2:00 PM" not in out
     assert "Abu Dhabi" in out and "Dubai" in out
+
+
+def test_home_service_line_always_names_all_three_emirates():
+    """Татьяна 2026-08-30, скрин ночного диалога: «иногда кликают Абу Даби,
+    а в итоге хотят Дубай — и эта фраза может слить». Строка о зоне
+    обслуживания обязана называть все три города; эмират из рекламы остаётся
+    рабочим предположением для слотов, вопрос города не задаётся.
+    """
+    from webhook_app import ALL_EMIRATES, _enforce_all_emirates_line as g
+
+    # Точная фраза из живого диалога 30.08 21:16.
+    live = ("Yes dear 🌹 We do home service in Al Ain with certified "
+            "Russian female specialists and free transportation")
+    out = g(live)
+    assert ALL_EMIRATES in out and "in Al Ain with" not in out
+
+    for single in ("We do home service in Abu Dhabi 🌹",
+                   "home service in Dubai with free transportation"):
+        assert ALL_EMIRATES in g(single), single
+
+    # НЕ трогаем: полное перечисление, адрес в известном эмирате, «к вам домой
+    # в …» после того, как клиент сам назвал город.
+    for keep in (f"We do home service in {ALL_EMIRATES} 🌹",
+                 "Please type your address in Abu Dhabi\nArea, building or villa",
+                 "We come to your home, hotel or villa in Dubai dear 🌹"):
+        assert g(keep) == keep, keep

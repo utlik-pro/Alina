@@ -277,6 +277,16 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      bypass the buffer entirely); (2) the harness itself died on Render
      warm-up 502s (now retried). Lesson repeated: green units ≠ working
      pipeline — only prod-driven dialogues count.
+  3o. 🌍 **THE HOME-SERVICE LINE ALWAYS NAMES ALL THREE EMIRATES (Tatyana
+     2026-08-30, скрин ночного диалога 21:16).** Her words: «иногда кликают
+     Абу Даби, а в итоге хотят Дубай — и эта фраза может слить». «We do home
+     service in Al Ain» → «We do home service in Abu Dhabi, Al Ain and
+     Dubai» (`_enforce_all_emirates_line`). The prefill emirate stays the
+     WORKING assumption for slots and the emirate is still never re-asked;
+     only the coverage line names all three so a mis-clicked client can
+     correct silently instead of leaving. NOT rewritten: the full listing,
+     the address ask in a known emirate, «we come to your home … in X» after
+     the client named X themselves.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

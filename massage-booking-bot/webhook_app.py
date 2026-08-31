@@ -2050,6 +2050,31 @@ def _bare_day_correction(text: str, known_date, today):
     return cand.strftime("%Y-%m-%d")
 
 
+ALL_EMIRATES = "Abu Dhabi, Al Ain and Dubai"
+# «home service in <один эмират>» — без запятой/and после него (перечисление
+# всех трёх не трогаем).
+_SINGLE_EMIRATE_HS_RE = re.compile(
+    r"(home service in )(Abu Dhabi|Al Ain|Dubai)(?!\s*(?:,|and\b))", re.I)
+
+
+def _enforce_all_emirates_line(response_text: str, who: str = "") -> str:
+    """«We do home service in Al Ain» → все три эмирата.
+
+    Татьяна 2026-08-30 (скрин ночного диалога): «иногда кликают Абу Даби, а
+    в итоге хотят Дубай — и эта фраза может слить». Эмират из рекламы —
+    рабочее предположение для слотов, но строка о зоне обслуживания обязана
+    называть все три города, чтобы клиент мог молча поправить, а не уйти,
+    решив, что его города нет. Вопрос «какой эмират?» при этом НЕ задаётся —
+    правило «не переспрашивать эмират из префилла» не тронуто.
+    """
+    if not response_text:
+        return response_text
+    out, n = _SINGLE_EMIRATE_HS_RE.subn(r"\1" + ALL_EMIRATES, response_text)
+    if n:
+        logger.info(f"emirates gate: один эмират → все три ({who})")
+    return out
+
+
 _WELCOME_MENU_RE = re.compile(r"what services? are you interested in", re.I)
 
 
@@ -4794,6 +4819,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Вопрос «где вы находитесь» обязан получить выездной формат.
         response_text = _enforce_location_answer(response_text, text, who=phone)
+
+        # Строка о зоне обслуживания всегда называет все три эмирата.
+        response_text = _enforce_all_emirates_line(response_text, who=phone)
 
         # Ни одной ссылки или ника, которых нет в наших данных.
         response_text = _enforce_no_invented_links(response_text, who=phone)
