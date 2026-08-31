@@ -267,22 +267,28 @@ async def _times_really_free(replies: list, area: str) -> list:
     yc = YClientsService()
     now = datetime.now(timezone(timedelta(hours=4)))
     for reply in replies:
-        low = reply.lower()
-        if "today" in low:
-            day = now.strftime("%Y-%m-%d")
-        elif "tomorrow" in low:
-            day = (now + timedelta(days=1)).strftime("%Y-%m-%d")
-        else:
-            continue                    # день не назван — время не проверить
-        for h, m, mer in _AMPM_RE.findall(reply):
-            hh = int(h) % 12 + (12 if mer.upper() == "PM" else 0)
-            hhmm = f"{hh:02d}:{int(m or 0):02d}"
-            try:
-                ok = await yc.is_slot_available(area, day, hhmm, 45)
-            except Exception:
-                continue                # сбой API ничего не судит
-            if ok is False:
-                problems.append(f"предложено занятое {h}:{m or '00'} {mer} на {day}")
+        # День определяется ПОСТРОЧНО: ответ «Today we have… / Tomorrow…»
+        # относил завтрашние времена к сегодняшнему календарю — ложная
+        # тревога 31.08 (агент был прав, смоук ошибся).
+        for line in reply.split("\n"):
+            low = line.lower()
+            if "today" in low:
+                day = now.strftime("%Y-%m-%d")
+            elif "tomorrow" in low:
+                day = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                continue                # день не назван — время не проверить
+            reply = line
+            for h, m, mer in _AMPM_RE.findall(reply):
+                hh = int(h) % 12 + (12 if mer.upper() == "PM" else 0)
+                hhmm = f"{hh:02d}:{int(m or 0):02d}"
+                try:
+                    ok = await yc.is_slot_available(area, day, hhmm, 45)
+                except Exception:
+                    continue            # сбой API ничего не судит
+                if ok is False:
+                    problems.append(
+                        f"предложено занятое {h}:{m or '00'} {mer} на {day}")
     return problems
 
 
