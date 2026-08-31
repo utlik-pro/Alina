@@ -301,7 +301,9 @@ def test_summer_prefill_reply_always_carries_the_cleansing_offer():
     body_only = "Body massage 60 min — 350 AED instead of 500"
     out2 = _enforce_summer_offers(body_only, "summer")
     assert "420" in out2 and out2.index("420") < out2.index("350")
-    assert "FREE facial massage" in out2
+    # Подарочная строка убрана 31.08 по поправке Татьяны («вот что он
+    # включает, а не массаж рук и лица»).
+    assert "FREE facial massage" not in out2
     # Чистка уже названа — не трогаем.
     with_cl = "Deep facial cleansing — 420 AED instead of 770\nWhich one dear?"
     assert _enforce_summer_offers(with_cl, "summer") == with_cl
@@ -822,3 +824,52 @@ def test_misspelled_time_question_is_not_answered_with_prices():
     assert _enforce_time_ask_answered(timed, "what tame", ctx) == timed
     # Вопрос не о времени — не трогаем.
     assert _enforce_time_ask_answered(prices, "how much", ctx) == prices
+
+
+def test_first_face_or_body_price_becomes_the_full_admin_card():
+    """Frenchie 2026-08-31 07:02: на связку про лицо агент ответил голым
+    «Facial massage 🌹 50 min - 370 AED». Татьяна: «Тут добавляем это» +
+    полная карточка. Первая цена лица/тела = карточка с абонементом и
+    техниками; баночная реклама и комбо не трогаются — там оффер 275.
+    """
+    import types
+
+    from webhook_app import _enforce_admin_service_card as g
+
+    face = types.SimpleNamespace(booking_data={"service_type": "face_massage"},
+                                 client_data={})
+    out = g("Facial massage 🌹 50 min - 370 AED", face)
+    assert "1650" in out and "buccal" in out.lower()
+    # Флаг лёг — второй раз карточка не уходит.
+    assert g("Facial massage 370 AED", face) == "Facial massage 370 AED"
+
+    body = types.SimpleNamespace(booking_data={"service_type": "body_massage"},
+                                 client_data={})
+    out2 = g("Body 350 AED / 60 min, 460 AED / 90 min", body)
+    assert "1550" in out2 and "Guasha" in out2
+
+    # Не трогаем: баночный префилл, комбо, ответ уже с абонементом, чистка.
+    pkg = types.SimpleNamespace(booking_data={"ad_prefill": "package"}, client_data={})
+    assert g("Facial massage 370 AED", pkg) == "Facial massage 370 AED"
+    full = types.SimpleNamespace(booking_data={"service_type": "face_massage"},
+                                 client_data={})
+    with_pkg = "Face 370 AED, package 5 sessions-1650 aed"
+    assert g(with_pkg, full) == with_pkg
+    cl = types.SimpleNamespace(booking_data={}, client_data={})
+    cleansing = "Deep cleansing 420 AED, body massage 350 AED"
+    assert g(cleansing, cl) == cleansing
+
+
+def test_cleansing_description_is_the_admins_eight_steps():
+    """Татьяна 2026-08-31: «вот что он включает, а не массаж рук и лица».
+    Канон — восемь этапов; строка про бесплатные массажи из креатива убрана;
+    шаг 5 (deep MANUAL cleansing) отвечает на вопрос про механическую чистку.
+    """
+    from prices import ADMIN_CARD_CLEANSING, SPECIAL_OFFERS
+
+    desc = SPECIAL_OFFERS["offer_deep_cleansing"]["description"]
+    assert "MANUAL" in desc and "ultrasonic" in desc
+    assert "FREE" not in desc                      # подарки убраны
+    assert "Deep manual cleansing" in ADMIN_CARD_CLEANSING
+    assert "770" in ADMIN_CARD_CLEANSING and "420" in ADMIN_CARD_CLEANSING
+    assert "free facial massage" not in ADMIN_CARD_CLEANSING.lower()

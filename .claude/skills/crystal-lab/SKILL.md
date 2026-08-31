@@ -309,6 +309,25 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      depend on the service, body or facial?»; both known → the price stays
      and «Which day suits you — today or tomorrow?» is appended. Prod-smoke
      scenario what_tame_is_a_time_question pins it end-to-end.
+  3r. 🧾 **CLEANSING = THE ADMINS' 8 STEPS, NOT FREE MASSAGES (Tatyana
+     2026-08-31: «вот что он включает, а не массаж рук и лица»).** The
+     canonical composition (verbatim card in prices.ADMIN_CARD_CLEANSING):
+     1 cleansing/make-up removal, 2 peeling/exfoliating, 3 hydrating gel,
+     4 ultrasonic cleaning, 5 DEEP MANUAL CLEANSING, 6 antibacterial toning,
+     7 soothing mask, 8 cream by skin type with SPF. Step 5 answers the
+     long-open client question: manual/mechanical cleansing IS included —
+     say YES. The «free facial massage + free hand massage» line (taken from
+     the ad creative 27.08) is REMOVED everywhere by her correction. This
+     closes the week-old «8 steps» question — the agent stops inventing
+     «blackheads».
+  3s. 💳 **FIRST FACE/BODY PRICE = THE FULL ADMIN CARD (Tatyana 2026-08-31,
+     Frenchie screenshot: bare «Facial massage 50 min - 370 AED» → «Тут
+     добавляем это» + the full card).** `_enforce_admin_service_card`: the
+     first quoted 370-face / 350-body price without the package line is
+     replaced by ADMIN_CARD_FACE / ADMIN_CARD_BODY (offer, package 1650/1550,
+     techniques, three emirates). Once per dialogue; package-ad and combo
+     (275) paths untouched; runs BEFORE phone-first so the number ask
+     appends after the card.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

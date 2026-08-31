@@ -1789,8 +1789,7 @@ def _enforce_summer_offers(response_text: str, ad_prefill) -> str:
                        "первой строкой")
         return (
             f"Deep facial cleansing — {int(_cl['price'])} AED instead of "
-            f"{int(_cl['was'])}, 2 hours, 8 steps ✨\n"
-            "Now includes a FREE facial massage and a FREE hand massage 🌹"
+            f"{int(_cl['was'])}, 2 hours, 8 steps ✨"
             "\n\n---MESSAGE_SPLIT---\n\n" + response_text)
 
     from prices import format_ad_offers_for_prompt  # noqa: F401  (единый источник)
@@ -2048,6 +2047,43 @@ def _bare_day_correction(text: str, known_date, today):
         except ValueError:
             return None
     return cand.strftime("%Y-%m-%d")
+
+
+def _enforce_admin_service_card(response_text: str, context,
+                                who: str = "") -> str:
+    """Первая цена лица/тела = ПОЛНАЯ карточка админов, не голая строка.
+
+    Скрин Frenchie 2026-08-31 07:02: на связку про лицевой массаж агент
+    ответил «Facial massage 🌹 50 min - 370 AED» — Татьяна: «Тут добавляем
+    это» + полная карточка (оффер 370/550, абонемент 5×1650, четыре
+    техники). То же для тела (Алина 30.08: «высылали наши быстрые ответы и
+    абонементы»). Карточка уходит один раз за диалог; баночная реклама и
+    выбранное комбо не трогаются — там свой оффер 275.
+    """
+    if not response_text:
+        return response_text
+    bd = context.booking_data or {}
+    if bd.get("ad_prefill") == "package":
+        return response_text
+    svc = bd.get("service_type") or ""
+    if svc == _COMBO_KEY or "275" in response_text:
+        return response_text
+    low = response_text.lower()
+    from prices import ADMIN_CARD_BODY, ADMIN_CARD_FACE
+    if ("370" in response_text and "1650" not in response_text
+            and not bd.get("face_card_sent")
+            and ("facial" in low or "face" in low or svc == "face_massage")):
+        logger.info(f"card gate: голая цена лица → полная карточка ({who})")
+        context.booking_data["face_card_sent"] = True
+        return ADMIN_CARD_FACE
+    if ("350" in response_text and "1550" not in response_text
+            and "420" not in response_text
+            and not bd.get("body_card_sent")
+            and ("body" in low or svc == "body_massage")):
+        logger.info(f"card gate: голая цена тела → полная карточка ({who})")
+        context.booking_data["body_card_sent"] = True
+        return ADMIN_CARD_BODY
+    return response_text
 
 
 def _asks_about_time(text: str) -> bool:
@@ -4730,7 +4766,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 f"Lead with THAT offer and nothing else: {_cl['name']} — "
                 f"{int(_cl['price'])} AED instead of {int(_cl['was'])}, "
                 f"{int(_cl['duration'])} min, specialist with medical "
-                "education. Do NOT list the other promotions. Then continue "
+                "education. THE 8 STEPS ARE THE CANONICAL ANSWER to 'what "
+                f"does it include': {_cl['description']}. Step 5 is deep "
+                "MANUAL cleansing — if asked whether manual/mechanical "
+                "cleansing is included, the answer is YES. Never invent "
+                "other benefits. Do NOT list the other promotions. Then continue "
                 "the NORMAL flow — this prefill has no emirate, so ask which "
                 "city they are in when the time comes."
             )
@@ -4747,9 +4787,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 "DEEP-CLEANSING video (Tatyana 2026-08-27: «чистку вновь не "
                 "распознал» — the client saw the 420-instead-of-770 ad), so "
                 "LEAD with deep facial cleansing: 420 AED instead of 770, "
-                "2 hours, 8 steps — and mention it currently includes a FREE "
-                "facial massage and a FREE hand massage (end-of-month promo "
-                "from the ad). THEN briefly list the other running discounts "
+                "2 hours, 8 steps. THEN briefly list the other running discounts "
                 "was→now and ask which one they want. Do NOT answer with a "
                 "bare question — they asked about an offer and must hear real "
                 "numbers:\n"
@@ -4889,6 +4927,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             inbound_text=text, already_shown=_offer_shown)
         if not _offer_shown and "275" in response_text:
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+        # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
+        response_text = _enforce_admin_service_card(response_text, context, who=phone)
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))

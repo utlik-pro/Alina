@@ -195,13 +195,16 @@ SPECIAL_OFFERS = {
         "price": 420,
         "was": 770,
         "duration": 120,
-        # Бесплатные дополнения — из живого креатива «only the end of the
-        # month» (скрин Татьяны 2026-08-27). ⚠️ УБРАТЬ в сентябре или когда
-        # креатив остановят — иначе агент будет обещать несуществующий подарок.
-        "description": ("8-step deep facial cleansing, 2h treatment, specialist "
-                        "with medical education; currently includes a FREE "
-                        "facial massage and a FREE hand massage (end-of-month "
-                        "promo)"),
+        # Состав — канонический список админов (Татьяна 2026-08-31, «вот что
+        # он включает»). «Бесплатные массажи» из креатива убраны по её же
+        # поправке. Шаг 5 = Deep manual cleansing → на вопрос «механическая
+        # чистка входит?» ответ ДА.
+        "description": ("8-step deep facial cleansing, 120 min, specialist with "
+                        "medical education. The 8 steps: 1 cleansing & make-up "
+                        "removal, 2 peeling/exfoliating, 3 hydrating gel, "
+                        "4 ultrasonic cleaning, 5 deep MANUAL cleansing, "
+                        "6 antibacterial toning, 7 soothing mask, 8 cream by "
+                        "skin type with SPF"),
     },
     "offer_body_60": {
         "name": "NEW OFFER - Body massage 60 min",
@@ -515,9 +518,29 @@ FREE TRANSPORTATION TO YOUR HOME
 
 We bring everything what is needed"""
 
-ADMIN_CARD_CLEANSING = """✅Deep facial cleansing (8 steps) — 420 aed instead of 770 🌟
-2 hours, specialist with medical education
-Now includes a FREE facial massage and a FREE hand massage"""
+# Канонический состав — от админов дословно (Татьяна 2026-08-31: «вот что
+# он включает, а не массаж рук и лица» — строка про бесплатные массажи из
+# рекламного креатива УБРАНА по её прямой поправке).
+ADMIN_CARD_CLEANSING = """✅WE have an offer for
+Deep facial cleansing( 8steps treatment)
+✅The duration of the service-120min
+It includes :
+
+1.Cleansing, make up removal
+2.Peeling, exfoliating
+3.Application of hydrating gel
+4.Cleaning with ultrasonic machine
+5.Deep manual cleansing
+6.Antibacterial toning
+7.Soothing mask applying
+8.Applying cream by the skin type with SPF
+
+the old price - 770aed
+‼️NOW 420 aed 🌟
+
+Top Russian Therapist🇷🇺
+
+Abu Dhabi, Dubai and Alain home service 🏘️"""
 
 
 def build_full_intro() -> str:
