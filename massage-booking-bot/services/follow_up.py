@@ -176,7 +176,12 @@ class FollowUpService:
                     continue
                 if getattr(_ctx, "message_count", 0) < 1:
                     continue
-                if (datetime.now() - _ctx.last_activity) >= timedelta(minutes=5):
+                _quiet = datetime.now() - _ctx.last_activity
+                # Не раньше 5 минут (Татьяна) и не позже 90: лид, замолчавший
+                # днём, в 21:00 напоминания не получает — «а потом я ещё раз
+                # по ним пройдусь», это уже территория админов. Поймано 01.09:
+                # контекст 13:09 получил напоминание в 21:00:22, на открытии.
+                if timedelta(minutes=5) <= _quiet <= timedelta(minutes=90):
                     _ig_candidates.append(_uid)
 
         for user_id in list(lost_clients) + [
