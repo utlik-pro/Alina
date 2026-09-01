@@ -343,6 +343,21 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      deploys that day → she was nudged 3×). `_ig_nudge_already_sent` checks
      NightEvent in Postgres before sending; a DB failure means DO NOT send —
      назойливость дороже пропущенного напоминания.
+  3u. ❓ **BARE «Hi» → ASK WHICH SERVICE FIRST, CARD AFTER THE CHOICE
+     (Tatyana 2026-09-01, A❤️G screenshot — refines Alina's 30.08 «all three
+     cards at once»).** Her words: «ИИ здесь совсем не знает что… надо
+     спросить, как и было: лицо, тело или чистка. И дать ему оффер по тому,
+     что он написал, тем ответом, который тут уже есть. Вначале для просто
+     "hi" добавим вопрос что это, потом уже полностью текст.» Now:
+     `_enforce_full_intro` → prices.SERVICE_QUESTION_INTRO (greeting, three
+     emirates, «face massage, body massage or deep facial cleansing?»);
+     `_enforce_admin_service_card(reply, ctx, inbound)` sends the CHOSEN
+     card only (face / body / cleansing), once each, and appends the emirate
+     question when the area is unknown. A reply that COMPARES body and face
+     («Body 350 / Facial 370 — which one?») is left alone: on 01.09 22:25
+     the old gate replaced such a comparison with the face card and lost the
+     body. Phone-first no longer asks morning/evening while the emirate is
+     unknown (no times possible yet; max two questions per message).
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY

@@ -320,7 +320,7 @@ def test_phone_is_not_asked_twice_in_one_reply():
 
     from webhook_app import PHONE_FIRST_LINE, _enforce_phone_first
 
-    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    ctx = types.SimpleNamespace(booking_data={}, client_data={"area": "abu_dhabi"})
     reply = ("Our offers: 420 AED instead of 770\n"
              "---MESSAGE_SPLIT---\n"
              "Please send your WhatsApp number dear")
@@ -564,7 +564,7 @@ def test_phone_is_asked_right_after_the_price():
     from webhook_app import (PHONE_FIRST_LINE, TIME_PREF_LINE,
                              _enforce_phone_first)
 
-    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    ctx = types.SimpleNamespace(booking_data={}, client_data={"area": "abu_dhabi"})
     priced = ("Lymphatic drainage + cupping + head massage — 275 AED instead of 430\n"
               "Today we have 10:00 AM, 2:30 PM or 7:00 PM")
     out = _enforce_phone_first(priced, ctx, phone_known=False, is_ig=True)
@@ -575,7 +575,7 @@ def test_phone_is_asked_right_after_the_price():
 
     # Половина дня уже известна — второй раз не спрашиваем, времена остаются.
     ctx2 = types.SimpleNamespace(
-        booking_data={"time_preference": "evening"}, client_data={})
+        booking_data={"time_preference": "evening"}, client_data={"area": "abu_dhabi"})
     out2 = _enforce_phone_first(priced, ctx2, phone_known=False, is_ig=True)
     assert PHONE_FIRST_LINE in out2 and TIME_PREF_LINE not in out2
     assert "7:00 PM" in out2
@@ -585,18 +585,24 @@ def test_phone_is_asked_right_after_the_price():
     # одному, и воронка встаёт.
     with_q = priced + "\n\nWhich day would you like dear? 😊"
     out_q = _enforce_phone_first(with_q, types.SimpleNamespace(
-        booking_data={}, client_data={}), False, True)
+        booking_data={}, client_data={"area": "abu_dhabi"}), False, True)
     assert "which day" not in out_q.lower()
     assert PHONE_FIRST_LINE in out_q
 
     # Телефон уже есть, но половина дня ещё нет — спрашиваем только её.
-    only_pref = types.SimpleNamespace(booking_data={}, client_data={})
+    only_pref = types.SimpleNamespace(booking_data={}, client_data={"area": "dubai"})
     out3 = _enforce_phone_first(priced, only_pref, phone_known=True, is_ig=True)
     assert TIME_PREF_LINE in out3 and PHONE_FIRST_LINE not in out3
 
     # Оба уже спрошены, цены нет, не Instagram — молчим.
     done = types.SimpleNamespace(
-        booking_data={"phone_asked": True, "pref_asked": True}, client_data={})
+        booking_data={"phone_asked": True, "pref_asked": True},
+        client_data={"area": "abu_dhabi"})
+    # Эмират неизвестен → только номер, без «утро или вечер?» (Татьяна
+    # 01.09: после карточки идёт вопрос о городе, трёх вопросов не должно быть).
+    no_area = types.SimpleNamespace(booking_data={}, client_data={})
+    out_na = _enforce_phone_first(priced, no_area, phone_known=False, is_ig=True)
+    assert PHONE_FIRST_LINE in out_na and TIME_PREF_LINE not in out_na
     assert _enforce_phone_first(priced, done, True, True) == priced
     assert _enforce_phone_first(priced, done, False, True) == priced
     no_price = "Body massage or facial dear? 😊"
@@ -668,12 +674,11 @@ def test_bare_location_question_gets_the_home_service_answer():
         assert _enforce_location_answer(wrong, msg) == wrong, msg
 
 
-def test_first_contact_without_known_ad_gets_the_full_cards():
-    """Алина 2026-08-30 (после перезапуска рекламы префиллы перестали
-    узнаваться): «пусть отвечает тогда всё — тело и лицо и чистка, но
-    развернуто. И пишет сразу 3 эмирата. Потом уточняет откуда клиент».
-    Меню «what services are you interested in?» на первом ходе заменяется
-    дословными карточками админов.
+def test_first_contact_without_known_ad_asks_which_service():
+    """Татьяна 2026-09-01 (скрин A❤️G, уточняет правило Алины от 30.08):
+    «ИИ здесь совсем не знает что… надо спросить, как и было: лицо, тело или
+    чистка. И дать ему оффер по тому, что он написал». На голое «Hi» — один
+    вопрос; карточка — после выбора.
     """
     import types
 
@@ -683,27 +688,23 @@ def test_first_contact_without_known_ad_gets_the_full_cards():
             "What services are you interested in? We will give you all the details 🌹")
     ctx = types.SimpleNamespace(booking_data={}, client_data={}, message_count=1)
     out = _enforce_full_intro(menu, ctx, "Hi")
-    # Первый смоук-прогон: «/clear» перед «Hi» съедал «первый ход» и гейт
-    # молчал — счётчик ходов заменён смысловым условием, ход не важен.
+    low = out.lower()
+    assert "face massage" in low and "body massage" in low and "cleansing" in low
+    assert "Abu Dhabi" in out and "Dubai" in out           # три эмирата
+    assert "1650" not in out and "1550" not in out          # карточек ещё нет
+    assert "What services are you interested in" not in out
+    # Ход не важен; после отправки — не повторяем.
     late = types.SimpleNamespace(booking_data={}, client_data={}, message_count=5)
-    assert "1650" in _enforce_full_intro(menu, late, "Hi")
+    assert "cleansing" in _enforce_full_intro(menu, late, "Hi").lower()
     sent = types.SimpleNamespace(booking_data={"cards_intro_sent": True},
                                  client_data={}, message_count=1)
     assert _enforce_full_intro(menu, sent, "Hi") == menu
-    assert "370 aed" in out and "1650" in out            # карточка лица
-    assert "350 aed" in out and "1550" in out            # карточка тела
-    assert "420 aed" in out.lower()                      # чистка
-    assert "Abu Dhabi, Al Ain or Dubai" in out           # три эмирата + вопрос
-    assert "What services are you interested in" not in out
-
-    # Узнанная реклама, названная услуга, не первый ход, /clear — не трогаем.
-    for bd, mc, inbound in (({"ad_prefill": "package"}, 1, "Hi"),
-                            ({"service_type": "face_massage"}, 1, "Hi"),
-                            ({"cards_intro_sent": True}, 1, "Hi"),
-                            ({}, 1, "/clear")):
-        c = types.SimpleNamespace(booking_data=bd, client_data={}, message_count=mc)
-        assert _enforce_full_intro(menu, c, inbound) == menu, (bd, mc, inbound)
-    # Модель ответила не меню — тоже не трогаем.
+    # Узнанная реклама, названная услуга, /clear — не трогаем.
+    for bd, inbound in (({"ad_prefill": "package"}, "Hi"),
+                        ({"service_type": "face_massage"}, "Hi"),
+                        ({}, "/clear")):
+        c = types.SimpleNamespace(booking_data=bd, client_data={}, message_count=1)
+        assert _enforce_full_intro(menu, c, inbound) == menu, (bd, inbound)
     priced = "Face massage 50 min — 370 AED"
     assert _enforce_full_intro(priced, ctx, "Hi") == priced
 
@@ -826,38 +827,43 @@ def test_misspelled_time_question_is_not_answered_with_prices():
     assert _enforce_time_ask_answered(prices, "how much", ctx) == prices
 
 
-def test_first_face_or_body_price_becomes_the_full_admin_card():
-    """Frenchie 2026-08-31 07:02: на связку про лицо агент ответил голым
-    «Facial massage 🌹 50 min - 370 AED». Татьяна: «Тут добавляем это» +
-    полная карточка. Первая цена лица/тела = карточка с абонементом и
-    техниками; баночная реклама и комбо не трогаются — там оффер 275.
+def test_chosen_service_gets_its_full_admin_card():
+    """Татьяна 2026-09-01: «дать ему оффер по тому, что он написал, тем
+    ответом, который тут уже есть». Карточка — по ВЫБРАННОЙ услуге, включая
+    чистку. Ответ-сравнение «лицо или тело?» не трогается (ночь 01.09 22:25:
+    гейт заменил сравнение на карточку лица и потерял тело).
     """
     import types
 
     from webhook_app import _enforce_admin_service_card as g
 
-    face = types.SimpleNamespace(booking_data={"service_type": "face_massage"},
-                                 client_data={})
-    out = g("Facial massage 🌹 50 min - 370 AED", face)
+    # Клиент сказал «face» → карточка лица + вопрос об эмирате (он неизвестен).
+    ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    out = g("Facial massage 🌹 50 min - 370 AED", ctx, "face")
     assert "1650" in out and "buccal" in out.lower()
-    # Флаг лёг — второй раз карточка не уходит.
-    assert g("Facial massage 370 AED", face) == "Facial massage 370 AED"
+    assert "Which emirate" in out
+    assert g("Facial massage 370 AED", ctx, "face") == "Facial massage 370 AED"  # один раз
 
+    # «body» → карточка тела; эмират известен → без вопроса о городе.
     body = types.SimpleNamespace(booking_data={"service_type": "body_massage"},
-                                 client_data={})
-    out2 = g("Body 350 AED / 60 min, 460 AED / 90 min", body)
-    assert "1550" in out2 and "Guasha" in out2
+                                 client_data={"area": "abu_dhabi"})
+    out2 = g("Body 350 AED / 60 min", body, "body")
+    assert "1550" in out2 and "Guasha" in out2 and "Which emirate" not in out2
 
-    # Не трогаем: баночный префилл, комбо, ответ уже с абонементом, чистка.
+    # «cleansing» → карточка чистки с восемью этапами.
+    cl = types.SimpleNamespace(booking_data={}, client_data={"area": "dubai"})
+    out3 = g("Deep facial cleansing 120 min — 420 AED", cl, "deep cleansing")
+    assert "Deep manual cleansing" in out3 and "770" in out3
+
+    # Сравнение двух услуг без выбора — НЕ трогаем.
+    cmp_ctx = types.SimpleNamespace(booking_data={"service_type": "massage"},
+                                    client_data={"area": "al_ain"})
+    cmp = "Body 350 AED / 60 min\nFacial 370 AED / 50 min\n\nBody massage or facial dear?"
+    assert g(cmp, cmp_ctx, "Hello") == cmp
+
+    # Баночный префилл и комбо — не трогаем.
     pkg = types.SimpleNamespace(booking_data={"ad_prefill": "package"}, client_data={})
-    assert g("Facial massage 370 AED", pkg) == "Facial massage 370 AED"
-    full = types.SimpleNamespace(booking_data={"service_type": "face_massage"},
-                                 client_data={})
-    with_pkg = "Face 370 AED, package 5 sessions-1650 aed"
-    assert g(with_pkg, full) == with_pkg
-    cl = types.SimpleNamespace(booking_data={}, client_data={})
-    cleansing = "Deep cleansing 420 AED, body massage 350 AED"
-    assert g(cleansing, cl) == cleansing
+    assert g("Facial massage 370 AED", pkg, "face") == "Facial massage 370 AED"
 
 
 def test_cleansing_description_is_the_admins_eight_steps():

@@ -543,12 +543,22 @@ Top Russian Therapist🇷🇺
 Abu Dhabi, Dubai and Alain home service 🏘️"""
 
 
+SERVICE_QUESTION_INTRO = (
+    "Hello dear 👋🌹\n"
+    "Welcome to Crystal Lab home service — Abu Dhabi, Al Ain and Dubai 🏘️\n\n"
+    "What would you like — face massage, body massage or deep facial "
+    "cleansing? 😊"
+)
+
+
 def build_full_intro() -> str:
-    """Развёрнутый первый ответ по правилу Алины: все три услуги карточками,
-    три эмирата, затем вопрос «откуда вы» — время только после эмирата."""
-    return (
-        ADMIN_CARD_FACE
-        + "\n\n---MESSAGE_SPLIT---\n\n" + ADMIN_CARD_BODY
-        + "\n\n---MESSAGE_SPLIT---\n\n" + ADMIN_CARD_CLEANSING
-        + "\n\nWhich emirate are you in dear — Abu Dhabi, Al Ain or Dubai? 🌹"
-    )
+    """Первый ответ на голое «Hi» без узнанной рекламы.
+
+    Татьяна 2026-09-01 (скрин A❤️G): «ИИ здесь совсем не знает что… значит
+    надо спросить, как и было: лицо, тело или чистка. И дать ему оффер по
+    тому, что он написал, — тем ответом, который тут уже есть. То есть
+    вначале для просто "hi" добавим вопрос что это, потом уже полностью
+    текст». Это уточняет субботнее правило Алины (три карточки сразу):
+    сначала один вопрос, карточка — после выбора.
+    """
+    return SERVICE_QUESTION_INTRO

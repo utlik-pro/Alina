@@ -1919,6 +1919,11 @@ def _enforce_phone_first(response_text: str, context, phone_known: bool,
     pref = bd.get("time_preference")
     need_phone = not phone_known and not bd.get("phone_asked")
     need_pref = not pref and not bd.get("pref_asked")
+    if not (context.client_data or {}).get("area"):
+        # Эмират неизвестен → времён не будет, вопрос «утро или вечер?» пока
+        # лишний: после карточки идёт вопрос о городе, и трёх вопросов в
+        # одном сообщении быть не должно (Татьяна 01.09).
+        need_pref = False
     if not (need_phone or need_pref):
         return response_text
     if not _PRICE_IN_REPLY_RE.search(response_text):
@@ -2053,15 +2058,18 @@ def _bare_day_correction(text: str, known_date, today):
 
 
 def _enforce_admin_service_card(response_text: str, context,
-                                who: str = "") -> str:
-    """Первая цена лица/тела = ПОЛНАЯ карточка админов, не голая строка.
+                                inbound_text: str = "", who: str = "") -> str:
+    """Клиент выбрал услугу → полная карточка админов по ЭТОЙ услуге.
 
-    Скрин Frenchie 2026-08-31 07:02: на связку про лицевой массаж агент
-    ответил «Facial massage 🌹 50 min - 370 AED» — Татьяна: «Тут добавляем
-    это» + полная карточка (оффер 370/550, абонемент 5×1650, четыре
-    техники). То же для тела (Алина 30.08: «высылали наши быстрые ответы и
-    абонементы»). Карточка уходит один раз за диалог; баночная реклама и
-    выбранное комбо не трогаются — там свой оффер 275.
+    Татьяна 2026-09-01: «спросить лицо, тело или чистка — и дать ему оффер
+    по тому, что он написал, тем ответом, который тут уже есть». Карточки —
+    её дословные быстрые ответы. Срабатывает только когда услуга ВЫБРАНА:
+    ответ, где модель сравнивает лицо и тело и спрашивает «which one?»,
+    не трогается (ночь 01.09 22:25: гейт заменил сравнение на карточку лица
+    и потерял тело). Одна карточка за диалог на услугу; баночная реклама и
+    комбо не трогаются — там оффер 275. Если эмират ещё не известен, после
+    карточки идёт вопрос о городе (Алина: «главное, чтоб перед временем
+    сначала было откуда»).
     """
     if not response_text:
         return response_text
@@ -2071,22 +2079,31 @@ def _enforce_admin_service_card(response_text: str, context,
     svc = bd.get("service_type") or ""
     if svc == _COMBO_KEY or "275" in response_text:
         return response_text
+    low_in = (inbound_text or "").lower()
     low = response_text.lower()
-    from prices import ADMIN_CARD_BODY, ADMIN_CARD_FACE
-    if ("370" in response_text and "1650" not in response_text
-            and not bd.get("face_card_sent")
-            and ("facial" in low or "face" in low or svc == "face_massage")):
-        logger.info(f"card gate: голая цена лица → полная карточка ({who})")
-        context.booking_data["face_card_sent"] = True
-        return ADMIN_CARD_FACE
-    if ("350" in response_text and "1550" not in response_text
-            and "420" not in response_text
-            and not bd.get("body_card_sent")
-            and ("body" in low or svc == "body_massage")):
-        logger.info(f"card gate: голая цена тела → полная карточка ({who})")
-        context.booking_data["body_card_sent"] = True
-        return ADMIN_CARD_BODY
-    return response_text
+    from prices import ADMIN_CARD_BODY, ADMIN_CARD_CLEANSING, ADMIN_CARD_FACE
+
+    wants_clean = bool(_CLEANSING_ASK_RE.search(low_in)) or bd.get("ad_prefill") == "cleansing"
+    kind_in = _massage_kind_from_text(inbound_text or "")
+    wants_face = svc == "face_massage" or kind_in == "face"
+    wants_body = svc == "body_massage" or kind_in == "body"
+
+    card = None
+    if wants_clean and not bd.get("cleansing_card_sent") and "it includes" not in low:
+        card, flag = ADMIN_CARD_CLEANSING, "cleansing_card_sent"
+    elif wants_face and not wants_body and not bd.get("face_card_sent") \
+            and "1650" not in response_text:
+        card, flag = ADMIN_CARD_FACE, "face_card_sent"
+    elif wants_body and not wants_face and not bd.get("body_card_sent") \
+            and "1550" not in response_text:
+        card, flag = ADMIN_CARD_BODY, "body_card_sent"
+    if card is None:
+        return response_text
+    context.booking_data[flag] = True
+    logger.info(f"card gate: {flag} ({who})")
+    if not (context.client_data or {}).get("area"):
+        card += "\n\nWhich emirate are you in dear — Abu Dhabi, Al Ain or Dubai? 🌹"
+    return card
 
 
 def _asks_about_time(text: str) -> bool:
@@ -2295,7 +2312,11 @@ _WELCOME_MENU_RE = re.compile(r"what services? are you interested in", re.I)
 
 def _enforce_full_intro(response_text: str, context, inbound_text: str,
                         who: str = "") -> str:
-    """Первый контакт без узнанной рекламы → развёрнутые карточки, не меню.
+    """Первый контакт без узнанной рекламы → короткий вопрос об услуге.
+
+    Татьяна 2026-09-01 (уточняет правило Алины от 30.08): «вначале для
+    просто "hi" добавим вопрос что это — лицо, тело или чистка. Потом уже
+    полностью текст». Карточка уходит после выбора (_enforce_admin_service_card).
 
     Алина 2026-08-30 (после перезапуска рекламы, когда префиллы перестали
     узнаваться): «пусть отвечает тогда всё — тело и лицо и чистка, но
@@ -5027,7 +5048,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
 
         # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
-        response_text = _enforce_admin_service_card(response_text, context, who=phone)
+        response_text = _enforce_admin_service_card(response_text, context, text, who=phone)
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))
