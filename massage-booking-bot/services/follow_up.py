@@ -207,6 +207,12 @@ class FollowUpService:
             if _is_ig and not _ig_window_open:
                 continue
 
+            # «Я подтвержу позже» — не молчание, а ясное «не сейчас»:
+            # напоминание после него это дожим (N zehra 2026-09-01, три
+            # пинка по закрытому разговору).
+            if _is_ig and (getattr(context, "booking_data", None) or {}).get("closed_politely"):
+                continue
+
             # Pick delay schedule based on booking stage
             is_booking_flow = context.state in BOOKING_FLOW_STATES
             delays = FOLLOW_UP_DELAYS_BOOKING if is_booking_flow else FOLLOW_UP_DELAYS

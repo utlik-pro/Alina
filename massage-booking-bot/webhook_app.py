@@ -2145,6 +2145,85 @@ def _enforce_time_ask_answered(response_text: str, inbound_text: str,
     return fix
 
 
+_DEFERRED_CLOSE_RE = re.compile(
+    r"i(?:'| wi)?ll confirm|will confirm to you|let (?:you|u) know"
+    r"|(?:will )?update (?:you|u)\b|i text (?:you|u)|text (?:you|u) later"
+    r"|i will text|if i need|when i need|when i requir|maybe later"
+    r"|\bnot now\b|good ?night|\bbye\b|another time"
+    r"|я напишу|позже напишу|если понадоб|спокойной ночи", re.IGNORECASE)
+
+POLITE_CLOSE_LINE = ("Of course dear 🌹 Anytime — just write me here when "
+                     "you're ready 🙏")
+
+_FUNNEL_PUSH_RE = re.compile(
+    r"which (?:one|time|day)|what time suits|shall i (?:book|keep)"
+    r"|would you like to book|morning or evening|your (?:whatsapp )?number",
+    re.IGNORECASE)
+
+
+def _detect_deferred_close(text: str) -> bool:
+    """Клиент вежливо закрыл разговор: «я подтвержу позже», «напишу, если
+    понадобится», «спокойной ночи». Это НЕ отказ и НЕ молчание — это ясно
+    выраженное «не сейчас», и дожимать после него нельзя."""
+    return bool(_DEFERRED_CLOSE_RE.search(text or ""))
+
+
+def _enforce_polite_close(response_text: str, context, who: str = "") -> str:
+    """После «я напишу позже» воронка останавливается.
+
+    Живой диалог N zehra 2026-09-01 (владелец: «диалог как бы был закончен
+    по смыслу… повторяет и вообще надоел»): клиентка написала «ok i will
+    confirm to you my dear Thnks», агент ответил «Good night» — и следом
+    дожал слотами «Tomorrow we still have…», двумя напоминаниями, а после
+    отказа в нуру-массаже спросил «Which day suits you? 😊». Три дожима по
+    закрытому разговору.
+
+    Пока флаг стоит, из ответов вырезаются все воронко-вопросы (какой день,
+    какое время, номер, «забронировать?») и списки времён; содержательная
+    часть ответа (например, «только женщины-мастера») остаётся. Флаг
+    снимается сам, когда клиент возвращается с делом — называет услугу,
+    время или день.
+    """
+    if not response_text:
+        return response_text
+    if not (context.booking_data or {}).get("closed_politely"):
+        return response_text
+    kept = [ln for ln in response_text.split("\n")
+            if not _FUNNEL_PUSH_RE.search(ln) and not _AMPM_TIMES_RE.search(ln)]
+    out = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    if out != response_text.strip():
+        logger.info(f"polite-close gate: дожим вырезан ({who})")
+    return out or POLITE_CLOSE_LINE
+
+
+async def _ig_nudge_already_sent(subscriber_id: str) -> bool:
+    """Напоминание уже уходило этому человеку — по БАЗЕ, не по памяти.
+
+    Кап «одно напоминание» жил в RAM и обнулялся каждым деплоем: 2026-09-01
+    N zehra получила напоминание ТРИЖДЫ за вечер (в день было ~5 деплоев).
+    NightEvent переживает рестарты — по нему и судим. Сбой базы открывает
+    (не шлём ЛИШНЕЕ — при сомнении лучше промолчать? нет: при сбое
+    возвращаем True, т.е. НЕ шлём — назойливость дороже пропущенного
+    напоминания, урок этого вечера)."""
+    try:
+        from sqlalchemy import select as _select
+        from database import NightEvent, get_db
+
+        async with get_db().session() as db:
+            rows = (await db.execute(
+                _select(NightEvent.id)
+                .where(NightEvent.who.in_(
+                    [str(subscriber_id), f"{IG_KEY_PREFIX}{subscriber_id}"]))
+                .where(NightEvent.kind == "sent")
+                .where(NightEvent.text.like("Dear, are you still interested%"))
+                .limit(1)
+            )).first()
+        return rows is not None
+    except Exception as e:
+        logger.warning(f"nudge dedup check failed: {e} — напоминание НЕ шлём")
+        return True
+
+
 _LOOKASIDE_URL_RE = re.compile(r"^https://lookaside\.fbsbx\.com/\S+$", re.I)
 
 
@@ -2646,7 +2725,12 @@ async def lifespan(application: FastAPI):
             # доходили вовсе. Окно тишины соблюдается: _send_to_client
             # откажет днём сам.
             if str(user_id).startswith("ig_"):
-                await _send_to_client(f"{IG_KEY_PREFIX}{str(user_id)[len('ig_'):]}", text)
+                _sub = str(user_id)[len("ig_"):]
+                from services.lost_client_messages import IG_NUDGE
+                if text == IG_NUDGE and await _ig_nudge_already_sent(_sub):
+                    logger.info(f"nudge dedup: {_sub} уже получал напоминание — пропуск")
+                    return
+                await _send_to_client(f"{IG_KEY_PREFIX}{_sub}", text)
                 return
             if str(user_id).startswith("wappi_"):
                 phone = str(user_id)[len("wappi_"):]
@@ -4238,6 +4322,17 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _said_time and _said_time != context.booking_data.get("time"):
             dialog_manager.update_booking_data(user_id, "time", _said_time)
             logger.info(f"клиент назвал время → {_said_time}")
+        # Вежливое закрытие: «я подтвержу позже» останавливает воронку;
+        # возврат с делом (услуга/время/день/«book») снимает флаг.
+        if _detect_deferred_close(text):
+            dialog_manager.update_booking_data(user_id, "closed_politely", True)
+            logger.info(f"клиент вежливо закрыл разговор ({user_id})")
+        elif (context.booking_data or {}).get("closed_politely") and (
+                _said_date or _detect_requested_time(text)
+                or _service_named(text) or "book" in text.lower()):
+            dialog_manager.update_booking_data(user_id, "closed_politely", None)
+            logger.info(f"клиент вернулся с делом — воронка снова открыта ({user_id})")
+
         # Половина дня, которую попросил клиент (правило Татьяны 2026-08-25:
         # «уточнить утром/вечер, затем окошки»). Липкая — спрашивать дважды
         # значит вести диалог по второму кругу.
@@ -5014,6 +5109,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _pay_now and _pay_now != _pay_known:
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
+
+        # После «я напишу позже» дожим вырезается из любого ответа.
+        response_text = _enforce_polite_close(response_text, context, who=phone)
 
         # Дословный повтор предыдущего ответа = глухота (M.a 2026-08-30:
         # на поправку даты агент повторил тот же текст слово в слово).

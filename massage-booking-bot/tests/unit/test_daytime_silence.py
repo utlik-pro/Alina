@@ -622,3 +622,83 @@ def test_22_reset_bypasses_the_buffer(monkeypatch):
         assert "ig:770099099" not in webhook_app._wappi_buffer
 
     asyncio.run(run())
+
+
+# 23 — «я подтвержу позже» останавливает воронку и напоминания
+def test_23_polite_close_stops_the_funnel_and_the_nudge(nighttime):
+    """N zehra 2026-09-01 (владелец: «диалог как бы был закончен по смыслу…
+    повторяет и вообще надоел»): после «ok i will confirm to you my dear»
+    агент дожал слотами, двумя напоминаниями и «Which day suits you?» после
+    отказа в нуру. Вежливое закрытие — не молчание: дожим вырезается,
+    напоминание не уходит.
+    """
+    import types
+
+    from webhook_app import (POLITE_CLOSE_LINE, _detect_deferred_close,
+                             _enforce_polite_close)
+
+    # Живые формулировки из диалога.
+    for said in ("ok i will confirm to you my dear Thnks",
+                 "Thank you so much my dear actually i was looking something "
+                 "else if i need i will update you my friend",
+                 "ok dear sure when i requir like nuru i text u",
+                 "good night", "я напишу позже"):
+        assert _detect_deferred_close(said), said
+    # НЕ закрытие: обычные реплики воронки.
+    for other in ("yes", "cash", "6 pm", "body massage", "how much"):
+        assert not _detect_deferred_close(other), other
+
+    closed = types.SimpleNamespace(booking_data={"closed_politely": True},
+                                   client_data={})
+    push = ("No worries dear 🌹\n"
+            "We have only female therapists, not male and not that kind of service 🙏\n"
+            "Which day suits you dear — today or tomorrow? 😊")
+    out = _enforce_polite_close(push, closed)
+    assert "Which day" not in out
+    assert "only female therapists" in out       # содержание остаётся
+    # Ответ из одного дожима → тёплое короткое прощание.
+    assert _enforce_polite_close(
+        "Tomorrow we still have 10:00 AM or 4:00 PM\nWhich one shall I keep?",
+        closed) == POLITE_CLOSE_LINE
+    # Без флага не трогаем.
+    open_ctx = types.SimpleNamespace(booking_data={}, client_data={})
+    assert _enforce_polite_close(push, open_ctx) == push
+
+
+# 24 — напоминание не повторяется после деплоя: кап живёт в базе
+def test_24_nudge_dedup_survives_redeploys():
+    """N zehra получила напоминание ТРИЖДЫ за вечер: кап «одно напоминание»
+    жил в RAM и обнулялся каждым деплоем (в тот день их было пять). Теперь
+    перед отправкой проверяется NightEvent в Postgres; сбой базы = НЕ шлём
+    (назойливость дороже пропущенного напоминания).
+    """
+    import types as _t
+
+    from webhook_app import _ig_nudge_already_sent
+
+    class _Row:
+        pass
+
+    def _db(found):
+        class _Res:
+            def first(self):
+                return _Row() if found else None
+        class _DB:
+            async def execute(self, *a, **kw):
+                return _Res()
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *a):
+                return False
+        return _t.SimpleNamespace(session=lambda: _DB())
+
+    import database
+    with patch.object(database, "get_db", lambda: _db(True)):
+        assert asyncio.run(_ig_nudge_already_sent("599715295")) is True
+    with patch.object(database, "get_db", lambda: _db(False)):
+        assert asyncio.run(_ig_nudge_already_sent("599715295")) is False
+    # Сбой базы → True (не шлём).
+    def _boom():
+        raise RuntimeError("db down")
+    with patch.object(database, "get_db", _boom):
+        assert asyncio.run(_ig_nudge_already_sent("599715295")) is True

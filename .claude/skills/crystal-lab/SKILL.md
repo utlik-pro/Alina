@@ -328,6 +328,21 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      techniques, three emirates). Once per dialogue; package-ad and combo
      (275) paths untouched; runs BEFORE phone-first so the number ask
      appends after the card.
+  3t. 🤝 **«Я ПОДТВЕРЖУ ПОЗЖЕ» ОСТАНАВЛИВАЕТ ВОРОНКУ И НАПОМИНАНИЯ
+     (N zehra 2026-09-01; владелец: «диалог как бы был закончен по смыслу…
+     повторяет и вообще надоел»).** She wrote «ok i will confirm to you my
+     dear Thnks» — and the agent pushed slots, TWO nudges and «Which day
+     suits you?» right after the nuru refusal. Now: `_detect_deferred_close`
+     (i'll confirm / let you know / if i need / good night / bye / я напишу
+     позже) sets a sticky `closed_politely`; `_enforce_polite_close` strips
+     every funnel push (day/time/number questions, slot lists) from later
+     replies, keeping the substance; the follow-up loop skips such contexts.
+     The flag lifts itself when the client returns WITH intent (service /
+     time / date / «book»).
+     PLUS deploy-proof nudge cap: the RAM counter reset on every deploy (5
+     deploys that day → she was nudged 3×). `_ig_nudge_already_sent` checks
+     NightEvent in Postgres before sending; a DB failure means DO NOT send —
+     назойливость дороже пропущенного напоминания.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
