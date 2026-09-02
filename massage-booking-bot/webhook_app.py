@@ -1622,6 +1622,13 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
         # доступность в этом случае добавляет momentum, дублировать нечего.
         return response_text
     when = now + _tdm(days=offset)
+    # Предложенный день становится ДНЁМ ДИАЛОГА: Amoon (02.09 22:21) выбрала
+    # «5:30» из пятничного списка, а без сохранённой даты модель пересказала
+    # это как «tomorrow at 5:30 PM» — четверг, выходной Элизы.
+    try:
+        context.booking_data["date"] = when.strftime("%Y-%m-%d")
+    except Exception:
+        pass
     times = _display_times_from_summary(summary)
     if not times:
         return response_text

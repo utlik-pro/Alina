@@ -911,3 +911,36 @@ def test_first_mentioned_massage_kind_wins_and_card_keeps_the_funnel():
     first = types.SimpleNamespace(booking_data={}, client_data={"area": "dubai"},
                                   recent_messages=[])
     assert g("Facial 370 AED", first, "face").lstrip().startswith("Hello")
+
+
+def test_nearest_day_offer_pins_the_dialogue_date():
+    """Amoon 2026-09-02 22:21 (Аль-Айн): агент предложил пятницу («The
+    nearest we have is Friday 4 Sep: 10:00 AM, 5:30 PM or 9:00 PM»), она
+    выбрала «5:30» — а рекап сказал «tomorrow at 5:30 PM»: четверг, выходной
+    Элизы. Предложенный день обязан лечь в booking_data.date.
+    """
+    import asyncio
+    import types
+
+    import bot as bot_module
+    import webhook_app as wh
+
+    class _YC:
+        async def get_available_slots_summary(self, date=None, **kw):
+            if date.endswith("-04"):
+                return "Eliza (Al Ain): 10:00 AM, 5:30 PM, 9:00 PM"
+            return "No slots available for this date from the schedule."
+
+    saved = getattr(bot_module, "yclients_service", None)
+    bot_module.yclients_service = _YC()
+    try:
+        ctx = types.SimpleNamespace(booking_data={"service_type": "face_massage"},
+                                    client_data={"area": "al_ain"})
+        out = asyncio.run(wh._offer_nearest_day_when_empty(
+            "Today and tomorrow are fully booked 🙏\nWhich day would suit you?",
+            ctx, "al_ain"))
+    finally:
+        bot_module.yclients_service = saved
+    assert "5:30 PM" in out
+    assert ctx.booking_data.get("date", "").endswith("-04"), \
+        "день из предложения обязан стать датой диалога"
