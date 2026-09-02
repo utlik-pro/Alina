@@ -128,6 +128,10 @@ class Config:
     # Пока сюда не вписан проверенный ник, агент не называет никаких ссылок
     # и аккаунтов вообще — см. _enforce_no_invented_links.
     IG_PUBLIC_HANDLE: str = os.getenv("IG_PUBLIC_HANDLE", "")
+    # Эмират дня мастера — ещё и по пометкам в ИМЕНАХ клиентов («Azza Al
+    # Ain»). Выключено до подтверждения Татьяной, что это их правило
+    # (2026-09-02: Махабат в Аль-Айне без маркер-записи, лид ушёл на пятницу).
+    EMIRATE_FROM_CLIENT_TAGS: bool = os.getenv("EMIRATE_FROM_CLIENT_TAGS", "false").lower() == "true"
 
     # Driver / logistics notifications (Telegram chat id of the driver group)
     DRIVER_TELEGRAM_CHAT_ID: Optional[str] = os.getenv("DRIVER_TELEGRAM_CHAT_ID")

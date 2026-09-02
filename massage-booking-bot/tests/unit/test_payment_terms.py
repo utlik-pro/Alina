@@ -944,3 +944,43 @@ def test_nearest_day_offer_pins_the_dialogue_date():
     assert "5:30 PM" in out
     assert ctx.booking_data.get("date", "").endswith("-04"), \
         "день из предложения обязан стать датой диалога"
+
+
+def test_callback_note_is_captured_and_reaches_the_admin():
+    """Amoon 2026-09-02 22:30: «I prefers calls after 12 pm» — агент
+    проигнорировал и дважды спросил «60 or 90?». Пожелание по звонку —
+    информация для админа, а не для агента: сохраняется и уходит в алерт
+    и в комментарий записи.
+    """
+    from webhook_app import _detect_callback_note as d
+
+    assert d("I prefers calls after 12 pm") == "prefers calls after 12 pm"
+    assert d("please call me before 10am") is not None
+    assert d("звоните после 14:00") is not None
+    for other in ("60 min", "cash", "Body massage", "5:30"):
+        assert d(other) is None, other
+
+
+def test_emirate_of_the_day_from_client_name_tags(monkeypatch):
+    """2026-09-03: Махабат едет в Аль-Айн — «Salama … Al Ain» 10:00 и «Azza
+    Al Ain» 15:00, маркер-записи нет. Код видел только маркер и считал, что
+    в Аль-Айне никого; лид ушёл на пятницу. За флагом до подтверждения
+    Татьяной.
+    """
+    from config import config
+    from services.yclients_service import _marker_area_from_records
+
+    recs = [
+        {"datetime": "2026-09-03T10:00:00+03:00", "comment": "4+",
+         "client": {"name": "Salama (Kholoud) Al Ain"}},
+        {"datetime": "2026-09-03T12:30:00+03:00", "comment": "",
+         "client": {"name": "Alyazia Abdulla"}},
+        {"datetime": "2026-09-03T15:00:00+03:00", "comment": "",
+         "client": {"name": "Azza Al Ain"}},
+    ]
+    monkeypatch.setattr(config, "EMIRATE_FROM_CLIENT_TAGS", False)
+    assert _marker_area_from_records(recs) is None          # выключено
+    monkeypatch.setattr(config, "EMIRATE_FROM_CLIENT_TAGS", True)
+    assert _marker_area_from_records(recs) == "al_ain"      # две пометки
+    one = [recs[2]]
+    assert _marker_area_from_records(one) is None            # одной мало

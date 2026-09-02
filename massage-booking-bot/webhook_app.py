@@ -1519,7 +1519,7 @@ _OFFERS_AVAILABILITY_RE = re.compile(
     r"|we\s+have\s+availability"
     r"|свободн\w*\s+(?:мест|окн|врем)", re.I)
 _ASKS_ABOUT_DAY_RE = re.compile(
-    r"which day|what day|when would|when do you|which date|what time|"
+    r"which day|what day|when would|when do you|which date|what time|which time|"
     r"today or tomorrow|какой день|когда", re.I)
 _BOOKING_INTENT_RE = re.compile(
     r"\bbook\b|booking|appointment|reserve|записа|хочу", re.I)
@@ -2190,6 +2190,62 @@ def _enforce_time_ask_answered(response_text: str, inbound_text: str,
     return fix
 
 
+_CALLBACK_NOTE_RE = re.compile(
+    r"(?:prefer|call|text|contact|message)[^.\n]{0,40}?\b(?:after|before|from|between)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?"
+    r"|(?:звон|напи[сш]|набер|свяж)[^.\n]{0,30}?(?:после|до|с)\s*\d{1,2}(?::\d{2})?"
+    r"|(?:после|до|с)\s*\d{1,2}(?::\d{2})?[^.\n]{0,20}?(?:звон|напи[сш])", re.I)
+
+
+def _detect_callback_note(text: str) -> Optional[str]:
+    """«I prefers calls after 12 pm» — просьба, которую утром должен видеть
+    админ, а не агент. Amoon 2026-09-02 22:30: агент проигнорировал и дважды
+    спросил «60 or 90?». Сохраняем как есть — фраза уходит в алерт и в
+    комментарий записи."""
+    m = _CALLBACK_NOTE_RE.search(text or "")
+    return m.group(0).strip() if m else None
+
+
+async def _alert_admins_about_lead(user_id: str, context, reason: str) -> None:
+    """Лид с телефоном, но без записи — админам, один раз за диалог.
+
+    Татьяна 2026-08-25: «берём номер, чтобы если не ответят — потом писали и
+    писали им». Номер мы берём и храним, но админы узнавали о таких лидах
+    только из инбокса Instagram. NotificationService.send_lead существовал с
+    ТЗ, но не вызывался ниоткуда. Теперь: замолчал после номера / вежливо
+    закрыл разговор → карточка лида в группу: имя, телефон, эмират, услуга,
+    день/время, пожелание по звонку.
+    """
+    import bot as bot_module
+
+    bd = context.booking_data or {}
+    cd = context.client_data or {}
+    if bd.get("lead_alert_sent") or not cd.get("phone"):
+        return
+    ns = getattr(bot_module, "notification_service", None)
+    if not ns:
+        return
+    svc = bd.get("service_type") or "—"
+    dur = f" {bd['service_duration']} мин" if bd.get("service_duration") else ""
+    when = " ".join(str(x) for x in (bd.get("date"), bd.get("time")) if x) or "—"
+    note = bd.get("callback_note") or ""
+    text = (
+        "🔥 <b>Лид без записи (📸 Instagram, ночь)</b>\n\n"
+        f"👤 Имя: {cd.get('name') or '—'}\n"
+        f"📞 Телефон: {cd.get('phone')}\n"
+        f"📍 Эмират: {cd.get('area') or '—'}\n"
+        f"💆 Услуга: {svc}{dur}\n"
+        f"🕐 Хотел(а): {when}\n"
+        + (f"☎️ Пожелание: {note}\n" if note else "")
+        + f"\nПричина: {reason}. Запись НЕ создана — нужен звонок утром."
+    )
+    try:
+        await ns._send_with_fallback(text=text, parse_mode="HTML")
+        context.booking_data["lead_alert_sent"] = True
+        _night_event("lead_alert", who=user_id, text=f"{reason}: {cd.get('phone')}")
+    except Exception as e:
+        logger.warning(f"lead alert failed for {user_id}: {e}")
+
+
 _DEFERRED_CLOSE_RE = re.compile(
     r"i(?:'| wi)?ll confirm|will confirm to you|let (?:you|u) know"
     r"|(?:will )?update (?:you|u)\b|i text (?:you|u)|text (?:you|u) later"
@@ -2780,6 +2836,10 @@ async def lifespan(application: FastAPI):
                     logger.info(f"nudge dedup: {_sub} уже получал напоминание — пропуск")
                     return
                 await _send_to_client(f"{IG_KEY_PREFIX}{_sub}", text)
+                if text == IG_NUDGE:
+                    _ctx = dialog_manager.get_context(user_id)
+                    if _ctx:
+                        await _alert_admins_about_lead(user_id, _ctx, "замолчал(а) после номера")
                 return
             if str(user_id).startswith("wappi_"):
                 phone = str(user_id)[len("wappi_"):]
@@ -3587,6 +3647,8 @@ async def _maybe_create_booking(
                             else ""
                         )
                         + (f"Notes: {booking_call.notes}. " if booking_call.notes else "")
+                        + (f"Call: {context.booking_data.get('callback_note')}. "
+                           if (context.booking_data or {}).get("callback_note") else "")
                         + (f"Address: {booking_call.address}." if booking_call.address else "")
                     ),
                     is_test=_is_test,
@@ -4376,6 +4438,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _detect_deferred_close(text):
             dialog_manager.update_booking_data(user_id, "closed_politely", True)
             logger.info(f"клиент вежливо закрыл разговор ({user_id})")
+            if _is_ig_key(phone):
+                await _alert_admins_about_lead(user_id, context, "клиент закрыл разговор")
         elif (context.booking_data or {}).get("closed_politely") and (
                 _said_date or _detect_requested_time(text)
                 or _service_named(text) or "book" in text.lower()):
@@ -4389,6 +4453,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _pref and _pref != context.booking_data.get("time_preference"):
             dialog_manager.update_booking_data(user_id, "time_preference", _pref)
             logger.info(f"клиент предпочитает {_pref}")
+
+        _cb = _detect_callback_note(text)
+        if _cb and _cb != context.booking_data.get("callback_note"):
+            dialog_manager.update_booking_data(user_id, "callback_note", _cb)
+            logger.info(f"пожелание по звонку сохранено: {_cb!r}")
 
         _phone_in_msg = _detect_phone_in_text(text)
         if _phone_in_msg and _phone_in_msg != (context.client_data or {}).get("phone"):
@@ -5161,6 +5230,21 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # После «я напишу позже» дожим вырезается из любого ответа.
         response_text = _enforce_polite_close(response_text, context, who=phone)
+
+        # Один и тот же воронко-вопрос дважды подряд — тоже глухота, даже если
+        # обёртка другая («60 or 90 min dear?» → «Ok dear 🌹 60 or 90 min?»,
+        # Amoon 02.09 22:30 — между ними она просила звонить после 12).
+        _prev_q = next(
+            (m.get("content") for m in
+             reversed(getattr(context, "recent_messages", []) or [])
+             if m.get("role") == "assistant"), "") or ""
+        _dur_q = re.compile(r"60 or 90", re.I)
+        if (_dur_q.search(response_text) and _dur_q.search(_prev_q)
+                and not (context.booking_data or {}).get("dur_repeat_acked")):
+            dialog_manager.update_booking_data(user_id, "dur_repeat_acked", True)
+            response_text = _dur_q.sub(
+                "60 min (350 AED) or 90 min (460 AED)", response_text, count=1)
+            response_text += "\n\nOr tell me anything else you need first dear 🙏"
 
         # Дословный повтор предыдущего ответа = глухота (M.a 2026-08-30:
         # на поправку даты агент повторил тот же текст слово в слово).

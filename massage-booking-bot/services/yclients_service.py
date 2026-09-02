@@ -135,10 +135,36 @@ def _is_emirate_marker(rec: dict) -> bool:
 
 def _marker_area_from_records(records) -> Optional[str]:
     """A floating master's emirate for the day, read from the 09:00 pin record.
-    None when there's no marker (→ caller falls back to the name-tag area)."""
+    None when there's no marker (→ caller falls back to the name-tag area).
+
+    Second source (behind config.EMIRATE_FROM_CLIENT_TAGS, off until Tatyana
+    confirms the convention): admins also write the city INTO THE CLIENT
+    NAME — 2026-09-03 Makhabat had «Salama … Al Ain» 10:00 and «Azza Al Ain»
+    15:00 and no pin record at all, so the agent thought Al Ain was empty
+    and sent a lead to Friday. Two or more same-emirate tags on one day =
+    the master works there that day.
+    """
     for rec in (records or []):
         if _is_emirate_marker(rec):
             return _staff_area(rec.get("comment") or "")
+    try:
+        from config import config as _cfg
+        if not getattr(_cfg, "EMIRATE_FROM_CLIENT_TAGS", False):
+            return None
+    except Exception:
+        return None
+    tags: Dict[str, int] = {}
+    for rec in (records or []):
+        name = str((rec.get("client") or {}).get("name") or "")
+        area = _staff_area(name) if any(k in name.lower() for k in
+                                         ("al ain", "alain", "аль-айн", "аль айн",
+                                          "dubai", "дубай", "abu dhabi", "абу-даби")) else None
+        if area:
+            tags[area] = tags.get(area, 0) + 1
+    if tags:
+        best, n = max(tags.items(), key=lambda kv: kv[1])
+        if n >= 2:
+            return best
     return None
 
 

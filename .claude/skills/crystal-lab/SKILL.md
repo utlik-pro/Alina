@@ -358,6 +358,32 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
      the old gate replaced such a comparison with the face card and lost the
      body. Phone-first no longer asks morning/evening while the emirate is
      unknown (no times possible yet; max two questions per message).
+  3v. 🏙️ **EMIRATE-OF-THE-DAY ALSO LIVES IN CLIENT NAMES (found 2026-09-02,
+     PENDING Tatyana's confirmation — flag EMIRATE_FROM_CLIENT_TAGS, off).**
+     Tatyana: «Завтра окошки вообще-то есть» about an Al Ain lead sent to
+     Friday. Facts: Eliza (the only Al Ain-tagged master) was OFF on 03.09;
+     Makhabat (Abu Dhabi) had «Salama … Al Ain» 10:00 and «Azza Al Ain»
+     15:00 — the city written INTO THE CLIENT NAME, no ~09:00 pin record. The
+     code only knew the pin convention. `_marker_area_from_records` now also
+     counts same-emirate tags in client names (≥2 on a day = the master works
+     there that day) — behind the flag until she confirms the convention and
+     says which windows on such a day are offerable (the last untagged
+     record may already be back in Abu Dhabi; travel is ~1.5h).
+  3w. 🔥 **LEAD ALERT TO THE ADMIN GROUP — phone captured, no booking
+     (2026-09-02).** `send_lead` existed since the PRD but was never called.
+     Now `_alert_admins_about_lead` fires once per dialogue when a client who
+     left a phone goes silent (nudge time) or closes politely: name, phone,
+     emirate, service, day/time, callback note («I prefers calls after 12
+     pm» — Amoon; `_detect_callback_note`, also written into the YClients
+     record comment as «Call: …»). Amoon's own lead (02.09 22:19–22:32) had
+     to be relayed by hand — see the morning digest.
+  3x. 🧭 **CARD GATE LESSONS (Amoon 02.09):** first-mentioned massage kind
+     wins («body… facial too» = body; the old face-always rule sent the face
+     card and STEERED her into facial); a mid-dialogue card drops its «Hello
+     👋»; the model's next question survives under the card; the nearest-day
+     offer pins booking_data.date (else the recap said «tomorrow» for a
+     Friday slot — Eliza's day off). Also: «which time» now counts as a day
+     question; the duration question is never repeated verbatim twice.
   3c. **NIGHT LOG — how to review a shift (67f4d2b, 3c3b5b8).** Render's
      log stream needs a CLI token that died 2026-06-16, and
      `logs/ig_turns.jsonl` is inside an ephemeral container, so the ONLY
