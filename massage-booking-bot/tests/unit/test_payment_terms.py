@@ -879,3 +879,35 @@ def test_cleansing_description_is_the_admins_eight_steps():
     assert "Deep manual cleansing" in ADMIN_CARD_CLEANSING
     assert "770" in ADMIN_CARD_CLEANSING and "420" in ADMIN_CARD_CLEANSING
     assert "free facial massage" not in ADMIN_CARD_CLEANSING.lower()
+
+
+def test_first_mentioned_massage_kind_wins_and_card_keeps_the_funnel():
+    """Ajmsrrk 2026-09-02 22:20 (владелец: «номер она дала уже, а мы "hello"
+    опять»): на «Body massage, if I like it I will do facial too» ушла
+    карточка ЛИЦА с приветствием «Hello 👋» посреди диалога — старое правило
+    «лицо всегда побеждает» + карточка, стирающая следующий шаг воронки.
+    """
+    import types
+
+    from webhook_app import _enforce_admin_service_card as g
+    from webhook_app import _massage_kind_from_text as kind
+
+    assert kind("Body massage if I like it I will do facial too") == "body"
+    assert kind("facial with body oils") == "face"
+    assert kind("facial please") == "face"
+    assert kind("body") == "body"
+
+    mid = types.SimpleNamespace(
+        booking_data={}, client_data={"area": "abu_dhabi"},
+        recent_messages=[{"role": "assistant", "content": "Got it dear 🌹"}])
+    out = g("Body massage 60 min — 350 AED\nMay I have your address dear?",
+            mid, "Body massage if I like it I will do facial too")
+    assert "1550" in out and "1650" not in out          # карточка ТЕЛА
+    assert not out.lstrip().startswith("Hello")         # без повторного привета
+    assert "address" in out.lower()                     # шаг воронки сохранён
+
+    # Первый ход — приветствие в карточке остаётся (оно есть только у
+    # карточки лица: у Алины так написано).
+    first = types.SimpleNamespace(booking_data={}, client_data={"area": "dubai"},
+                                  recent_messages=[])
+    assert g("Facial 370 AED", first, "face").lstrip().startswith("Hello")

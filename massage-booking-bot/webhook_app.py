@@ -814,6 +814,13 @@ def _massage_kind_from_text(text: str) -> Optional[str]:
             if difflib.SequenceMatcher(None, w, "body").ratio() >= 0.74:
                 has_body = True
                 break
+    if has_face and has_body:
+        # Оба названы → главное то, что названо ПЕРВЫМ. «Body massage, if I
+        # like it I will do facial too» (Ajmsrrk, 02.09 22:20) — это тело;
+        # старое «лицо всегда побеждает» отправило ей карточку лица.
+        _fi = min((t.find(k) for k in ("face", "facial", "лиц", "фейш", "фэйш") if k in t), default=10**9)
+        _bi = min((t.find(k) for k in ("body", "тел", "спин", "back") if k in t), default=10**9)
+        return "body" if _bi < _fi else "face"
     if has_face:
         return "face"
     if has_body:
@@ -2101,8 +2108,22 @@ def _enforce_admin_service_card(response_text: str, context,
         return response_text
     context.booking_data[flag] = True
     logger.info(f"card gate: {flag} ({who})")
+    # Посреди разговора карточка не здоровается заново: «Hello 👋» после того,
+    # как клиентка уже дала время и номер, читается как амнезия (Ajmsrrk
+    # 02.09 22:20, владелец: «номер она дала уже, а мы "hello" опять»).
+    _had_turns = any(m.get("role") == "assistant"
+                     for m in (getattr(context, "recent_messages", None) or []))
+    if _had_turns:
+        card = re.sub(r"^\s*Hello\s*👋\s*\n+", "", card)
+    # Шаг воронки из ответа модели не теряем: её вопросы (кроме уже
+    # отвеченного «тело или лицо?») переезжают под карточку.
+    keep_q = [ln for ln in response_text.split("\n")
+              if "?" in ln and not _PKG_CHOICE_LINE_RE.search(ln)
+              and not _WELCOME_MENU_RE.search(ln)]
     if not (context.client_data or {}).get("area"):
         card += "\n\nWhich emirate are you in dear — Abu Dhabi, Al Ain or Dubai? 🌹"
+    elif keep_q:
+        card += "\n\n" + "\n".join(keep_q[-2:])
     return card
 
 
