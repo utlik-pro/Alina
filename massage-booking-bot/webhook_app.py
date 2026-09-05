@@ -2251,6 +2251,8 @@ _DEFERRED_CLOSE_RE = re.compile(
     r"|(?:will )?update (?:you|u)\b|i text (?:you|u)|text (?:you|u) later"
     r"|i will text|if i need|when i need|when i requir|maybe later"
     r"|\bnot now\b|good ?night|\bbye\b|another time"
+    r"|\bno[, ]+thank(?:s| you)\b|\b(?:do not|don't) book\b|\bnot book(?:ing)? now\b"
+    r"|нет[, ]+спасибо|не (?:надо|нужно) записывать"
     r"|я напишу|позже напишу|если понадоб|спокойной ночи", re.IGNORECASE)
 
 POLITE_CLOSE_LINE = ("Of course dear 🌹 Anytime — just write me here when "
@@ -4397,7 +4399,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         _kind_now = _massage_kind_from_text(text)
         _svc_after = context.booking_data.get("service_type") or ""
         if (_kind_now and _is_massage_service(_svc_after)
-                and not _massage_kind_known(_svc_after)):
+                and _svc_after != f"{_kind_now}_massage"):
+            if _massage_kind_known(_svc_after):
+                dialog_manager.update_booking_data(user_id, "service_duration", None)
             dialog_manager.update_booking_data(
                 user_id, "service_type", f"{_kind_now}_massage")
             logger.info(f"massage kind upgraded from text → {_kind_now}_massage")
@@ -4416,6 +4420,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 and context.booking_data.get("service_type") == _COMBO_KEY):
             dialog_manager.update_booking_data(user_id, "service_type", "face_massage")
             dialog_manager.update_booking_data(user_id, "service_duration", None)
+            context.booking_data["ad_prefill"] = None
+            context.booking_data["offer_275_shown"] = False
             logger.info("клиент выбрал лицо — комбо с банками снято")
 
         # A phone number typed at ANY point is kept: saved to the client
@@ -4504,6 +4510,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(
                 user_id, "service_duration", int(_SO[_COMBO_KEY]["duration"]))
             logger.info("combo choice detected → lymphatic_cupping_combo, 45 min fixed")
+
+        # Explicit refusal/defer ends this turn before the model or booking tools.
+        # Retain collected contact/service data for a later voluntary return.
+        if _detect_deferred_close(text):
+            await bot_module.message_service.save_message(
+                telegram_id, "assistant", POLITE_CLOSE_LINE)
+            dialog_manager.add_bot_response(user_id, POLITE_CLOSE_LINE)
+            await _send_to_client(phone, POLITE_CLOSE_LINE)
+            return
 
         # Reset the injected-slots block EVERY turn before rebuilding it. It is
         # per-turn ground truth (dated "TODAY — <date>"); if this turn's fetch is
@@ -5297,7 +5312,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
 
-        if wappi_client:
+        if _is_ig_key(phone) or wappi_client:
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
             # Guard against a reply that is only the separator/whitespace —
             # response_text.strip() is non-empty (so the earlier empty-fallback
@@ -5374,7 +5389,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             log_turn(phone, text, error=str(e)[:300])
         except Exception:
             pass
-        if wappi_client:
+        if _is_ig_key(phone) or wappi_client:
             try:
                 await _send_to_client(
                     phone,
