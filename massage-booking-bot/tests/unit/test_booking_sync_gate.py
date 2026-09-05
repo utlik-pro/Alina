@@ -10,8 +10,8 @@ from agents.tools import BookingCall
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("outcome", ["rejected", "exception", "missing", "accepted"])
-async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, outcome):
+@pytest.mark.parametrize("outcome", ["rejected", "exception", "missing", "accepted", "missing_id"])
+async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, outcome, tmp_path):
     day = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime("%Y-%m-%d")
     call = BookingCall("Body massage", 60, day, "14:00", "abu_dhabi", "cash",
                        "Test Client", 300, master_id=7, address="Test villa 5")
@@ -19,7 +19,9 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
                           recent_messages=[{"role": "user", "content": "yes"}])
     client = SimpleNamespace(phone="971500000000", name="Test Client", location_details="Test villa 5")
     booking = SimpleNamespace(id=123, status="draft")
-    bs = SimpleNamespace(create_booking=AsyncMock(return_value=booking),
+    bs = SimpleNamespace(claim_calendar_attempt=AsyncMock(return_value=True),
+                         link_calendar_attempt=AsyncMock(), complete_calendar_attempt=AsyncMock(),
+                         create_booking=AsyncMock(return_value=booking),
                          update_booking_status=AsyncMock(return_value=booking),
                          set_yclients_id=AsyncMock())
     cs = SimpleNamespace(get_or_create_client=AsyncMock(return_value=client), update_client=AsyncMock())
@@ -28,9 +30,16 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
                          find_service_id=AsyncMock(return_value=9),
                          staff_area_of=AsyncMock(return_value="abu_dhabi"),
                          get_staff=AsyncMock(return_value=[]),
-                         create_booking=AsyncMock(return_value={"id": 456} if outcome == "accepted" else None))
+                         create_booking=AsyncMock(return_value={"id": 456} if outcome == "accepted" else {"success": True} if outcome == "missing_id" else None))
     if outcome == "exception":
         yc.create_booking.side_effect = TimeoutError("calendar timeout")
+    from database.db import Database
+    from database.models import Base
+    from database.services import BookingService
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'attempts.db'}")
+    async with db.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    bs.claim_calendar_attempt = BookingService(db).claim_calendar_attempt
     monkeypatch.setattr(bot, "booking_service", bs)
     monkeypatch.setattr(bot, "client_service", cs)
     monkeypatch.setattr(bot, "notification_service", ns)
@@ -55,3 +64,16 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
         ns.send_booking_failed.assert_awaited()
         assert not hasattr(ctx, "last_booking_sig")
         assert ctx.booking_data["yc_sync_ok"] is False
+
+    # Simulate a restart: discard the in-memory fingerprint and re-open DB.
+    await db.engine.dispose()
+    db2 = Database(db.database_url)
+    bs.claim_calendar_attempt = BookingService(db2).claim_calendar_attempt
+    ctx2 = SimpleNamespace(booking_data={}, client_data={},
+                           recent_messages=[{"role": "user", "content": "yes"}])
+    await wh._maybe_create_booking("test", "test", client.phone, client.name, ctx2,
+                                   "Your booking is confirmed ✅", call)
+    bs.create_booking.assert_awaited_once()
+    assert yc.create_booking.await_count == (0 if outcome == "missing" else 1)
+    assert ctx2.booking_data["yc_sync_ok"] is False
+    await db2.engine.dispose()

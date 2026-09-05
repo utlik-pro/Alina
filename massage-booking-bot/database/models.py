@@ -261,3 +261,14 @@ class NightEvent(Base):
 
     def __repr__(self):
         return f"<NightEvent(id={self.id}, kind={self.kind}, who={self.who})>"
+
+
+class BookingAttempt(Base):
+    """Durable claim before a calendar write; uncertainty never expires silently."""
+    __tablename__ = "booking_attempts"
+
+    operation_key = Column(String(64), primary_key=True)
+    status = Column(String(20), nullable=False, default="pending")
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
+    yclients_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

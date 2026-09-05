@@ -3470,6 +3470,25 @@ async def _maybe_create_booking(
                     pass
             return
 
+    # Commit a durable claim BEFORE any local/calendar creation. A timeout
+    # may mean YClients accepted the request: never retry that write blindly.
+    import hashlib
+    import json
+    operation_key = hashlib.sha256(json.dumps([
+        str(telegram_id), " ".join(booking_call.service.lower().split()),
+        booking_date.isoformat(),
+    ], ensure_ascii=False).encode()).hexdigest()
+    context.booking_data["yc_sync_ok"] = False
+    try:
+        claimed = await bot_module.booking_service.claim_calendar_attempt(operation_key)
+    except Exception as e:
+        logger.error(f"Calendar attempt claim failed; no booking created: {e}")
+        return
+    if not claimed:
+        logger.warning(f"Calendar attempt already exists: {operation_key}; reconcile before retry")
+        _night_event("booking_duplicate_blocked", who=phone, operation=operation_key)
+        return
+
     # Save in local DB
     try:
         client = await bot_module.client_service.get_or_create_client(telegram_id)
@@ -3498,6 +3517,7 @@ async def _maybe_create_booking(
             booking_date=booking_date,
             payment_method=booking_call.payment_method,
         )
+        await bot_module.booking_service.link_calendar_attempt(operation_key, booking.id)
         # Remember who they booked with, so "same as last time" works next visit.
         if booking_call.master_name:
             try:
@@ -3516,11 +3536,8 @@ async def _maybe_create_booking(
         logger.error(f"Wappi DB booking error: {e}", exc_info=True)
         return
 
-    # Only explicit mock mode may confirm without YClients. A missing live
-    # service must fail closed. Fingerprint the booking for de-dup AFTER
-    # it is confirmed synced — so a FAILED sync can be retried by the model's
-    # next identical tool call instead of being silently suppressed as a
-    # duplicate (which previously left the appointment in local DB only).
+    # Only explicit mock mode may confirm without YClients. The durable
+    # attempt remains pending on failure and requires calendar reconciliation.
     _yc_synced = bool(config.MOCK_YCLIENTS)
     context.booking_data["yc_sync_ok"] = _yc_synced
 
@@ -3650,11 +3667,11 @@ async def _maybe_create_booking(
                         + (f"Call: {context.booking_data.get('callback_note')}. "
                            if (context.booking_data or {}).get("callback_note") else "")
                         + (f"Address: {booking_call.address}." if booking_call.address else "")
-                    ),
+                    ) + f" [operation:{operation_key}]",
                     is_test=_is_test,
                     duration_minutes=booking_call.duration_minutes,
                 )
-                if yc_result:
+                if isinstance(yc_result, dict) and yc_result.get("id"):
                     _yc_synced = True
                     context.booking_data["yc_sync_ok"] = True
                     logger.info(
@@ -3731,10 +3748,8 @@ async def _maybe_create_booking(
         except Exception as e:
             logger.error(f"❌ YClients booking error from WhatsApp: {e}")
 
-    # Fingerprint for de-dup ONLY after confirmed sync (or explicit mock mode).
-    # A failed sync leaves the sig unset so the
-    # model's next identical book_appointment call retries instead of being
-    # suppressed as a duplicate.
+    # The RAM fingerprint is only a convenience; the durable claim also
+    # protects uncertain writes and survives worker restarts.
     if not _yc_synced:
         # Keep the local record pending. A rejected/uncertain calendar write
         # must never dispatch a therapist or trigger confirmed reminders.
@@ -3748,6 +3763,8 @@ async def _maybe_create_booking(
                 logger.error(f"Couldn't notify admin of pending booking {booking.id}: {e}")
         return
 
+    await bot_module.booking_service.complete_calendar_attempt(
+        operation_key, (yc_result or {}).get("id") if not config.MOCK_YCLIENTS else None)
     booking = await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
     dialog_manager.update_state(user_id, "completed")
     context.last_booking_sig = _new_sig

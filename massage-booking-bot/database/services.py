@@ -4,9 +4,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, update, func, desc, delete
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
-from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList
+from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList, BookingAttempt
 from .db import Database
 
 
@@ -318,6 +319,33 @@ class BookingService:
 
     def __init__(self, db: Database):
         self.db = db
+
+    async def claim_calendar_attempt(self, operation_key: str) -> bool:
+        """One committed winner across processes. DB outages propagate (fail closed)."""
+        try:
+            async with self.db.session() as session:
+                session.add(BookingAttempt(operation_key=operation_key))
+                await session.flush()
+            return True
+        except IntegrityError:
+            # Only an existing key is a duplicate; unrelated constraint errors
+            # must not masquerade as a successful protection check.
+            async with self.db.session() as session:
+                if await session.get(BookingAttempt, operation_key) is not None:
+                    return False
+            raise
+
+    async def link_calendar_attempt(self, operation_key: str, booking_id: int) -> None:
+        async with self.db.session() as session:
+            await session.execute(update(BookingAttempt).where(
+                BookingAttempt.operation_key == operation_key
+            ).values(booking_id=booking_id))
+
+    async def complete_calendar_attempt(self, operation_key: str, yclients_id=None) -> None:
+        async with self.db.session() as session:
+            await session.execute(update(BookingAttempt).where(
+                BookingAttempt.operation_key == operation_key
+            ).values(status="accepted", yclients_id=str(yclients_id) if yclients_id else None))
 
     async def create_booking(
         self,
