@@ -3922,7 +3922,7 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
                 f"({phone}) просит отмену, но у него НЕСКОЛЬКО активных броней. "
                 f"Ничего не отменял — уточните у клиента и обработайте вручную."
             )
-            if wappi_client:
+            if _is_ig_key(phone) or wappi_client:
                 await _send_to_client(
                     phone,
                     "You have more than one upcoming appointment dear 🌹 "
@@ -3948,25 +3948,6 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
         now=now_uae(),
     )
 
-    # Record cancellation locally
-    await bot_module.booking_service.update_booking_status(
-        b["booking_id"], "cancelled", notes=f"Cancelled: {call.reason}"[:500]
-    )
-
-    penalty_note = ""
-    if pen["charge_aed"] > 0:
-        await bot_module.booking_service.apply_penalty(
-            b["booking_id"], pen["charge_aed"], pen["reason"]
-        )
-        penalty_note = f"\n💸 Штраф: {pen['charge_aed']:.0f} AED ({pen['reason']})"
-    elif pen["deduct_session"] and is_package and bot_module.package_service:
-        await bot_module.package_service.consume_session(b["package_id"])
-        penalty_note = "\n💳 Списан 1 сеанс из пакета (отмена в день визита)"
-    elif pen["force_majeure"]:
-        penalty_note = "\n🤝 Форс-мажор — без штрафа"
-    elif pen["free"]:
-        penalty_note = "\n✅ Без штрафа (заблаговременная отмена)"
-
     # Cancel in YClients too (owner decision 2026-07-10: the agent manages the
     # calendar itself, no manual hand-off). Guarded: only a record whose client
     # phone matches this WhatsApp client can be deleted.
@@ -3985,6 +3966,27 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
                 yc_deleted = await yc.cancel_record(yc_id, phone)
     except Exception as e:
         logger.error(f"Cancel: YClients sync error: {e}")
+
+    penalty_note = ""
+    if yc_deleted:
+        # Record cancellation locally
+        await bot_module.booking_service.update_booking_status(
+            b["booking_id"], "cancelled", notes=f"Cancelled: {call.reason}"[:500]
+        )
+
+        penalty_note = ""
+        if pen["charge_aed"] > 0:
+            await bot_module.booking_service.apply_penalty(
+                b["booking_id"], pen["charge_aed"], pen["reason"]
+            )
+            penalty_note = f"\n💸 Штраф: {pen['charge_aed']:.0f} AED ({pen['reason']})"
+        elif pen["deduct_session"] and is_package and bot_module.package_service:
+            await bot_module.package_service.consume_session(b["package_id"])
+            penalty_note = "\n💳 Списан 1 сеанс из пакета (отмена в день визита)"
+        elif pen["force_majeure"]:
+            penalty_note = "\n🤝 Форс-мажор — без штрафа"
+        elif pen["free"]:
+            penalty_note = "\n✅ Без штрафа (заблаговременная отмена)"
 
     when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
     _area_lbl = {"abu_dhabi": "Abu Dhabi", "al_ain": "Al Ain", "dubai": "Dubai"}.get(
@@ -4013,6 +4015,10 @@ async def _handle_cancellation(telegram_id: str, phone: str, call: "CancelCall",
         f"💬 Причина: {call.reason or '—'}{penalty_note}\n"
         f"{_yc_line}"
     )
+
+    await _send_to_client(phone,
+        "Your appointment has been cancelled dear 🌹" if yc_deleted else
+        "Your cancellation is awaiting the team's confirmation dear. The calendar change is not confirmed yet 🌹")
 
     # Waiting list: notify ONLY when the slot is GENUINELY free. On a failed
     # DELETE (403 — the current token can't delete) the record still occupies
@@ -4058,7 +4064,7 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                 f"({phone}) просит перенос, но у него НЕСКОЛЬКО активных броней. "
                 f"Ничего не переносил — уточните у клиента."
             )
-            if wappi_client:
+            if _is_ig_key(phone) or wappi_client:
                 await _send_to_client(
                     phone,
                     "You have more than one upcoming appointment dear 🌹 "
@@ -4115,8 +4121,9 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                 _area, call.new_date, _hhmm, _dur,
                 exclude_record_id=b.get("yclients_appointment_id"))
         except Exception as e:
-            logger.warning(f"Reschedule availability check failed ({e}) — allowing")
-            _free = True
+            logger.warning(f"Reschedule availability check failed ({e}) — deferring")
+            await _send_to_client(phone, "I cannot verify that time right now dear. Please try again shortly 🌹")
+            return
         if not _free:
             logger.info(f"Reschedule: {new_dt.isoformat()} not free in {_area} — offering alternatives")
             await _admin_text(
@@ -4124,29 +4131,13 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                 f"({phone}) просил перенос на {new_dt:%d.%m.%Y %H:%M} ({_area}), "
                 f"но это время НЕ свободно. Ничего не переносил — предложите другое."
             )
-            if wappi_client:
+            if _is_ig_key(phone) or wappi_client:
                 await _send_to_client(
                     phone,
                     f"Sorry dear, {_to_ampm(_hhmm)} on that day isn't free 🙏 "
                     "Could you pick another time? I'll send you what's available 🌹"
                 )
             return
-
-    # Create the new booking (draft), chain the old one to it, THEN confirm the
-    # new one. This order means a mid-way failure never leaves TWO 'confirmed'
-    # rows (worst case: old='rescheduled' + new='draft', which the confirmation
-    # scheduler ignores). Use base_price (pre-VAT) so calculate_total() doesn't
-    # re-apply VAT on an already-inclusive total.
-    new_booking = await bot_module.booking_service.create_booking(
-        telegram_id=telegram_id,
-        service_name=b["service_name"],
-        duration=b.get("duration"),
-        base_price=(b.get("base_price") if b.get("base_price") is not None else 0.0),
-        booking_date=new_dt,
-        payment_method=b.get("payment_method") or "cash",
-    )
-    await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
-    await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
 
     # Move the YClients record itself (owner decision 2026-07-10). Guarded:
     # only a record whose client phone matches this WhatsApp client.
@@ -4165,12 +4156,27 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
                     yc_id, phone, call.new_date, call.new_time,
                     duration_minutes=b.get("duration"),
                 )
-                if yc_moved:
-                    await bot_module.booking_service.set_yclients_id(
-                        new_booking.id, yc_id
-                    )
     except Exception as e:
         logger.error(f"Reschedule: YClients sync error: {e}")
+
+    if yc_moved:
+        # Create the new booking (draft), chain the old one to it, THEN confirm the
+        # new one. This order means a mid-way failure never leaves TWO 'confirmed'
+        # rows (worst case: old='rescheduled' + new='draft', which the confirmation
+        # scheduler ignores). Use base_price (pre-VAT) so calculate_total() doesn't
+        # re-apply VAT on an already-inclusive total.
+        new_booking = await bot_module.booking_service.create_booking(
+            telegram_id=telegram_id,
+            service_name=b["service_name"],
+            duration=b.get("duration"),
+            base_price=(b.get("base_price") if b.get("base_price") is not None else 0.0),
+            booking_date=new_dt,
+            payment_method=b.get("payment_method") or "cash",
+        )
+        await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
+        await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
+
+        await bot_module.booking_service.set_yclients_id(new_booking.id, yc_id)
 
     old_when = b["booking_date"].strftime("%d.%m.%Y %H:%M") if b.get("booking_date") else "—"
     new_when = new_dt.strftime("%d.%m.%Y %H:%M")
@@ -4193,12 +4199,13 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
     # later "not free" (the turn's reply was only a neutral "checking…" line).
     # Honest team-mediated wording: the YClients move may or may not have synced;
     # the admin alert above carries the real status.
-    if wappi_client:
+    if _is_ig_key(phone) or wappi_client:
         try:
             await _send_to_client(
                 phone,
-                f"Noted dear 🌹 I've passed your reschedule to {_to_ampm(call.new_time)} "
-                f"to the team — we'll confirm it shortly 🙏"
+                (f"Your appointment has been moved to {call.new_date} at {_to_ampm(call.new_time)} 🌹"
+                 if yc_moved else
+                 f"Your reschedule to {call.new_date} at {_to_ampm(call.new_time)} is awaiting the team's confirmation 🌹")
             )
         except Exception:
             pass
@@ -4235,6 +4242,7 @@ async def _notify_waiting_list(area, freed_date):
 async def _reset_user(user_id: str, telegram_id: str):
     """Clear context, history, and client data for a user."""
     import bot as bot_module
+    await bot_module.message_service.clear_context(user_id)
     dialog_manager.clear_context(user_id)
     deleted = await bot_module.message_service.clear_history(telegram_id)
     await bot_module.client_service.reset_client(telegram_id)
@@ -4275,6 +4283,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             await bot_module.client_service.update_client(telegram_id, name=sender_name)
 
         context = dialog_manager.get_or_create_context(user_id)
+        if not getattr(context, "_snapshot_loaded", False):
+            snapshot = await bot_module.message_service.load_context(user_id)
+            if snapshot:
+                context.restore(snapshot)
+            context._snapshot_loaded = True
 
         if not context.recent_messages:
             db_history = await bot_module.message_service.get_conversation_history(telegram_id)
@@ -4534,6 +4547,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             await bot_module.message_service.save_message(
                 telegram_id, "assistant", POLITE_CLOSE_LINE)
             dialog_manager.add_bot_response(user_id, POLITE_CLOSE_LINE)
+            await bot_module.message_service.save_context(user_id, context.to_dict())
             await _send_to_client(phone, POLITE_CLOSE_LINE)
             return
 
@@ -5326,8 +5340,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                                 f"{getattr(booking_call, 'time', '')}")
             response_text = BOOKING_PENDING_LINE
 
+        if actions.cancel_call is not None:
+            response_text = ("I'm checking your cancellation request dear 🌹" if actions.cancel_call.confirmed
+                             else "Would you like me to cancel your appointment dear?")
+
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
+        await bot_module.message_service.save_context(user_id, context.to_dict())
 
         if _is_ig_key(phone) or wappi_client:
             parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]

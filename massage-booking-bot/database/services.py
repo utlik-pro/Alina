@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
-from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList, BookingAttempt
+from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList, BookingAttempt, ConversationSnapshot
 from .db import Database
 
 
@@ -135,6 +135,20 @@ class MessageService:
 
     def __init__(self, db: Database):
         self.db = db
+
+    async def load_context(self, user_id: str):
+        async with self.db.session() as session:
+            row = await session.get(ConversationSnapshot, user_id)
+            return row.payload if row else None
+
+    async def save_context(self, user_id: str, payload: dict):
+        async with self.db.session() as session:
+            await session.merge(ConversationSnapshot(user_id=user_id, payload=payload))
+
+    async def clear_context(self, user_id: str):
+        async with self.db.session() as session:
+            await session.execute(delete(ConversationSnapshot).where(
+                ConversationSnapshot.user_id == user_id))
 
     async def save_message(
         self,

@@ -1286,6 +1286,17 @@ class YClientsService:
             return False
         return da[-9:] == db[-9:]
 
+    async def find_operation_candidates(self, operation_key: str, date: str):
+        """Read-only recovery by exact marker. Truncated/outage results are unknown."""
+        data = await self._get(f"records/{self.company_id}", params={
+            "start_date": date, "end_date": date, "count": 100,
+        })
+        records = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(records, list) or len(records) >= 100:
+            return None
+        marker = f"[operation:{operation_key}]"
+        return [r for r in records if marker in str(r.get("comment") or "")]
+
     async def get_record(self, record_id) -> Optional[Dict]:
         """Fetch a single record by id. None on failure/not found."""
         data = await self._get(f"record/{self.company_id}/{record_id}")

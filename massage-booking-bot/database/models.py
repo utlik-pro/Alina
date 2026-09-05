@@ -272,3 +272,11 @@ class BookingAttempt(Base):
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True)
     yclients_id = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ConversationSnapshot(Base):
+    """Durable channel context; live availability is never part of this snapshot."""
+    __tablename__ = "conversation_snapshots"
+    user_id = Column(String(80), primary_key=True)
+    payload = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

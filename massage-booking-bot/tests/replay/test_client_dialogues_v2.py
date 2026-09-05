@@ -16,7 +16,8 @@ def dialogue(monkeypatch):
     monkeypatch.setattr(bot, 'client_service', SimpleNamespace(
         get_or_create_client=AsyncMock(return_value=client), update_client=AsyncMock()))
     monkeypatch.setattr(bot, 'message_service', SimpleNamespace(
-        get_conversation_history=AsyncMock(return_value=[]), save_message=AsyncMock()))
+        get_conversation_history=AsyncMock(return_value=[]), save_message=AsyncMock(),
+        load_context=AsyncMock(return_value=None), save_context=AsyncMock()))
     monkeypatch.setattr(bot, 'notification_service', None)
     monkeypatch.setattr(bot, 'follow_up_service', None)
     monkeypatch.setattr(bot, 'yclients_service', None)
@@ -94,3 +95,42 @@ async def test_customer_can_return_after_refusal_without_losing_contact(dialogue
     assert dialogue.ctx.client_data['phone'] == '971500000000'
     assert dialogue.ctx.booking_data['service_type'] == 'face_massage'
     assert wh.booking_agent.process_message_with_tools.await_count == 1
+
+@pytest.mark.asyncio
+async def test_restart_restores_refusal_service_and_contact(dialogue, tmp_path, monkeypatch):
+    from database.db import Database
+    from database.models import Base
+    from database.services import MessageService
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'context.db'}")
+    async with db.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    storage = MessageService(db)
+    monkeypatch.setattr(bot.message_service, 'load_context', storage.load_context)
+    monkeypatch.setattr(bot.message_service, 'save_context', storage.save_context)
+    dialogue.ctx.client_data.update(phone='971500000000', area='abu_dhabi')
+    dialogue.ctx.booking_data.update(service_type='face_massage', date='2026-09-12', time='14:00')
+    await dialogue.turn('No thank you', 'Which time?')
+    await db.engine.dispose()
+    reopened = Database(db.database_url)
+    monkeypatch.setattr(bot.message_service, 'load_context', MessageService(reopened).load_context)
+    monkeypatch.setattr(bot.message_service, 'save_context', MessageService(reopened).save_context)
+    wh.dialog_manager.clear_context('ig_555')
+    try:
+        out = await dialogue.turn('Okay', 'Which time suits you?')
+        restored = wh.dialog_manager.get_context('ig_555')
+        assert restored.booking_data['closed_politely'] is True
+        assert restored.booking_data['service_type'] == 'face_massage'
+        assert restored.booking_data['date'] == '2026-09-12'
+        assert restored.client_data['phone'] == '971500000000'
+        assert 'which time' not in out.lower()
+        await MessageService(reopened).clear_context('ig_555')
+        assert await MessageService(reopened).load_context('ig_555') is None
+    finally:
+        await reopened.engine.dispose()
+
+@pytest.mark.asyncio
+async def test_storage_outage_does_not_restart_sales_with_empty_context(dialogue):
+    bot.message_service.load_context.side_effect = RuntimeError('storage unavailable')
+    out = await dialogue.turn('Yes', 'Your appointment is confirmed!')
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+    assert 'technical issue' in out.lower()

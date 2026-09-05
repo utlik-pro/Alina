@@ -67,6 +67,21 @@ class DialogContext:
             "has_slot_proposal": self.has_slot_proposal,
         }
 
+    def restore(self, payload: Dict[str, Any]) -> None:
+        """Restore conversational facts, excluding stale slot/confirmation caches."""
+        self.client_data.update(payload.get("client_data") or {})
+        self.booking_data.update(payload.get("booking_data") or {})
+        self.booking_data.pop("yc_sync_ok", None)
+        self.recent_messages = (payload.get("recent_messages") or [])[-20:]
+        self.state = payload.get("state", "initial")
+        self.last_question = payload.get("last_question")
+        self.message_count = payload.get("message_count", 0)
+        self.has_location = bool(payload.get("has_location"))
+        self.has_slot_proposal = False
+        for key in ("created_at", "last_activity"):
+            if payload.get(key):
+                setattr(self, key, datetime.fromisoformat(payload[key]))
+
     def get(self, key: str, default=None):
         """Dict-like get method for compatibility"""
         return getattr(self, key, default)
@@ -206,6 +221,8 @@ class DialogManager:
         # 2. Есть активное общение (> 2 сообщений)
         # 3. Нет подтвержденного бронирования
         return (
+            not context.booking_data.get("closed_politely") and
+            not context.booking_data.get("out_of_area") and
             time_since_last_activity > 3600 and
             context.message_count > 2 and
             context.booking_data["status"] != "confirmed"
