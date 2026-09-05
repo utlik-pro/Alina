@@ -925,9 +925,12 @@ def test_nearest_day_offer_pins_the_dialogue_date():
     import bot as bot_module
     import webhook_app as wh
 
+    from datetime import datetime, timedelta, timezone
+    available_day = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime("%Y-%m-%d")
+
     class _YC:
         async def get_available_slots_summary(self, date=None, **kw):
-            if date.endswith("-04"):
+            if date == available_day:
                 return "Eliza (Al Ain): 10:00 AM, 5:30 PM, 9:00 PM"
             return "No slots available for this date from the schedule."
 
@@ -942,7 +945,7 @@ def test_nearest_day_offer_pins_the_dialogue_date():
     finally:
         bot_module.yclients_service = saved
     assert "5:30 PM" in out
-    assert ctx.booking_data.get("date", "").endswith("-04"), \
+    assert ctx.booking_data.get("date") == available_day, \
         "день из предложения обязан стать датой диалога"
 
 

@@ -18,7 +18,6 @@ from typing import List, Tuple, Optional
 from aiogram import Bot
 
 # Bot config
-BOT_TOKEN = "8080121464:AAGbeVoUh-62mxcMuPYbIhh7RQV1sJAxsB0"
 # Test from a different user — we'll send commands as the bot reads them
 # Actually, we need to send messages AS a user to the bot.
 # The simplest way: use the bot's own sendMessage to itself won't work.

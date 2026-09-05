@@ -3496,8 +3496,6 @@ async def _maybe_create_booking(
             booking_date=booking_date,
             payment_method=booking_call.payment_method,
         )
-        await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
-        dialog_manager.update_state(user_id, "completed")
         # Remember who they booked with, so "same as last time" works next visit.
         if booking_call.master_name:
             try:
@@ -3516,13 +3514,13 @@ async def _maybe_create_booking(
         logger.error(f"Wappi DB booking error: {e}", exc_info=True)
         return
 
-    # Did the appointment actually reach YClients? Stays True when there is no
-    # YClients path (mock/dev). We only fingerprint the booking for de-dup AFTER
+    # Only explicit mock mode may confirm without YClients. A missing live
+    # service must fail closed. Fingerprint the booking for de-dup AFTER
     # it is confirmed synced — so a FAILED sync can be retried by the model's
     # next identical tool call instead of being silently suppressed as a
     # duplicate (which previously left the appointment in local DB only).
-    _yc_synced = True
-    context.booking_data["yc_sync_ok"] = True
+    _yc_synced = bool(config.MOCK_YCLIENTS)
+    context.booking_data["yc_sync_ok"] = _yc_synced
 
     # Create in YClients
     if bot_module.yclients_service and not config.MOCK_YCLIENTS:
@@ -3731,12 +3729,26 @@ async def _maybe_create_booking(
         except Exception as e:
             logger.error(f"❌ YClients booking error from WhatsApp: {e}")
 
-    # Fingerprint for de-dup ONLY once the booking is confirmed synced (or there
-    # was no YClients path at all). A failed sync leaves the sig unset so the
+    # Fingerprint for de-dup ONLY after confirmed sync (or explicit mock mode).
+    # A failed sync leaves the sig unset so the
     # model's next identical book_appointment call retries instead of being
     # suppressed as a duplicate.
-    if _yc_synced:
-        context.last_booking_sig = _new_sig
+    if not _yc_synced:
+        # Keep the local record pending. A rejected/uncertain calendar write
+        # must never dispatch a therapist or trigger confirmed reminders.
+        if bot_module.notification_service:
+            try:
+                await bot_module.notification_service.send_booking_failed(
+                    telegram_id=telegram_id,
+                    reason=f"Booking #{booking.id} remains pending: YClients sync not confirmed. Reconcile the calendar before confirming.",
+                )
+            except Exception as e:
+                logger.error(f"Couldn't notify admin of pending booking {booking.id}: {e}")
+        return
+
+    booking = await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
+    dialog_manager.update_state(user_id, "completed")
+    context.last_booking_sig = _new_sig
 
     # Notify admin + auto-share the trip with the driver/logistics group.
     try:
