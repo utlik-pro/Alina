@@ -59,7 +59,7 @@ async def run(args):
                 sent = [c.args[1] for c in wh._send_to_client.await_args_list]
                 usage = getattr(agent, 'last_usage', None)
                 row = dict(model=model, case=name, user=text, replies=sent, seconds=round(elapsed,2), usage=usage,
-                           single_message=len(sent)==1, max_one_question=sum(s.count('?') for s in sent)<=1,
+                           thought_messages=1<=len(sent)<=3, max_one_question=sum(s.count('?') for s in sent)<=1,
                            service_after=replay.ctx.booking_data.get('service_type'))
                 results.append(row)
                 Path(args.output).write_text(json.dumps(results,ensure_ascii=False,indent=2))

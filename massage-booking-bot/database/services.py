@@ -401,6 +401,8 @@ class BookingService:
         booking_id: int,
         status: str,
         notes: Optional[str] = None,
+        area: Optional[str] = None,
+        therapist_name: Optional[str] = None,
     ) -> Booking:
         """Update booking status"""
         async with self.db.session() as session:
@@ -409,6 +411,10 @@ class BookingService:
             )
             booking = result.scalar_one()
 
+            if area is not None:
+                booking.area = area
+            if therapist_name is not None:
+                booking.therapist_name = therapist_name
             booking.status = status
             booking.updated_at = datetime.utcnow()
 

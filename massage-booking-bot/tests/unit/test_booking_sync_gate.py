@@ -51,7 +51,7 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
     await wh._maybe_create_booking("test", "test", client.phone, client.name, ctx,
                                    "Your booking is confirmed ✅", call)
     if outcome == "accepted":
-        bs.update_booking_status.assert_awaited_once_with(123, "confirmed")
+        bs.update_booking_status.assert_awaited_once_with(123, "confirmed", area="abu_dhabi", therapist_name=None)
         ns.send_booking_confirmed.assert_awaited_once()
         wh._notify_driver.assert_awaited_once()
         assert ctx.last_booking_sig == (call.service, day, "14:00")

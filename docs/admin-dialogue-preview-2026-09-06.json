@@ -1,0 +1,37 @@
+[
+  {
+    "client": "Hi, facial massage in Abu Dhabi please. How much and how long?",
+    "messages": [
+      "Hi dear 🌹 Facial massage is 370 AED",
+      "50 minutes",
+      "Please send your WhatsApp number dear"
+    ]
+  },
+  {
+    "client": "Do you come to my home?",
+    "messages": [
+      "Yes dear, home service 🌹",
+      "We come to your home, villa or hotel in Abu Dhabi with free transportation."
+    ]
+  },
+  {
+    "client": "0500000000",
+    "messages": [
+      "Got it dear 🌹 Availability for today and tomorrow can’t be verified at the moment.",
+      "Which day would suit you?"
+    ]
+  },
+  {
+    "client": "Tomorrow at 2 pm please",
+    "messages": [
+      "Tomorrow availability can’t be verified at the moment 🙏",
+      "Please type your address first — area, building, apartment."
+    ]
+  },
+  {
+    "client": "I will confirm later thank you",
+    "messages": [
+      "Of course dear 🌹 Anytime — just write me here when you're ready 🙏"
+    ]
+  }
+]

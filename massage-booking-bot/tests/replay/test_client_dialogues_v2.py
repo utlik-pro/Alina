@@ -136,12 +136,12 @@ async def test_storage_outage_does_not_restart_sales_with_empty_context(dialogue
     assert 'technical issue' in out.lower()
 
 @pytest.mark.asyncio
-async def test_one_message_one_question_and_no_repeated_greeting(dialogue):
+async def test_thought_messages_one_question_and_no_repeated_greeting(dialogue):
     dialogue.ctx.client_data['phone'] = '971500000000'
     dialogue.ctx.recent_messages = [{'role': 'assistant', 'content': 'Hello dear!'}]
     out = await dialogue.turn('Home service only?',
         'Hello dear 🌹\nYes, home service.---MESSAGE_SPLIT---Please send your WhatsApp number.\nWhich day?\nMorning or evening?')
-    assert wh._send_to_client.await_count == 1
+    assert 1 <= wh._send_to_client.await_count <= 3
     assert 'hello' not in out.lower()
     assert 'send your whatsapp' not in out.lower()
     assert out.count('?') <= 1
@@ -160,3 +160,14 @@ async def test_calendar_outage_is_not_reported_as_fully_booked(dialogue, monkeyp
     assert 'fully booked' not in out.lower()
     assert '370' in out
     assert "can't verify" in out
+
+
+@pytest.mark.asyncio
+async def test_fresh_facial_request_loads_calendar_without_body_duration_gate(dialogue, monkeypatch):
+    summary = AsyncMock(return_value=None)
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', SimpleNamespace(
+        get_available_slots_summary=summary, is_slot_available=AsyncMock(return_value=None)))
+    await dialogue.turn('Facial massage in Abu Dhabi please', 'Facial massage is 370 AED for 50 minutes.')
+    assert dialogue.ctx.booking_data['service_duration'] == 50
+    summary.assert_awaited()

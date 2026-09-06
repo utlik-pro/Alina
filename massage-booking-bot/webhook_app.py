@@ -3760,7 +3760,9 @@ async def _maybe_create_booking(
 
     await bot_module.booking_service.complete_calendar_attempt(
         operation_key, (yc_result or {}).get("id") if not config.MOCK_YCLIENTS else None)
-    booking = await bot_module.booking_service.update_booking_status(booking.id, "confirmed")
+    booking = await bot_module.booking_service.update_booking_status(
+        booking.id, "confirmed", area=booking_call.area,
+        therapist_name=context.booking_data.get("confirmed_master") or booking_call.master_name)
     dialog_manager.update_state(user_id, "completed")
     context.last_booking_sig = _new_sig
 
@@ -4169,7 +4171,8 @@ async def _handle_reschedule(telegram_id: str, phone: str, call: "RescheduleCall
             payment_method=b.get("payment_method") or "cash",
         )
         await bot_module.booking_service.set_rescheduled(b["booking_id"], new_booking.id)
-        await bot_module.booking_service.update_booking_status(new_booking.id, "confirmed")
+        await bot_module.booking_service.update_booking_status(
+            new_booking.id, "confirmed", area=b.get("area"), therapist_name=b.get("therapist_name"))
 
         await bot_module.booking_service.set_yclients_id(new_booking.id, yc_id)
 
@@ -4448,6 +4451,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             context.booking_data["ad_prefill"] = None
             context.booking_data["offer_275_shown"] = False
             logger.info("клиент выбрал лицо — комбо с банками снято")
+
+        # Facial massage has a fixed catalogue duration. Without this, a
+        # fresh dialogue hits the body 60/90 gate and never loads the calendar.
+        if (context.booking_data.get("service_type") == "face_massage"
+                and not context.booking_data.get("service_duration")):
+            dialog_manager.update_booking_data(user_id, "service_duration", 50)
 
         # A phone number typed at ANY point is kept: saved to the client
         # record so the phone gate sees it and the flow never re-asks.
@@ -5348,10 +5357,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                              else "Would you like me to cancel your appointment dear?")
 
         if (booking_call is not None and context.booking_data.get("yc_sync_ok")
-                and context.booking_data.get("confirmed_master")):
+                and context.booking_data.get("confirmed_master")
+                and context.booking_data["confirmed_master"].casefold() not in response_text.casefold()):
             response_text += f"\nYour specialist will be {context.booking_data['confirmed_master']} 🌹"
 
-        from services.reply_composer import compose_reply
+        from services.reply_composer import compose_reply, split_chat_messages
         response_text = compose_reply(response_text, context)
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
@@ -5359,7 +5369,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         await bot_module.message_service.save_context(user_id, context.to_dict())
 
         if _is_ig_key(phone) or wappi_client:
-            parts = [p.strip() for p in response_text.split("---MESSAGE_SPLIT---") if p.strip()]
+            parts = split_chat_messages(response_text)
             # Guard against a reply that is only the separator/whitespace —
             # response_text.strip() is non-empty (so the earlier empty-fallback
             # was skipped) but parts is [], and the client would get nothing.
