@@ -19,7 +19,7 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")
 
     # v2: reminders are opt-in; no five-minute automatic sales pressure.
     IG_NUDGES_ENABLED: bool = os.getenv("IG_NUDGES_ENABLED", "false").lower() == "true"
@@ -95,7 +95,7 @@ class Config:
     # gpt-5.6-sol can NOT drive the booking tools at all — OpenAI 400s
     # "function tools with reasoning_effort are not supported ... use
     # /v1/responses or reasoning_effort='none'" (bake-off 2026-08-14).
-    IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.4")
+    IG_OPENAI_MODEL: str = os.getenv("IG_OPENAI_MODEL", "gpt-5.6-sol")
     # Live-reply window for the IG track. Client's (Tatyana's) explicit rule
     # from the 2026-07-28 thread: agent works 21:00→08:00 Minsk (=22:00→09:00
     # Abu Dhabi), admins take over in the morning. Outside the window the

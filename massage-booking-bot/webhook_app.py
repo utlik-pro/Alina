@@ -2694,6 +2694,9 @@ def _enforce_payment_terms(text: str, payment_method: Optional[str]) -> str:
             label = "(tax free)" if option == "cash" else "(+5% VAT)"
             lines[i] = f"{m.group(1)}{m.group(2)} {label}".rstrip()
     text = "\n".join(lines)
+    # Inline payment questions need the same terms as a multiline menu.
+    text = re.sub(r"cash or bank transfer(?=[?.,!]|$)",
+                  "cash (tax free) or bank transfer (+5% VAT)", text, flags=re.I)
 
     if payment_method and not re.search(r"VAT|tax free", text, re.I):
         matches = list(_PRICE_RE.finditer(text))
@@ -2702,6 +2705,7 @@ def _enforce_payment_terms(text: str, payment_method: Optional[str]) -> str:
             text = (text[:last.end()]
                     + f" ({_payment_label(payment_method)})"
                     + text[last.end():])
+    text = re.sub(r"(\(cash — tax free\))\s+cash\b", r"\1", text, flags=re.I)
     return text
 
 
@@ -2985,6 +2989,9 @@ async def health():
         "status": "ok",
         "bot": "Crystal Lab",
         "mode": "webhook",
+        "version": "v2",
+        "revision": os.getenv("RENDER_GIT_COMMIT", "local"),
+        "booking_model": config.OPENAI_MODEL,
         "ig": {
             "booking_enabled": config.IG_BOOKING_ENABLED,
             "live_now": ig_live_now(),

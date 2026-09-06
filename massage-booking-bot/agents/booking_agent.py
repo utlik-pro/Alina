@@ -868,6 +868,7 @@ the client understands you, switching to their language when they need it."""
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
+                **({"reasoning_effort": "none"} if self.model.startswith("gpt-5.6") else {}),
             )
 
             choice = response.choices[0]
@@ -884,6 +885,7 @@ the client understands you, switching to their language when they need it."""
                 response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=retry_messages,
+                    **({"reasoning_effort": "none"} if self.model.startswith("gpt-5.6") else {}),
                 )
                 answer = response.choices[0].message.content or ""
                 logger.info(f"GPT retry: finish_reason={response.choices[0].finish_reason}, len={len(answer)}")
@@ -927,7 +929,8 @@ the client understands you, switching to their language when they need it."""
                     message=SimpleNamespace(content=result.output_text, tool_calls=calls))],
                 usage=SimpleNamespace(completion_tokens=result.usage.output_tokens) if result.usage else None)
         result = await self.client.chat.completions.create(
-            model=self.model, messages=messages, tools=BOOKING_TOOLS, tool_choice="auto")
+            model=self.model, messages=messages, tools=BOOKING_TOOLS, tool_choice="auto",
+            **({"reasoning_effort": "none"} if self.model.startswith("gpt-5.6") else {}))
         self.last_usage = result.usage.model_dump() if result.usage else None
         return result
 

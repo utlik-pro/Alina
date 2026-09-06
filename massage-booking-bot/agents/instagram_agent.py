@@ -268,6 +268,7 @@ async def generate_ig_reply(sender_id: str, text: str) -> str:
         response = await _client().chat.completions.create(
             model=config.IG_OPENAI_MODEL,
             messages=messages,
+            **({"reasoning_effort": "none"} if config.IG_OPENAI_MODEL.startswith("gpt-5.6") else {}),
         )
         answer = (response.choices[0].message.content or "").strip()
     except Exception as e:

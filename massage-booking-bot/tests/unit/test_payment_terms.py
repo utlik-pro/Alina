@@ -987,3 +987,16 @@ def test_emirate_of_the_day_from_client_name_tags(monkeypatch):
     assert _marker_area_from_records(recs) == "al_ain"      # две пометки
     one = [recs[2]]
     assert _marker_area_from_records(one) is None            # одной мало
+
+
+def test_inline_payment_question_keeps_terms():
+    from webhook_app import _enforce_payment_terms
+    text = _enforce_payment_terms('How would you like to pay: cash or bank transfer?', None)
+    assert 'cash (tax free)' in text
+    assert 'bank transfer (+5% VAT)' in text
+
+
+def test_cash_recap_does_not_repeat_payment_word():
+    from webhook_app import _enforce_payment_terms
+    text = _enforce_payment_terms('370 AED cash.', 'cash')
+    assert text == '370 AED (cash — tax free).'
