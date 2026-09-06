@@ -2318,7 +2318,7 @@ async def _ig_nudge_already_sent(subscriber_id: str) -> bool:
                 .where(NightEvent.who.in_(
                     [str(subscriber_id), f"{IG_KEY_PREFIX}{subscriber_id}"]))
                 .where(NightEvent.kind == "sent")
-                .where(NightEvent.text.like("Dear, are you still interested%"))
+                .where(NightEvent.text.like("Dear, are you still interested%") | NightEvent.text.like("If you would like to continue%"))
                 .limit(1)
             )).first()
         return rows is not None
@@ -3705,13 +3705,8 @@ async def _maybe_create_booking(
                     # выбирает мастера, поэтому имя досылается отдельной
                     # строкой сразу после создания записи — из той записи,
                     # что реально создана, а не из догадки модели.
-                    if _master_log and _is_ig_key(phone):
-                        try:
-                            await _send_to_client(
-                                phone,
-                                f"Your specialist will be {_master_log} 🌹")
-                        except Exception:
-                            pass  # имя не должно ломать созданную запись
+                    if _master_log:
+                        context.booking_data["confirmed_master"] = _master_log
                     # Persist the record id — cancel/reschedule mutate YClients
                     # directly and target the record through this.
                     if yc_result.get("id"):
@@ -4844,6 +4839,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         f"{area_note}{_pref_note}"
                     )
 
+                    if any(v is None for v in _slot_truth.values()):
+                        context.extra_system_info += (
+                            "\nOVERRIDE: None or TEMPORARILY UNAVAILABLE means the calendar "
+                            "could not be read, NOT fully booked. For those dates do not claim "
+                            "any free/busy times. Answer factual service questions normally; "
+                            "if asked for a slot, explain that availability cannot be verified.")
+
                     # The client named a CONCRETE time — check that exact time
                     # against the calendar and hand the model the verdict.
                     # Live-caught 2026-08-15: the Instagram rule "merge every
@@ -5203,7 +5205,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
 
         # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
-        response_text = _enforce_admin_service_card(response_text, context, text, who=phone)
+        # v2: model answers the current question; no forced full sales card.
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))
@@ -5225,7 +5227,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Первый контакт без узнанной рекламы → карточки Алины, не меню.
         _fi_before = response_text
-        response_text = _enforce_full_intro(response_text, context, text, who=phone)
+        # v2: no forced welcome catalogue after an already specific request.
         if response_text != _fi_before:
             dialog_manager.update_booking_data(user_id, "cards_intro_sent", True)
 
@@ -5326,6 +5328,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # админам уходит из _maybe_create_booking как и раньше.
         if booking_call is not None:
             context.booking_data["yc_sync_ok"] = False
+            context.booking_data.pop("confirmed_master", None)
         await _maybe_create_booking(
             user_id, telegram_id, phone, sender_name, context,
             response_text, booking_call,
@@ -5343,6 +5346,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if actions.cancel_call is not None:
             response_text = ("I'm checking your cancellation request dear 🌹" if actions.cancel_call.confirmed
                              else "Would you like me to cancel your appointment dear?")
+
+        if (booking_call is not None and context.booking_data.get("yc_sync_ok")
+                and context.booking_data.get("confirmed_master")):
+            response_text += f"\nYour specialist will be {context.booking_data['confirmed_master']} 🌹"
+
+        from services.reply_composer import compose_reply
+        response_text = compose_reply(response_text, context)
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)

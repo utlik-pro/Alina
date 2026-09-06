@@ -21,6 +21,10 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
 
+    # v2: reminders are opt-in; no five-minute automatic sales pressure.
+    IG_NUDGES_ENABLED: bool = os.getenv("IG_NUDGES_ENABLED", "false").lower() == "true"
+    IG_NUDGE_DELAY_MINUTES: int = max(30, int(os.getenv("IG_NUDGE_DELAY_MINUTES", "30")))
+
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",

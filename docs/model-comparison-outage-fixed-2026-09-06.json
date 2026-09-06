@@ -1,0 +1,104 @@
+[
+  {
+    "model": "gpt-5.4",
+    "case": "phone_provided",
+    "user": "0500000000",
+    "replies": [
+      "Thank you dear.\n\nWhat day would suit you for the facial massage?"
+    ],
+    "seconds": 1.72,
+    "usage": {
+      "completion_tokens": 17,
+      "prompt_tokens": 17642,
+      "total_tokens": 17659,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  },
+  {
+    "model": "gpt-5.4",
+    "case": "price_question",
+    "user": "How much is facial massage and how long does it take?",
+    "replies": [
+      "Facial massage is 370 AED, and it takes 50 minutes.\n\nWould you like to book, dear?"
+    ],
+    "seconds": 1.59,
+    "usage": {
+      "completion_tokens": 26,
+      "prompt_tokens": 17714,
+      "total_tokens": 17740,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "phone_provided",
+    "user": "0500000000",
+    "replies": [
+      "Which day and time would you prefer?\n\nI can't verify the calendar right now; availability is not confirmed yet."
+    ],
+    "seconds": 2.75,
+    "usage": {
+      "input_tokens": 17561,
+      "input_tokens_details": {
+        "cached_tokens": 12823,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 29,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17590
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "price_question",
+    "user": "How much is facial massage and how long does it take?",
+    "replies": [
+      "Facial massage is 370 AED for 50 minutes, with free transportation to your home 🌹 Which day would suit you?"
+    ],
+    "seconds": 2.31,
+    "usage": {
+      "input_tokens": 17633,
+      "input_tokens_details": {
+        "cached_tokens": 12831,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 30,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17663
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  }
+]

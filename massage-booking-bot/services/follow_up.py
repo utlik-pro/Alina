@@ -19,6 +19,7 @@ from loguru import logger
 from dialog_context import dialog_manager
 from services.lost_client_messages import get_lost_client_message_by_attempt
 from prices import get_price
+from config import config
 
 
 # Trial session follow-up for massage inquiries (5 min delay)
@@ -165,9 +166,9 @@ class FollowUpService:
             from agents.instagram_agent import ig_live_now
             _ig_window_open = ig_live_now()
         except Exception:
-            _ig_window_open = True
+            _ig_window_open = False
         _ig_candidates = []
-        if _ig_window_open:
+        if _ig_window_open and config.IG_NUDGES_ENABLED:
             # Вне окна не пытаемся ВООБЩЕ: _send_to_client всё равно откажет,
             # а попытка записала бы count=1 и сожгла единственное напоминание
             # без доставки (подтверждено аудитом).
@@ -181,7 +182,7 @@ class FollowUpService:
                 # днём, в 21:00 напоминания не получает — «а потом я ещё раз
                 # по ним пройдусь», это уже территория админов. Поймано 01.09:
                 # контекст 13:09 получил напоминание в 21:00:22, на открытии.
-                if timedelta(minutes=5) <= _quiet <= timedelta(minutes=90):
+                if timedelta(minutes=config.IG_NUDGE_DELAY_MINUTES) <= _quiet <= timedelta(minutes=90):
                     _ig_candidates.append(_uid)
 
         for user_id in list(lost_clients) + [
@@ -209,13 +210,14 @@ class FollowUpService:
 
             # Instagram вне окна: не пытаться и не сжигать (двойная защита
             # к отбору выше — на случай, если лид пришёл из lost_clients).
-            if _is_ig and not _ig_window_open:
+            if _is_ig and (not _ig_window_open or not config.IG_NUDGES_ENABLED):
                 continue
 
             # «Я подтвержу позже» — не молчание, а ясное «не сейчас»:
             # напоминание после него это дожим (N zehra 2026-09-01, три
             # пинка по закрытому разговору).
-            if _is_ig and (getattr(context, "booking_data", None) or {}).get("closed_politely"):
+            if _is_ig and any((getattr(context, "booking_data", None) or {}).get(k)
+                              for k in ("closed_politely", "out_of_area", "ig_nudge_sent")):
                 continue
 
             # Pick delay schedule based on booking stage
@@ -224,7 +226,7 @@ class FollowUpService:
             if _is_ig:
                 # Татьяна 2026-08-25: «через 5 минут» — независимо от стадии.
                 # Ветка BOOKING (10 мин) для IG не применяется.
-                delays = FOLLOW_UP_DELAYS
+                delays = [timedelta(minutes=config.IG_NUDGE_DELAY_MINUTES)]
 
             # Check timing: should we send next follow-up?
             if state["count"] < len(delays):

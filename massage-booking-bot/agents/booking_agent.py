@@ -907,6 +907,30 @@ the client understands you, switching to their language when they need it."""
             logger.error(f"Ошибка при обработке сообщения: {e}")
             return "Sorry dear, there was a technical issue. Please try again 🙏"
 
+    async def _request_booking_model(self, messages):
+        """Astra tool calls use Responses; retain the existing parser contract."""
+        from types import SimpleNamespace
+        self.last_usage = None
+        if self.model.startswith("gpt-6"):
+            result = await self.client.responses.create(
+                model=self.model, input=messages,
+                tools=[{"type": "function", **tool["function"], "strict": False}
+                       for tool in BOOKING_TOOLS],
+                reasoning={"effort": "low"}, max_output_tokens=2000,
+                store=False,
+            )
+            self.last_usage = result.usage.model_dump() if result.usage else None
+            calls = [SimpleNamespace(function=SimpleNamespace(name=item.name, arguments=item.arguments))
+                     for item in result.output if item.type == "function_call"]
+            return SimpleNamespace(
+                choices=[SimpleNamespace(finish_reason="stop" if result.status == "completed" else "length",
+                    message=SimpleNamespace(content=result.output_text, tool_calls=calls))],
+                usage=SimpleNamespace(completion_tokens=result.usage.output_tokens) if result.usage else None)
+        result = await self.client.chat.completions.create(
+            model=self.model, messages=messages, tools=BOOKING_TOOLS, tool_choice="auto")
+        self.last_usage = result.usage.model_dump() if result.usage else None
+        return result
+
     async def process_message_with_tools(
         self, message: str, context: Dict[str, Any]
     ) -> Tuple[str, AgentActions]:
@@ -929,12 +953,7 @@ the client understands you, switching to their language when they need it."""
         try:
             messages = self._assemble_messages(message, context)
 
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=BOOKING_TOOLS,
-                tool_choice="auto",
-            )
+            response = await self._request_booking_model(messages)
 
             choice = response.choices[0]
             msg = choice.message
@@ -955,12 +974,7 @@ the client understands you, switching to their language when they need it."""
                     m for m in messages
                     if not (m["role"] == "system" and "КРИТИЧНО" in m.get("content", ""))
                 ]
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=retry_messages,
-                    tools=BOOKING_TOOLS,
-                    tool_choice="auto",
-                )
+                response = await self._request_booking_model(retry_messages)
                 choice = response.choices[0]
                 msg = choice.message
                 answer = msg.content or ""
@@ -1251,6 +1265,9 @@ the client understands you, switching to their language when they need it."""
                     "или \"= 367.50 AED\". Клиент НЕ должен видеть расчет VAT!"
                 ),
             })
+
+        from services.reply_composer import STYLE_INSTRUCTION
+        messages.append({"role": "system", "content": STYLE_INSTRUCTION})
 
         return messages
 

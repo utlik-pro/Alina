@@ -134,3 +134,29 @@ async def test_storage_outage_does_not_restart_sales_with_empty_context(dialogue
     out = await dialogue.turn('Yes', 'Your appointment is confirmed!')
     wh.booking_agent.process_message_with_tools.assert_not_awaited()
     assert 'technical issue' in out.lower()
+
+@pytest.mark.asyncio
+async def test_one_message_one_question_and_no_repeated_greeting(dialogue):
+    dialogue.ctx.client_data['phone'] = '971500000000'
+    dialogue.ctx.recent_messages = [{'role': 'assistant', 'content': 'Hello dear!'}]
+    out = await dialogue.turn('Home service only?',
+        'Hello dear 🌹\nYes, home service.---MESSAGE_SPLIT---Please send your WhatsApp number.\nWhich day?\nMorning or evening?')
+    assert wh._send_to_client.await_count == 1
+    assert 'hello' not in out.lower()
+    assert 'send your whatsapp' not in out.lower()
+    assert out.count('?') <= 1
+    assert 'home service' in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_calendar_outage_is_not_reported_as_fully_booked(dialogue, monkeypatch):
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value=None),
+        is_slot_available=AsyncMock(return_value=None)))
+    dialogue.ctx.client_data.update(phone='971500000000', area='abu_dhabi')
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_named=True, service_duration=50)
+    out = await dialogue.turn('How much?', 'Facial massage is 370 AED. Today and tomorrow are fully booked. Which day?')
+    assert 'fully booked' not in out.lower()
+    assert '370' in out
+    assert "can't verify" in out

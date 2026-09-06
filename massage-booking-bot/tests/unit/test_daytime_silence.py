@@ -478,8 +478,8 @@ def test_17_instagram_nudge_routes_and_respects_the_window(daytime):
 
     # Текст спрашивает про интерес и сообщает о свободных окнах.
     nudge = get_ig_nudge()
-    assert "interested" in nudge.lower()
-    assert "free slots" in nudge.lower()
+    assert "when convenient" in nudge.lower()
+    assert "free slots" not in nudge.lower()
 
     # Днём напоминание в Instagram НЕ уходит: маршрут идёт через
     # _send_to_client, а тот отказывает вне окна.
@@ -502,7 +502,7 @@ def test_18_instagram_nudge_is_delivered_at_night(nighttime):
 
 
 # 19 — сквозной прогон напоминания: 5 минут, один раз, и не сжигается днём
-def test_19_ig_nudge_fires_at_5_minutes_end_to_end(monkeypatch):
+def test_19_ig_nudge_is_opt_in_and_waits_thirty_minutes(monkeypatch):
     """Аудит 2026-08-26 поймал три дефекта, которые юниты пропускали, потому
     что проверяли константы, а не живой цикл: (1) ворота «потеряшек» пускали
     IG-лида не раньше ЧАСА тишины — 5-минутная задержка Татьяны была мёртвым
@@ -537,11 +537,24 @@ def test_19_ig_nudge_fires_at_5_minutes_end_to_end(monkeypatch):
     assert svc.follow_up_state.get(uid, {}).get("count", 0) == 0, \
         "дневная попытка не имеет права сжечь единственное напоминание"
 
-    # Ночью: одно напоминание через 5 минут, с текстом Татьяны.
+    # v2: disabled by default; even opt-in must wait at least 30 minutes.
+    monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
+    monkeypatch.setattr(webhook_app.config, "IG_NUDGES_ENABLED", False)
+    asyncio.run(svc._check_inactive_clients())
+    assert sent == []
+    monkeypatch.setattr(webhook_app.config, "IG_NUDGES_ENABLED", True)
+    monkeypatch.setattr(webhook_app.config, "IG_NUDGE_DELAY_MINUTES", 30)
+    asyncio.run(svc._check_inactive_clients())
+    assert sent == []
+    ctx.last_activity = datetime.now() - timedelta(minutes=31)
+    ctx.booking_data['closed_politely'] = True
+    asyncio.run(svc._check_inactive_clients())
+    assert sent == []
+    ctx.booking_data['closed_politely'] = False
     monkeypatch.setattr(instagram_agent, "ig_live_now", lambda now=None: True)
     asyncio.run(svc._check_inactive_clients())
     assert len(sent) == 1 and sent[0][0] == uid
-    assert "interested" in sent[0][1].lower()
+    assert "when convenient" in sent[0][1].lower()
     assert svc.follow_up_state[uid]["count"] == 1
 
     # Второй цикл: повтора нет — ровно ОДНО («потом я ещё раз по ним пройдусь»).

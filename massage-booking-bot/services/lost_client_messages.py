@@ -140,8 +140,7 @@ if __name__ == "__main__":
 # дальше она проходится по молчунам сама («а потом я ещё раз по ним
 # пройдусь») — поэтому серии из пяти догонов, как на WhatsApp, здесь нет.
 IG_NUDGE = (
-    "Dear, are you still interested in the service? 🌹\n"
-    "We have free slots available — just tell us which time suits you 😊"
+    "If you would like to continue your booking, just reply here when convenient 🌹"
 )
 
 

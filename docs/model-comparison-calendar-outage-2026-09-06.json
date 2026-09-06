@@ -1,0 +1,214 @@
+[
+  {
+    "model": "gpt-5.4",
+    "case": "home_question",
+    "user": "Do you have a branch in Dubai or home service only?",
+    "replies": [
+      "We do home service in Abu Dhabi, Al Ain and Dubai dear.\n\nOur Abu Dhabi studio in Al Raha is closed for maintenance now.\n\nWhen would suit you for your facial massage?"
+    ],
+    "seconds": 1.73,
+    "usage": {
+      "completion_tokens": 33,
+      "prompt_tokens": 17584,
+      "total_tokens": 17617,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.015367
+  },
+  {
+    "model": "gpt-5.4",
+    "case": "phone_provided",
+    "user": "0500000000",
+    "replies": [
+      "Got it dear 🌹\n\nToday and tomorrow are fully booked for facial massage.\n\nWhat day would suit you?"
+    ],
+    "seconds": 1.91,
+    "usage": {
+      "completion_tokens": 25,
+      "prompt_tokens": 17534,
+      "total_tokens": 17559,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.015122
+  },
+  {
+    "model": "gpt-5.4",
+    "case": "change_service",
+    "user": "Body massage if I like it I will do facial too",
+    "replies": [
+      "Yes dear, you can do facial later if you like 🌹\n\n60 min - 350 AED\n\n90 min - 460 AED\n\nWhich one would you like?"
+    ],
+    "seconds": 1.9,
+    "usage": {
+      "completion_tokens": 37,
+      "prompt_tokens": 17356,
+      "total_tokens": 17393,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "body_massage",
+    "estimated_cost_usd": 0.014857
+  },
+  {
+    "model": "gpt-5.4",
+    "case": "price_question",
+    "user": "How much is facial massage and how long does it take?",
+    "replies": [
+      "Facial massage is 370 AED, and it takes 50 minutes.\n\nWe don’t have slots today or tomorrow dear — which day would suit you?"
+    ],
+    "seconds": 1.57,
+    "usage": {
+      "completion_tokens": 34,
+      "prompt_tokens": 17606,
+      "total_tokens": 17640,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12928
+      }
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.015437
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "home_question",
+    "user": "Do you have a branch in Dubai or home service only?",
+    "replies": [
+      "Home service only in Dubai, no branch 🌹 We come to your home or hotel with free transportation.\n\nWhich day would suit you?"
+    ],
+    "seconds": 2.67,
+    "usage": {
+      "input_tokens": 17503,
+      "input_tokens_details": {
+        "cached_tokens": 12831,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 31,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17534
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.061101
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "phone_provided",
+    "user": "0500000000",
+    "replies": [
+      "Got your number, thank you 🌹 No slots are available today or tomorrow.\n\nWhich other day would suit you?"
+    ],
+    "seconds": 2.52,
+    "usage": {
+      "input_tokens": 17453,
+      "input_tokens_details": {
+        "cached_tokens": 12823,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 27,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17480
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.060473
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "change_service",
+    "user": "Body massage if I like it I will do facial too",
+    "replies": [
+      "Yes, we can start with body massage and leave facial for later 🌹\n\n60 min — 350 AED\n\n90 min — 460 AED\n\nWhich duration would you prefer?"
+    ],
+    "seconds": 2.69,
+    "usage": {
+      "input_tokens": 17275,
+      "input_tokens_details": {
+        "cached_tokens": 12830,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 40,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17315
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "body_massage",
+    "estimated_cost_usd": 0.05928
+  },
+  {
+    "model": "gpt-6-astra",
+    "case": "price_question",
+    "user": "How much is facial massage and how long does it take?",
+    "replies": [
+      "Facial massage is 370 AED for 50 minutes 🌹 No slots are available today or tomorrow.\n\nWhich other day would suit you?"
+    ],
+    "seconds": 2.36,
+    "usage": {
+      "input_tokens": 17525,
+      "input_tokens_details": {
+        "cached_tokens": 12831,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 32,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 17557
+    },
+    "single_message": true,
+    "max_one_question": true,
+    "service_after": "face_massage",
+    "estimated_cost_usd": 0.061371
+  }
+]
