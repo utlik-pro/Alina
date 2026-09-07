@@ -440,3 +440,16 @@ def test_unchecked_reply_without_a_question_gets_a_day_question():
     out = compose_reply("We have 10:00 AM available.", _compose_ctx({}))
     assert "can't verify the calendar" not in out
     assert "Which day and time suit you" in out
+
+
+def test_another_day_question_is_dropped_when_the_times_are_right_there():
+    from services.reply_composer import compose_reply
+    ctx = _compose_ctx({"2026-09-10": set(), "2026-09-08": {"10:00", "14:30"}},
+                       date="2026-09-10")
+    out = compose_reply(
+        "On Thursday 10 September we're fully booked dear 🙏\n"
+        "Would another day work for you?\n"
+        "The nearest we have is tomorrow: 10:00 AM or 2:30 PM 🌹", ctx)
+    assert "another day" not in out.lower()
+    assert "fully booked" in out
+    assert "10:00 AM" in out and "2:30 PM" in out

@@ -31,6 +31,7 @@ def compose_reply(text, context):
         (truth.get(target_date) is None) if target_date in truth else
         all(v is None for v in truth.values()))
     unavailable = outage or (context.state != 'completed' and not checked)
+    offers_times = bool(re.search(r'\b\d{1,2}(?::\d{2})?\s*[ap]m\b', text, re.I))
     removed_availability = False
     parts = []
     seen = set()
@@ -46,7 +47,12 @@ def compose_reply(text, context):
             if awaiting_phone and re.search(
                     r'fully booked|slots|nearest we have|\b\d{1,2}(?::\d{2})?\s*[ap]m\b', sentence, re.I):
                 continue
-            if unavailable and re.search(r'another day|different day|alternative date', sentence, re.I):
+            # "Would another day work?" is noise when the very same turn
+            # already lists the alternative times — it asks a question the
+            # next bubble answers (Amina 2026-09-07, prod-driven).
+            if ((unavailable or offers_times)
+                    and re.search(r'another day|different day|alternative date',
+                                  sentence, re.I)):
                 continue
             if unavailable and re.search(
                 r'we can (?:do|book|arrange).*(?:today|tomorrow)|fully booked|no (?:free )?slots|(?:don.t|do not|we have no).*slots|'
