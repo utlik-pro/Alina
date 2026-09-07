@@ -5291,7 +5291,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
 
         # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
-        # v2: model answers the current question; no forced full sales card.
+        # v2 отключил этот вызов («no forced full sales card») — и прод стал
+        # отвечать ровно тем, на что она жаловалась: голым «Face massage
+        # 50 min — 370 AED» вместо карточки с абонементом (Frenchie 31.08,
+        # «Тут добавляем это»). Правило клиента важнее стиля v2.
+        response_text = _enforce_admin_service_card(
+            response_text, context, text, who=phone)
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))
@@ -5311,9 +5316,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             if TIME_PREF_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
-        # Первый контакт без узнанной рекламы → карточки Алины, не меню.
+        # Первый контакт без узнанной рекламы → вопрос об услуге, не меню
+        # (Татьяна 01.09). v2 тоже отключил его, и голое «Hi» получало
+        # «We offer body and face massage, facials, nails and lashes» —
+        # то самое меню, которое она просила заменить вопросом.
         _fi_before = response_text
-        # v2: no forced welcome catalogue after an already specific request.
+        response_text = _enforce_full_intro(response_text, context, text, who=phone)
         if response_text != _fi_before:
             dialog_manager.update_booking_data(user_id, "cards_intro_sent", True)
 

@@ -1,4 +1,5 @@
 """Replay client turns through the final channel pipeline, with no external I/O."""
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 import pytest
@@ -159,7 +160,13 @@ async def test_calendar_outage_is_not_reported_as_fully_booked(dialogue, monkeyp
     out = await dialogue.turn('How much?', 'Facial massage is 370 AED. Today and tomorrow are fully booked. Which day?')
     assert 'fully booked' not in out.lower()
     assert '370' in out
-    assert "can't verify" in out
+    # The invariant is that an outage produces NO availability claim — either
+    # the agent says it cannot verify, or it does not discuss times at all.
+    # A price question is answered with the admin card (Tatyana 31.08), which
+    # takes the second route: it quotes 370 and asks morning-or-evening, so
+    # nothing about the calendar is asserted while YClients is down.
+    assert "can't verify" in out or not re.search(
+        r'\b\d{1,2}(?::\d{2})?\s*[ap]m\b', out, re.I)
 
 
 @pytest.mark.asyncio

@@ -1000,3 +1000,24 @@ def test_cash_recap_does_not_repeat_payment_word():
     from webhook_app import _enforce_payment_terms
     text = _enforce_payment_terms('370 AED cash.', 'cash')
     assert text == '370 AED (cash — tax free).'
+
+
+def test_the_card_gates_are_actually_WIRED_into_the_prod_pipeline():
+    """A gate that is defined but never called is invisible to every unit test.
+
+    Live-caught 2026-09-07: on the v2 branch `_enforce_admin_service_card`
+    and `_enforce_full_intro` had ZERO call sites — the pipeline had been
+    stubbed with "v2: no forced full sales card". Prod therefore answered
+    «face» with a bare "Face massage 50 min — 370 AED" (exactly Tatyana's
+    31.08 complaint) and a bare «Hi» with the old catalogue menu, while
+    every unit test kept passing because they call the gates directly.
+    """
+    import inspect
+    import webhook_app as wh
+
+    src = inspect.getsource(wh._process_wappi_message)
+    assert "_enforce_admin_service_card(" in src, "card gate not wired"
+    assert "_enforce_full_intro(" in src, "service-question intro not wired"
+    # The card must be applied before the number is asked, so the phone
+    # question appends under the card rather than replacing it (rule 3u).
+    assert src.index("_enforce_admin_service_card(") < src.index("_enforce_phone_first(")
