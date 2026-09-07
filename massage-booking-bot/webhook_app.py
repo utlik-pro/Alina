@@ -2455,7 +2455,11 @@ def _enforce_all_emirates_line(response_text: str, who: str = "") -> str:
     return out
 
 
-_WELCOME_MENU_RE = re.compile(r"what services? are you interested in", re.I)
+# Любой общий вопрос «какая услуга?», а не одна заученная формулировка:
+# v2 начал писать «Which service are you interested in?» вместо «What
+# services…», и гейт замолчал, хотя ответ был тем самым каталогом с
+# ногтями и ресницами (прод-смоук 2026-09-07).
+_WELCOME_MENU_RE = re.compile(r"wh(?:at|ich)\s+services?\b[^?\n]{0,60}\?", re.I)
 
 
 def _enforce_full_intro(response_text: str, context, inbound_text: str,
@@ -2486,6 +2490,9 @@ def _enforce_full_intro(response_text: str, context, inbound_text: str,
     # значит место карточек, каким бы по счёту ход ни был.
     if not _WELCOME_MENU_RE.search(response_text):
         return response_text          # модель ответила не меню — не трогаем
+    _low = response_text.lower()
+    if all(k in _low for k in ("face massage", "body massage", "cleansing")):
+        return response_text          # уже спрошено ровно тремя услугами
     from prices import build_full_intro
     logger.info(f"full-intro gate: меню заменено карточками Алины ({who})")
     return build_full_intro()

@@ -1021,3 +1021,37 @@ def test_the_card_gates_are_actually_WIRED_into_the_prod_pipeline():
     # The card must be applied before the number is asked, so the phone
     # question appends under the card rather than replacing it (rule 3u).
     assert src.index("_enforce_admin_service_card(") < src.index("_enforce_phone_first(")
+
+
+def test_full_intro_gate_survives_a_rephrased_service_question():
+    """The gate keyed off ONE phrasing and went silent when v2 reworded it.
+
+    Prod 2026-09-07 answered a bare «Hi» with "We offer body and face
+    massage, deep facial cleansing, nails and lashes. Which service are you
+    interested in?" — a catalogue that even offers nails, for which there is
+    no master (rule 3e) — because `_WELCOME_MENU_RE` only knew "what
+    services are you interested in".
+    """
+    import types
+    import webhook_app as wh
+
+    def _ctx():
+        return types.SimpleNamespace(booking_data={}, client_data={},
+                                     recent_messages=[])
+
+    catalogue = ("Hi dear 🌹 Welcome to Crystal Lab home service.\n"
+                 "We offer body and face massage, deep facial cleansing, "
+                 "nails and lashes.\nWhich service are you interested in?")
+    out = wh._enforce_full_intro(catalogue, _ctx(), "Hi")
+    for token in ("face massage", "body massage", "cleansing"):
+        assert token in out.lower(), token
+    assert "nails" not in out.lower()
+    # The older phrasing still triggers it.
+    assert "body massage" in wh._enforce_full_intro(
+        "What services are you interested in?", _ctx(), "Hi").lower()
+    # A reply that already names the three services is left alone.
+    good = "What would you like — face massage, body massage or deep facial cleansing?"
+    assert wh._enforce_full_intro(good, _ctx(), "Hi") == good
+    # A named service means the funnel moved on — no intro.
+    ctx = _ctx(); ctx.booking_data["service_named"] = True
+    assert wh._enforce_full_intro(catalogue, ctx, "Hi") == catalogue
