@@ -22,9 +22,15 @@ def compose_reply(text, context):
     text = (text or '').replace('---MESSAGE_SPLIT---', '\n\n')
     truth = getattr(context, 'slot_truth', {}) or {}
     target_date = booking.get('date')
-    unavailable = context.state != 'completed' and (
-        (truth.get(target_date) is None) if target_date else
-        (not truth or all(v is None for v in truth.values())))
+    # An EMPTY slot_truth means no calendar lookup ran this turn — the funnel
+    # is still gathering service/duration — NOT that the calendar failed.
+    # Conflating the two told a live client "I can't verify the calendar right
+    # now" while she was simply being asked 60-or-90 (Amina 2026-09-07).
+    checked = bool(truth)
+    outage = context.state != 'completed' and checked and (
+        (truth.get(target_date) is None) if target_date in truth else
+        all(v is None for v in truth.values()))
+    unavailable = outage or (context.state != 'completed' and not checked)
     removed_availability = False
     parts = []
     seen = set()
@@ -78,7 +84,13 @@ def compose_reply(text, context):
                 seen.add(key)
                 parts.append(sentence)
     if removed_availability:
-        parts.append("I can't verify the calendar right now; availability is not confirmed yet.")
+        if outage:
+            # A check really was attempted and the calendar did not answer.
+            parts.append("I can't verify the calendar right now; availability is not confirmed yet.")
+        elif not asked:
+            # Nothing failed — we simply have not looked yet. Keep the funnel
+            # moving instead of alarming the client about our own backend.
+            parts.append("Which day and time suit you dear? I'll check the calendar right away 🌹")
     return '\n\n'.join(parts).strip() or 'Thank you 🌹'
 
 

@@ -403,3 +403,40 @@ def test_a_fresh_reply_is_not_a_repeat():
     ])
     assert not _is_verbatim_repeat("Tuesday at 10:00 AM is free 🌹", ctx)
     assert not _is_verbatim_repeat("", ctx)
+
+
+# ── "I can't verify the calendar" is only for a REAL failed check ──────────
+# Amina 2026-09-07 (prod-driven, not the sim): the funnel was still asking
+# «60 or 90 min dear?», so no slot lookup had run yet — an empty slot_truth.
+# The composer read that as a calendar outage and told the client
+# «I can't verify the calendar right now; availability is not confirmed yet.»
+
+def _compose_ctx(truth, date=None, state="initial"):
+    import types as _t
+    return _t.SimpleNamespace(
+        recent_messages=[{"role": "user", "content": "Around 10am if possible"}],
+        client_data={"area": "al_ain"}, booking_data=({"date": date} if date else {}),
+        slot_truth=truth, state=state, user_id="ig_770099031")
+
+
+def test_no_lookup_yet_is_not_a_calendar_outage():
+    from services.reply_composer import compose_reply
+    # Separate messages, exactly as ---MESSAGE_SPLIT--- delivers them.
+    out = compose_reply("We have 10:00 AM available.\n60 or 90 min dear?",
+                        _compose_ctx({}, date="2026-09-10"))
+    assert "can't verify the calendar" not in out
+    assert "60 or 90 min dear?" in out
+
+
+def test_a_real_outage_still_says_it_honestly():
+    from services.reply_composer import compose_reply
+    out = compose_reply("We have 10:00 AM available.",
+                        _compose_ctx({"2026-09-10": None}, date="2026-09-10"))
+    assert "can't verify the calendar" in out
+
+
+def test_unchecked_reply_without_a_question_gets_a_day_question():
+    from services.reply_composer import compose_reply
+    out = compose_reply("We have 10:00 AM available.", _compose_ctx({}))
+    assert "can't verify the calendar" not in out
+    assert "Which day and time suit you" in out
