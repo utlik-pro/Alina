@@ -1,0 +1,119 @@
+[
+  {
+    "model": "gpt-5.6-sol",
+    "case": "home_question",
+    "user": "Do you have a branch in Dubai or home service only?",
+    "replies": [
+      "In Dubai we provide home service only, with free transportation 🌹"
+    ],
+    "seconds": 4.17,
+    "usage": {
+      "completion_tokens": 23,
+      "prompt_tokens": 17767,
+      "total_tokens": 17790,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 0,
+        "cache_write_tokens": 12912
+      }
+    },
+    "thought_messages": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  },
+  {
+    "model": "gpt-5.6-sol",
+    "case": "phone_provided",
+    "user": "0500000000",
+    "replies": [
+      "Got it, thank you 🌹",
+      "The calendar cannot be verified right now.",
+      "Which day would suit you?"
+    ],
+    "seconds": 5.18,
+    "usage": {
+      "completion_tokens": 30,
+      "prompt_tokens": 17717,
+      "total_tokens": 17747,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12870,
+        "cache_write_tokens": 34
+      }
+    },
+    "thought_messages": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  },
+  {
+    "model": "gpt-5.6-sol",
+    "case": "change_service",
+    "user": "Body massage if I like it I will do facial too",
+    "replies": [
+      "Yes, you can try the body massage first 🌹",
+      "60 min - 350 AED\n90 min - 460 AED",
+      "Which one would you like?"
+    ],
+    "seconds": 3.91,
+    "usage": {
+      "completion_tokens": 35,
+      "prompt_tokens": 17431,
+      "total_tokens": 17466,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12870,
+        "cache_write_tokens": 41
+      }
+    },
+    "thought_messages": true,
+    "max_one_question": true,
+    "service_after": "body_massage"
+  },
+  {
+    "model": "gpt-5.6-sol",
+    "case": "price_question",
+    "user": "How much is facial massage and how long does it take?",
+    "replies": [
+      "Facial massage is 370 AED and takes 50 minutes 🌹",
+      "And what time suits you better — morning or evening?"
+    ],
+    "seconds": 3.7,
+    "usage": {
+      "completion_tokens": 24,
+      "prompt_tokens": 17789,
+      "total_tokens": 17813,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 12870,
+        "cache_write_tokens": 42
+      }
+    },
+    "thought_messages": true,
+    "max_one_question": true,
+    "service_after": "face_massage"
+  }
+]

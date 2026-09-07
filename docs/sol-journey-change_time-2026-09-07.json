@@ -1,0 +1,143 @@
+{
+  "scenario": "change_time",
+  "model": "gpt-5.6-sol",
+  "calendar": "fake; only tomorrow 14:00/16:00",
+  "turns": [
+    {
+      "client": "Hi, facial massage in Abu Dhabi please. How much and how long?",
+      "messages": [
+        "Hi dear 🌹 Facial massage is 50 minutes — 370 AED.",
+        "Home service and transportation are included.",
+        "And what time suits you better — morning or evening?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Do you come to my home?",
+      "messages": [
+        "Yes, we come to your home and transportation is free 🌹"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "0500000000",
+      "messages": [
+        "Got it, thank you 🌹",
+        "Tomorrow Tuesday 8 September: 2:00 PM or 4:00 PM.",
+        "Which suits you?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Tomorrow at 2 pm please",
+      "messages": [
+        "Tomorrow at 2:00 PM is available 🌹",
+        "Please type your address: area, building or villa, and apartment number."
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Actually, tomorrow at 4 pm instead please",
+      "messages": [
+        "4:00 PM tomorrow is available 🌹",
+        "Please type your address: area, building or villa, and apartment number."
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Al Raha, Test Building, apartment 12",
+      "messages": [
+        "Got it — Al Raha, Test Building, apartment 12 🌹",
+        "May I have your name?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "My name is Jane Test",
+      "messages": [
+        "Got it, Jane Test 🌹",
+        "How would you like to pay: cash (tax free) or bank transfer (+5% VAT)?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Cash",
+      "messages": [
+        "So — 50-min facial massage, Tuesday 8 September at 4:00 PM, 370 AED (cash — tax free).",
+        "Shall I confirm?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Yes, please confirm my appointment",
+      "messages": [
+        "Your face massage is booked ✅",
+        "Test therapist — Tue 8 Sep 4:00 PM — 370 AED (cash — tax free) 🌹",
+        "Tomorrow our administrator will contact you to confirm the details 🌹"
+      ],
+      "calendar_records": 1,
+      "state": "completed"
+    },
+    {
+      "client": "Thank you",
+      "messages": [
+        "You’re welcome dear 🌸 See you soon!"
+      ],
+      "calendar_records": 1,
+      "state": "completed"
+    }
+  ],
+  "calendar_records": [
+    {
+      "staff_id": 7,
+      "service_ids": [
+        9
+      ],
+      "date": "2026-09-08",
+      "time": "16:00",
+      "client_name": "Jane Test",
+      "client_phone": "+971500000000",
+      "comment": "Instagram agent booking (night) #1. Phone: +971500000000. Area: abu_dhabi. Payment: cash — tax free. Address: Al Raha, Test Building, apartment 12. [operation:2d73dfc4c299f4744182f319982c703a7549854bff3a3eb47d9cd5ba1e86317a]",
+      "is_test": false,
+      "duration_minutes": 50
+    }
+  ],
+  "local_bookings": [
+    {
+      "booking_id": 1,
+      "telegram_id": "ig_555",
+      "phone": "+971500000000",
+      "client_name": "Jane Test",
+      "client_id": 1,
+      "total_bookings": 0,
+      "service_name": "face_massage",
+      "duration": 50,
+      "booking_date": "2026-09-08 16:00:00",
+      "therapist_name": "Test therapist",
+      "area": "abu_dhabi",
+      "base_price": 370.0,
+      "total_price": 370.0,
+      "payment_method": "cash",
+      "location_details": "Al Raha, Test Building, apartment 12",
+      "location_latitude": null,
+      "location_longitude": null,
+      "package_id": null,
+      "yclients_appointment_id": "9001"
+    }
+  ],
+  "verified": [
+    "no record before explicit confirmation",
+    "one record after thanks",
+    "correct date/time/duration/name/phone/staff",
+    "local area/master/calendar ID",
+    "payment cash, total 370.0 AED"
+  ]
+}

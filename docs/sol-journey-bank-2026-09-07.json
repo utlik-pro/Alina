@@ -1,0 +1,135 @@
+{
+  "scenario": "bank",
+  "model": "gpt-5.6-sol",
+  "calendar": "fake; only tomorrow 14:00/16:00",
+  "turns": [
+    {
+      "client": "Hi, facial massage in Abu Dhabi please. How much and how long?",
+      "messages": [
+        "Hi dear 🌹 Facial massage is 50 minutes — 370 AED.",
+        "Home service and transportation are free.",
+        "And what time suits you better — morning or evening?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Do you come to my home?",
+      "messages": [
+        "Yes, we come to your home.",
+        "Transportation is free 🌹"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "0500000000",
+      "messages": [
+        "Got it, thank you.",
+        "Tomorrow Tuesday 8 September, 2:00 PM or 4:00 PM is available 🌹 Which suits you?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Tomorrow at 2 pm please",
+      "messages": [
+        "Tomorrow at 2:00 PM works 🌹",
+        "Please type your address: area, building or villa, and apartment number."
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Al Raha, Test Building, apartment 12",
+      "messages": [
+        "Got it — Al Raha, Test Building, apartment 12 🌹",
+        "May I have your name?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "My name is Jane Test",
+      "messages": [
+        "Got it, Jane 🌹",
+        "How would you like to pay: cash (tax free) or bank transfer (+5% VAT)?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Bank transfer",
+      "messages": [
+        "Bank transfer confirmed — you’ll pay after the service 🌹",
+        "So, facial massage on Tuesday 8 September at 2:00 PM, 370 AED (bank transfer +5% VAT).",
+        "Shall I confirm?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Yes, please confirm my appointment",
+      "messages": [
+        "Your face massage is booked ✅",
+        "Test therapist — Tue 8 Sep 2:00 PM — 370 AED (bank transfer +5% VAT) 🌹",
+        "Tomorrow our administrator will contact you to confirm the details 🌹"
+      ],
+      "calendar_records": 1,
+      "state": "completed"
+    },
+    {
+      "client": "Thank you",
+      "messages": [
+        "You’re welcome dear 🌸 See you soon!"
+      ],
+      "calendar_records": 1,
+      "state": "completed"
+    }
+  ],
+  "calendar_records": [
+    {
+      "staff_id": 7,
+      "service_ids": [
+        9
+      ],
+      "date": "2026-09-08",
+      "time": "14:00",
+      "client_name": "Jane Test",
+      "client_phone": "+971500000000",
+      "comment": "Instagram agent booking (night) #1. Phone: +971500000000. Area: abu_dhabi. Payment: bank transfer +5% VAT. Address: Al Raha, Test Building, apartment 12. [operation:9a4da5a64836b69d09688b1ebec9d17cc2e989083eacb12862a1c78c971c90bd]",
+      "is_test": false,
+      "duration_minutes": 50
+    }
+  ],
+  "local_bookings": [
+    {
+      "booking_id": 1,
+      "telegram_id": "ig_555",
+      "phone": "+971500000000",
+      "client_name": "Jane Test",
+      "client_id": 1,
+      "total_bookings": 0,
+      "service_name": "face_massage",
+      "duration": 50,
+      "booking_date": "2026-09-08 14:00:00",
+      "therapist_name": "Test therapist",
+      "area": "abu_dhabi",
+      "base_price": 370.0,
+      "total_price": 388.5,
+      "payment_method": "bank_transfer",
+      "location_details": "Al Raha, Test Building, apartment 12",
+      "location_latitude": null,
+      "location_longitude": null,
+      "package_id": null,
+      "yclients_appointment_id": "9001"
+    }
+  ],
+  "verified": [
+    "no record before explicit confirmation",
+    "one record after thanks",
+    "correct date/time/duration/name/phone/staff",
+    "local area/master/calendar ID",
+    "payment bank_transfer, total 388.5 AED"
+  ]
+}

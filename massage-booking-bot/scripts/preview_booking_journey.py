@@ -12,6 +12,7 @@ async def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="gpt-5.4")
+    parser.add_argument("--scenario", choices=["cash", "bank", "change_time", "refusal"], default="cash")
     parser.add_argument("--output", default="../docs/full-booking-journey-2026-09-06.json")
     args = parser.parse_args()
     from dotenv import dotenv_values
@@ -47,7 +48,13 @@ async def main():
            'Do you come to my home?', '0500000000', 'Tomorrow at 2 pm please',
            'Al Raha, Test Building, apartment 12', 'My name is Jane Test',
            'Cash', 'Yes, please confirm my appointment', 'Thank you']
-    result={'model':args.model, 'calendar':'fake; only tomorrow 14:00/16:00', 'turns':[]}
+    if args.scenario == 'bank':
+        turns[6] = 'Bank transfer'
+    elif args.scenario == 'change_time':
+        turns.insert(4, 'Actually, tomorrow at 4 pm instead please')
+    elif args.scenario == 'refusal':
+        turns[7:] = ['No thank you, do not book', 'Thank you']
+    result={'scenario':args.scenario, 'model':args.model, 'calendar':'fake; only tomorrow 14:00/16:00', 'turns':[]}
     with tempfile.TemporaryDirectory(prefix='crystal-journey-') as tmp, pytest.MonkeyPatch.context() as patch:
         db=Database(f'sqlite+aiosqlite:///{tmp}/test.db')
         async with db.engine.begin() as connection:
@@ -80,19 +87,27 @@ async def main():
                 result['calendar_records']=records
                 result['local_bookings']=await bot.booking_service.get_active_bookings('ig_555')
                 Path(args.output).write_text(json.dumps(result,ensure_ascii=False,indent=2,default=str))
-            before = result['turns'][:7]
+            if args.scenario == 'refusal':
+                assert not records, 'Refusal must never create a calendar record'
+                assert not result['local_bookings'], 'Refusal must not leave an active local booking'
+                result['verified'] = ['no calendar or active local booking after refusal']
+                Path(args.output).write_text(json.dumps(result,ensure_ascii=False,indent=2,default=str))
+                return
+            confirm_index = turns.index('Yes, please confirm my appointment')
+            before = result['turns'][:confirm_index]
             assert all(turn['calendar_records'] == 0 for turn in before), 'Premature calendar write'
             assert len(records) == 1, 'Expected exactly one calendar record after confirmation and thanks'
             record = records[0]
-            assert record['date'] == tomorrow and record['time'] == '14:00'
+            assert record['date'] == tomorrow and record['time'] == ('16:00' if args.scenario == 'change_time' else '14:00')
             assert record['duration_minutes'] == 50 and record['staff_id'] == 7
             assert record['client_name'] == 'Jane Test' and record['client_phone'].endswith('500000000')
             local = result['local_bookings'][0]
             assert local['area'] == 'abu_dhabi' and local['therapist_name']
             assert local['yclients_appointment_id'] == '9001'
-            assert local['total_price'] == 370 and local['payment_method'] == 'cash'
+            assert local['total_price'] == (388.5 if args.scenario == 'bank' else 370)
+            assert local['payment_method'] == ('bank_transfer' if args.scenario == 'bank' else 'cash')
             result['verified'] = ['no record before explicit confirmation', 'one record after thanks',
-                'correct date/time/duration/name/phone/staff', 'local area/master/calendar ID', 'cash total 370 AED']
+                'correct date/time/duration/name/phone/staff', 'local area/master/calendar ID', f"payment {local['payment_method']}, total {local['total_price']} AED"]
             Path(args.output).write_text(json.dumps(result,ensure_ascii=False,indent=2,default=str))
         finally:
             await agent.client.close()

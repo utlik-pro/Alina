@@ -1,0 +1,91 @@
+{
+  "scenario": "refusal",
+  "model": "gpt-5.6-sol",
+  "calendar": "fake; only tomorrow 14:00/16:00",
+  "turns": [
+    {
+      "client": "Hi, facial massage in Abu Dhabi please. How much and how long?",
+      "messages": [
+        "Hi dear 🌹 Facial massage is 50 minutes — 370 AED, with free home service.",
+        "And what time suits you better — morning or evening?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Do you come to my home?",
+      "messages": [
+        "Yes, we come to your home.",
+        "Transportation is free 🌹"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "0500000000",
+      "messages": [
+        "Got it, thank you 🌹 Tomorrow we have 2:00 PM or 4:00 PM.",
+        "Which suits you?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Tomorrow at 2 pm please",
+      "messages": [
+        "Tomorrow at 2:00 PM is available 🌹",
+        "Please type your address: area, building/villa and apartment number."
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Al Raha, Test Building, apartment 12",
+      "messages": [
+        "Got it — Al Raha, Test Building, apartment 12 🌹",
+        "May I have your name?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "My name is Jane Test",
+      "messages": [
+        "Got it, Jane Test 🌹",
+        "How would you like to pay: cash (tax free) or bank transfer (+5% VAT)?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Cash",
+      "messages": [
+        "So — facial massage, Tuesday 8 September at 2:00 PM, 370 AED (cash — tax free).",
+        "Shall I confirm?"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "No thank you, do not book",
+      "messages": [
+        "Of course dear 🌹 Anytime — just write me here when you're ready 🙏"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    },
+    {
+      "client": "Thank you",
+      "messages": [
+        "You’re welcome 🌹"
+      ],
+      "calendar_records": 0,
+      "state": "initial"
+    }
+  ],
+  "calendar_records": [],
+  "local_bookings": [],
+  "verified": [
+    "no calendar or active local booking after refusal"
+  ]
+}
