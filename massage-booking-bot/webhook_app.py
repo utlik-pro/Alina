@@ -2017,7 +2017,12 @@ def _enforce_phone_first(response_text: str, context, phone_known: bool,
     # Модель уже попросила номер своими словами («Please send your WhatsApp
     # number dear») — второй запрос от гейта в том же ответе звучит как эхо
     # (живой диалог 2026-08-27 04:53: номер спрошен дважды подряд).
-    if need_phone and _ASKS_FOR_NUMBER_RE.search(response_text):
+    # Смотрим на BODY, а не на исходный текст: строку «May I have your number
+    # and which day suits you?» цикл выше выбрасывает целиком (в ней вопрос о
+    # дне), и проверка по оригиналу снимала need_phone — номер пропадал из
+    # ответа вовсе, оставался только «morning or evening?». Прод-смоук
+    # 07.09 ловил это через раз, потому что зависит от формулировки модели.
+    if need_phone and _ASKS_FOR_NUMBER_RE.search(body):
         need_phone = False
     if not (need_phone or need_pref):
         return response_text

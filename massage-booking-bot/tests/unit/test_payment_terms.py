@@ -1055,3 +1055,37 @@ def test_full_intro_gate_survives_a_rephrased_service_question():
     # A named service means the funnel moved on — no intro.
     ctx = _ctx(); ctx.booking_data["service_named"] = True
     assert wh._enforce_full_intro(catalogue, ctx, "Hi") == catalogue
+
+
+def test_number_ask_survives_when_the_model_glued_it_to_a_day_question():
+    """The number must not vanish because of how the model phrased it.
+
+    Prod smoke 2026-09-07 failed intermittently: the package lead was asked
+    only «And what time suits you better — morning or evening?» and never for
+    a number (Tatyana 25.08: the number is what makes a silent lead
+    recoverable). Cause: the gate drops any line that also asks about the day,
+    but decided "the model already asked for a number" by looking at the
+    ORIGINAL text — so it suppressed its own question while the model's had
+    just been thrown away.
+    """
+    import types
+    import webhook_app as wh
+
+    def _ctx():
+        return types.SimpleNamespace(booking_data={"ad_prefill": "package"},
+                                     client_data={"area": "abu_dhabi"},
+                                     recent_messages=[])
+
+    glued = ("Our offer is 275 AED instead of 430.\n"
+             "May I have your number and which day suits you dear?")
+    out = wh._enforce_phone_first(glued, _ctx(), phone_known=False,
+                                  is_ig=True, who="t")
+    assert wh.PHONE_FIRST_LINE in out, "the number ask disappeared entirely"
+
+    # A number ask on its own line still survives and is NOT echoed twice.
+    own = ("Our offer is 275 AED instead of 430.\n"
+           "May I have your WhatsApp number dear?")
+    out2 = wh._enforce_phone_first(own, _ctx(), phone_known=False,
+                                   is_ig=True, who="t")
+    assert wh.PHONE_FIRST_LINE not in out2
+    assert "WhatsApp number" in out2
