@@ -1368,6 +1368,48 @@ def _times_from_summary(summary) -> Optional[set]:
     return _ampm_times_set(summary)
 
 
+def _latest_client_text(context) -> str:
+    """The client's most recent message in this dialogue ('' when unknown)."""
+    for m in reversed(getattr(context, "recent_messages", None) or []):
+        if m.get("role") == "user":
+            return m.get("content") or ""
+    return ""
+
+
+_REPEAT_NUDGE_LINE = ("\n\nOr just tell me the exact day and time "
+                      "dear — I'll check it right away 🙏")
+
+
+def _is_verbatim_repeat(response_text: str, context, depth: int = 4) -> bool:
+    """Is this reply word for word one the client already got recently?
+
+    Looks back over the last `depth` bot replies, not just the previous one:
+    a canned gate answer can be re-emitted with an unrelated card in between
+    (Amina 2026-09-07), and the client still reads it as deafness. The
+    nudge tail is stripped before comparing — otherwise the very line we
+    append to break a repeat would disguise the next one.
+    """
+    def _norm(s):
+        s = (s or "").strip()
+        if s.endswith(_REPEAT_NUDGE_LINE.strip()):
+            s = s[:-len(_REPEAT_NUDGE_LINE.strip())].strip()
+        return s
+
+    said = _norm(response_text)
+    if not said:
+        return False
+    seen = 0
+    for m in reversed(getattr(context, "recent_messages", None) or []):
+        if m.get("role") != "assistant":
+            continue
+        if _norm(m.get("content")) == said:
+            return True
+        seen += 1
+        if seen >= depth:
+            break
+    return False
+
+
 def _enforce_slot_reality(response_text: str, context, booking_call,
                           _label=None) -> str:
     """No time reaches a client unless YClients actually has it free.
@@ -1420,7 +1462,17 @@ def _enforce_slot_reality(response_text: str, context, booking_call,
                 if target else "That time isn't available dear 🙏")
         if days:
             alt = days[0]
-            shown = ", ".join(_to_ampm(t) for t in sorted(truth[alt])[:4])
+            alt_times = sorted(truth[alt])
+            # The client just named an hour and the nearest open day HAS it —
+            # an administrator would close on it, not read the list out again
+            # (Amina 2026-09-07: «Around 10am if possible» was answered with
+            # the same fully-booked block three times in a row, and 10:00 AM
+            # was free the whole time).
+            wanted = _detect_requested_time(_latest_client_text(context) or "")
+            if wanted and wanted in alt_times:
+                return (f"{head}\nBut {_nice(alt)} at {_to_ampm(wanted)} is "
+                        f"free 🌹\nShall I book it for you?")
+            shown = ", ".join(_to_ampm(t) for t in alt_times[:4])
             return f"{head}\nThe nearest we have is {_nice(alt)}: {shown}\nWhich suits you?"
         return f"{head}\nThe team will check further days for you 🌹"
 
@@ -5342,16 +5394,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Дословный повтор предыдущего ответа = глухота (M.a 2026-08-30:
         # на поправку даты агент повторил тот же текст слово в слово).
-        _prev_bot = next(
-            (m.get("content") for m in
-             reversed(getattr(context, "recent_messages", []) or [])
-             if m.get("role") == "assistant"), None)
-        if (_prev_bot and _prev_bot.strip() == response_text.strip()
-                and not (context.booking_data or {}).get("repeat_acked")):
-            dialog_manager.update_booking_data(user_id, "repeat_acked", True)
+        # Не только с ПРЕДЫДУЩИМ ответом: канонный текст гейта повторяется и
+        # через карточку между ними (Amina 07.09 — один и тот же блок трижды).
+        _repeats = int((context.booking_data or {}).get("repeat_acks") or 0)
+        if _is_verbatim_repeat(response_text, context) and _repeats < 2:
+            dialog_manager.update_booking_data(user_id, "repeat_acks", _repeats + 1)
             _night_event("verbatim_repeat", who=phone, text=response_text[:120])
-            response_text += ("\n\nOr just tell me the exact day and time "
-                              "dear — I'll check it right away 🙏")
+            response_text += _REPEAT_NUDGE_LINE
 
         # ── СНАЧАЛА ЗАПИСЬ, ПОТОМ ПОДТВЕРЖДЕНИЕ (Татьяна 2026-08-29: «не
         # уходят в yclients заявки»). Ночь 28.08: Самар получила «booked ✅»

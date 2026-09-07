@@ -326,3 +326,80 @@ def test_busy_slot_with_summary_outage_is_not_a_fully_booked_day(monkeypatch):
     out = asyncio.run(wh._verify_reply_times_against_calendar('10:00 AM is available',ctx,'al_ain'))
     assert 'fully booked' not in out and 'another day' not in out
     assert 'check' in out
+
+
+# ── A named hour that IS free must be taken, not answered with the list ──
+# Amina 2026-09-07: «Around 10am if possible» on a fully-booked Thursday got
+# the same "nearest we have is Tuesday: 10:00 AM, 2:30 PM, 3:00 PM" block
+# three times in a row — while 10:00 AM was free on that Tuesday all along.
+
+def _ctx_with_history(truth, sticky_date, client_says):
+    ctx = _ctx(truth, sticky_date=sticky_date)
+    ctx.recent_messages = [{"role": "user", "content": client_says}]
+    return ctx
+
+
+def test_a_named_hour_free_on_the_nearest_day_is_offered_concretely():
+    ctx = _ctx_with_history(
+        {"2026-09-10": set(), "2026-09-08": {"10:00", "14:30", "15:00"}},
+        "2026-09-10", "Around 10am if possible")
+    out = _enforce_slot_reality("Thursday at 10:00 AM works", ctx, None)
+    assert "fully booked" in out
+    assert "Tuesday 8 September at 10:00 AM is free" in out
+    assert "Shall I book it for you?" in out
+    # The read-the-whole-list answer is exactly what must NOT come back.
+    assert "The nearest we have is" not in out
+    assert "2:30 PM" not in out
+
+
+def test_a_named_hour_that_is_busy_still_gets_the_real_list():
+    ctx = _ctx_with_history(
+        {"2026-09-10": set(), "2026-09-08": {"10:00", "14:30"}},
+        "2026-09-10", "Around 1pm if possible")
+    out = _enforce_slot_reality("Thursday at 1:00 PM works", ctx, None)
+    assert "The nearest we have is Tuesday 8 September" in out
+    assert "10:00 AM" in out and "2:30 PM" in out
+    assert "Shall I book it" not in out
+
+
+def test_no_named_time_keeps_the_list_answer():
+    ctx = _ctx_with_history(
+        {"2026-09-10": set(), "2026-09-08": {"10:00", "14:30"}},
+        "2026-09-10", "morning would be nice")
+    out = _enforce_slot_reality("Thursday at 11:00 AM works", ctx, None)
+    assert "The nearest we have is" in out
+
+
+# ── The verbatim-repeat backstop ───────────────────────────────────────────
+
+def test_a_repeat_is_caught_across_an_interleaved_card():
+    import types as _t
+    from webhook_app import _is_verbatim_repeat
+    block = "On Thursday 10 September we're fully booked dear 🙏"
+    ctx = _t.SimpleNamespace(recent_messages=[
+        {"role": "assistant", "content": block},
+        {"role": "user", "content": "lymphatic please"},
+        {"role": "assistant", "content": "✅WE have an offer for 60min body massage"},
+    ])
+    # The old guard only compared with the PREVIOUS reply — the card hid this.
+    assert _is_verbatim_repeat(block, ctx)
+
+
+def test_the_nudge_tail_does_not_disguise_the_next_repeat():
+    import types as _t
+    from webhook_app import _is_verbatim_repeat, _REPEAT_NUDGE_LINE
+    block = "On Thursday 10 September we're fully booked dear 🙏"
+    ctx = _t.SimpleNamespace(recent_messages=[
+        {"role": "assistant", "content": block + _REPEAT_NUDGE_LINE},
+    ])
+    assert _is_verbatim_repeat(block, ctx)
+
+
+def test_a_fresh_reply_is_not_a_repeat():
+    import types as _t
+    from webhook_app import _is_verbatim_repeat
+    ctx = _t.SimpleNamespace(recent_messages=[
+        {"role": "assistant", "content": "On Thursday we're fully booked dear 🙏"},
+    ])
+    assert not _is_verbatim_repeat("Tuesday at 10:00 AM is free 🌹", ctx)
+    assert not _is_verbatim_repeat("", ctx)
