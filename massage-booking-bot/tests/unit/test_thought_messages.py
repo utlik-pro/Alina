@@ -44,3 +44,10 @@ def test_price_question_does_not_dump_calendar_before_asking_phone():
     answer = compose_reply('370 AED — 50 min.\nMay I have your WhatsApp number?\nToday no slots available.\nThe nearest we have is tomorrow: 2:00 PM.', ctx)
     assert '370 AED' in answer and 'WhatsApp' in answer
     assert 'slots' not in answer and '2:00 PM' not in answer
+
+
+def test_bare_location_does_not_leave_a_dangling_booking_question():
+    ctx = DialogContext('ig_test')
+    ctx.recent_messages = [{'role':'user','content':'Location'}]
+    answer = compose_reply('We come to your home in Dubai, transportation is free 🌹\nWhich suits you?', ctx)
+    assert answer == 'We come to your home in Dubai, transportation is free 🌹'

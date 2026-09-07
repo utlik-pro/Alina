@@ -9,7 +9,7 @@ def compose_reply(text, context):
     returning = any(m.get('role') == 'assistant' for m in history)
     latest_user = next((m.get('content', '') for m in reversed(history) if m.get('role') == 'user'), '')
     earlier = '\n'.join(m.get('content', '') for m in history if m.get('role') == 'assistant')
-    side_question = '?' in latest_user and bool(re.search(
+    side_question = bool(re.fullmatch(r'\s*location[?.! ]*', latest_user, re.I) or re.search(
         r'home service|come to my home|branch|male or female|female or male', latest_user, re.I))
     price_requested = bool(re.search(r'how much|how long|price|cost|duration|aed|minutes', latest_user, re.I))
     routine = bool(re.fullmatch(r'[+\d ()-]{7,}', latest_user.strip()) or
