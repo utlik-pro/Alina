@@ -806,6 +806,8 @@ def _massage_kind_from_text(text: str) -> Optional[str]:
     t = (text or "").lower()
     has_face = any(k in t for k in ("face", "facial", "лиц", "фейш", "фэйш"))
     has_body = any(k in t for k in ("body", "тел", "спин", "back"))
+    if not has_face and re.search(r"lymphatic|lymph drainage|maderotherapy|wooden rollers|лимфодрен", t):
+        has_body = True
     if not has_face and not has_body:
         # Слово целиком похоже на "facial"/"body"? ("faicial", "facal", "bodu")
         for w in re.findall(r"[a-zа-яё]{4,12}", t):
@@ -1491,9 +1493,12 @@ async def _verify_reply_times_against_calendar(response_text: str, context,
         except Exception as e:
             logger.warning(f"reply-time check failed ({e}) — не сужу")
             return response_text
+        if free is None:
+            return "I can't check that time right now. Please try again in a moment."
         if free is False:
             busy.append(t)
     if not busy:
+        context.slot_truth = {**truth, target: said}
         return response_text
 
     logger.error(f"reply-time gate: агент назвал занятое время {busy} на "
@@ -1503,9 +1508,13 @@ async def _verify_reply_times_against_calendar(response_text: str, context,
         real = await bot_module.yclients_service.get_available_slots_summary(
             date=target, service_category=(context.booking_data or {}).get("service_type"),
             area=area, service_duration=dur)
-        times = sorted(_ampm_times_set(real or ""))
+        verified_times = _times_from_summary(real)
     except Exception:
-        times = []
+        verified_times = None
+    context.slot_truth = {**truth, target: verified_times}
+    if verified_times is None:
+        return "I couldn't check the other available times just now. Please try again in a moment."
+    times = sorted(verified_times)
     nice = _dtv.strptime(target, "%Y-%m-%d").strftime("%A %-d %B")
     if times:
         shown = ", ".join(_to_ampm(t) for t in times[:4])
@@ -4434,6 +4443,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # and without the upgrade the gate never releases.
         _kind_now = _massage_kind_from_text(text)
         _svc_after = context.booking_data.get("service_type") or ""
+        if not _kind_now and _svc_after == "massage":
+            # Recover a previously named technique in conversations started
+            # before the technique-to-body classifier was fixed.
+            for previous in reversed(context.recent_messages or []):
+                if previous.get("role") == "user":
+                    _kind_now = _massage_kind_from_text(previous.get("content", ""))
+                    if _kind_now:
+                        break
         if (_kind_now and _is_massage_service(_svc_after)
                 and _svc_after != f"{_kind_now}_massage"):
             if _massage_kind_known(_svc_after):

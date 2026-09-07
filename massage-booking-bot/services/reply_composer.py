@@ -21,7 +21,10 @@ def compose_reply(text, context):
                       and not re.search(r'what time|available|slot|when|\b\d{1,2}(?::\d{2})?\s*[ap]m\b', latest_user, re.I))
     text = (text or '').replace('---MESSAGE_SPLIT---', '\n\n')
     truth = getattr(context, 'slot_truth', {}) or {}
-    unavailable = context.state != 'completed' and (not truth or all(v is None for v in truth.values()))
+    target_date = booking.get('date')
+    unavailable = context.state != 'completed' and (
+        (truth.get(target_date) is None) if target_date else
+        (not truth or all(v is None for v in truth.values())))
     removed_availability = False
     parts = []
     seen = set()
@@ -36,6 +39,8 @@ def compose_reply(text, context):
                 continue
             if awaiting_phone and re.search(
                     r'fully booked|slots|nearest we have|\b\d{1,2}(?::\d{2})?\s*[ap]m\b', sentence, re.I):
+                continue
+            if unavailable and re.search(r'another day|different day|alternative date', sentence, re.I):
                 continue
             if unavailable and re.search(
                 r'we can (?:do|book|arrange).*(?:today|tomorrow)|fully booked|no (?:free )?slots|(?:don.t|do not|we have no).*slots|'

@@ -287,3 +287,42 @@ def test_failed_yclients_sync_never_reaches_the_client_as_booked():
                      "So — face massage, Sunday at 9:00 PM. Shall I confirm? 🌹"):
         assert not _CONFIRMED_MARK_RE.search(question), question
     assert "administrator will contact you" in BOOKING_PENDING_LINE
+
+
+def test_lymphatic_service_is_body_but_explicit_face_wins():
+    from webhook_app import _massage_kind_from_text
+    assert _massage_kind_from_text('normal Lymphatic massage first please') == 'body'
+    assert _massage_kind_from_text('lymphatic facial massage') == 'face'
+
+
+def test_checked_busy_day_survives_final_composer(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import bot
+    import webhook_app as wh
+    from services.reply_composer import compose_reply
+    monkeypatch.setattr(bot, 'yclients_service', SimpleNamespace(
+        is_slot_available=AsyncMock(return_value=False),
+        get_available_slots_summary=AsyncMock(return_value='No slots available')))
+    ctx = SimpleNamespace(booking_data={'date':'2026-09-10','service_duration':60},
+        client_data={'area':'al_ain','phone':'test'},slot_truth={},state='initial',recent_messages=[])
+    out = asyncio.run(wh._verify_reply_times_against_calendar('10:00 AM is available',ctx,'al_ain'))
+    final = compose_reply(out,ctx)
+    assert 'fully booked' in final
+    assert "can't verify" not in final
+
+
+def test_busy_slot_with_summary_outage_is_not_a_fully_booked_day(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import bot
+    import webhook_app as wh
+    monkeypatch.setattr(bot, 'yclients_service', SimpleNamespace(
+        is_slot_available=AsyncMock(return_value=False),
+        get_available_slots_summary=AsyncMock(return_value=None)))
+    ctx = SimpleNamespace(booking_data={'date':'2026-09-10','service_duration':60},slot_truth={})
+    out = asyncio.run(wh._verify_reply_times_against_calendar('10:00 AM is available',ctx,'al_ain'))
+    assert 'fully booked' not in out and 'another day' not in out
+    assert 'check' in out
