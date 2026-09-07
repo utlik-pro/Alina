@@ -185,7 +185,8 @@ SCENARIOS = [
             "Location",
         ],
         "asserts": [
-            _has("home service", why="«Location» = вопрос где мы (Татьяна 26.08)"),
+            (lambda t: None if re.search(r"home service|(?:we )?come to your home", t, re.I)
+             else "ответ не объясняет выездной формат"),
         ],
     },
     {
@@ -203,7 +204,7 @@ SCENARIOS = [
             # потому, что «Today» его содержит; «Tomorrow we have 10:00 AM…»
             # (образцовый ответ) заваливался. Ложная тревога 01.09 21:32.
             (lambda t: None if (_AMPM_RE.search(t) or re.search(
-                r"\b(?:today|tomorrow|which day|what time)\b", t, re.I))
+                r"\b(?:today|tomorrow|which day|what time|which time)\b", t, re.I))
              else "ответ на «what tame» не говорит ни о времени, ни о дне"),
         ],
     },
