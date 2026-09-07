@@ -57,6 +57,7 @@ _wappi_buffer: dict[str, dict] = {}
 # ТЗ FR-1.4.1: wait 20s of silence after the client's LAST message, then
 # process all collected messages together (Arab clients send 3-5 messages
 # over 10-30s). Was hardcoded 7s — below spec. Env-tunable without a deploy.
+import os
 import os as _os_buf
 _WAPPI_BUFFER_DELAY = float(_os_buf.getenv("WAPPI_BUFFER_DELAY", "20"))  # seconds
 
