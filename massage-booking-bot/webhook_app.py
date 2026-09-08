@@ -3627,6 +3627,14 @@ async def _maybe_create_booking(
             f"Wappi: booking deferred for {telegram_id} — awaiting explicit "
             f"confirm (last msg: {_last_user[:60]!r}). Recap question sent."
         )
+        # Складываем вызов до подтверждающего хода. Раньше он просто терялся,
+        # а расчёт был на то, что модель вызовет инструмент заново — она не
+        # вызывает (см. воскрешение в _process_wappi_message).
+        try:
+            import dataclasses as _dc
+            context.booking_data["pending_booking"] = _dc.asdict(booking_call)
+        except Exception as e:
+            logger.error(f"не смог сохранить отложенную бронь: {e}")
         return
 
     # Phone gate (Instagram channel, binding record block): the identity key
@@ -4000,6 +4008,9 @@ async def _maybe_create_booking(
         therapist_name=context.booking_data.get("confirmed_master") or booking_call.master_name)
     dialog_manager.update_state(user_id, "completed")
     context.last_booking_sig = _new_sig
+    # Запись создана — отложенный вызов больше не нужен; иначе следующее
+    # «да» в том же диалоге воскресило бы его второй раз.
+    context.booking_data.pop("pending_booking", None)
 
     # Notify admin + auto-share the trip with the driver/logistics group.
     try:
@@ -5362,6 +5373,24 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             logger.error(f"Wappi [{phone}]: booking_agent timed out after 30s")
             response_text = "Sorry dear, one moment 🙏 Please repeat your message 🌹"
         booking_call: Optional[BookingCall] = actions.booking_call
+
+        # ВОСКРЕШЕНИЕ ОТЛОЖЕННОГО ВЫЗОВА. Гейт явного подтверждения исходит из
+        # того, что «клиент скажет "да" — и модель вызовет инструмент заново».
+        # Бейк-офф 08.09 показал, что она этого НЕ делает: инструмент
+        # вызывается на рекапе, гейт справедливо ждёт «да», а после «да»
+        # модель просто пишет «booked ✅». Так вели себя ВСЕ проверенные
+        # модели — и записи не создавались с 29 августа. Теперь отложенный
+        # вызов сохраняется и переиспользуется на подтверждающем ходе.
+        if booking_call is None and _client_confirmed(text):
+            _pending = (context.booking_data or {}).get("pending_booking")
+            if _pending:
+                try:
+                    booking_call = BookingCall(**_pending)
+                    logger.info(f"отложенная бронь воскрешена после «да» ({phone})")
+                    _night_event("booking_resumed", who=phone,
+                                 text=f"{_pending.get('date')} {_pending.get('time')}")
+                except Exception as e:
+                    logger.error(f"не смог восстановить отложенную бронь: {e}")
 
         if not response_text or not response_text.strip():
             response_text = "Just a moment dear 🙏"

@@ -1152,3 +1152,30 @@ def test_claims_booked_regex_ignores_the_service_card_checkmarks():
                     "You're booked for tomorrow dear 🌹",
                     "Your booking is confirmed ✅"):
         assert wh._CLAIMS_BOOKED_RE.search(phantom), phantom
+
+
+def test_a_deferred_booking_call_survives_until_the_client_says_yes():
+    """The confirm gate assumed the model re-fires the tool. It does not.
+
+    Bake-off 2026-09-08: every model called book_appointment at the RECAP
+    turn, the gate correctly held it pending an explicit "yes" — and then, on
+    the "yes", the model just wrote "booked ✅" with no tool call. The call was
+    dropped on the floor, so no record was ever created (none since 29.08).
+    The deferred call is now stored and rebuilt on the confirming turn.
+    """
+    import dataclasses
+    from agents.tools import BookingCall
+
+    call = BookingCall(service="face_massage", duration_minutes=50,
+                       date="2026-09-09", time="10:00", area="al_ain",
+                       payment_method="cash", client_name="Amina",
+                       base_price_aed=370.0, client_phone="+971501234567",
+                       address="Villa 12, Al Jimi")
+    stored = dataclasses.asdict(call)
+    # Round-trips through booking_data without loss.
+    assert BookingCall(**stored) == call
+
+    import webhook_app as wh
+    assert wh._client_confirmed("Yes, please confirm")
+    assert wh._client_confirmed("yes")
+    assert not wh._client_confirmed("What times do you have?")
