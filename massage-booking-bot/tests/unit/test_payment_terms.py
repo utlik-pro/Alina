@@ -1089,3 +1089,38 @@ def test_number_ask_survives_when_the_model_glued_it_to_a_day_question():
                                    is_ig=True, who="t")
     assert wh.PHONE_FIRST_LINE not in out2
     assert "WhatsApp number" in out2
+
+
+def test_for_both_is_remembered_as_the_face_plus_body_combo():
+    """«For both» must not evaporate — the agent re-asked the same question.
+
+    Live dialogue latiifaa.an 2026-09-08 03:39: on «Body massage or facial?»
+    she answered «For both». The agent even quoted the combo («110 min —
+    650 AED»), but nothing was stored, and at 03:45 it asked again: «We offer
+    body or facial massage 😊». Owner: «Она спросила про два типа. Зачем
+    переспрашивать потом?»
+    """
+    import types
+    import webhook_app as wh
+
+    def _ctx(prev_bot=None):
+        msgs = [{"role": "assistant", "content": prev_bot}] if prev_bot else []
+        return types.SimpleNamespace(booking_data={}, client_data={},
+                                     recent_messages=msgs)
+
+    asked = "Body massage or facial?"
+    assert wh._detect_both_kinds("For both", _ctx(asked))
+    assert wh._detect_both_kinds("both please", _ctx(asked))
+    # An explicit pair is recognised with no preceding question at all.
+    assert wh._detect_both_kinds("I want face and body massage", _ctx())
+    assert wh._detect_both_kinds("body + facial please", _ctx())
+    # A bare "both" out of the blue is NOT a service choice.
+    assert not wh._detect_both_kinds("both", _ctx())
+    # «for both of us» is a GROUP booking — two people, not two services.
+    assert not wh._detect_both_kinds("massage for both of us", _ctx(asked))
+    # Once stored, neither massage gate may fire again.
+    assert wh._massage_kind_known(wh._BOTH_KEY)
+    assert wh._is_massage_service(wh._BOTH_KEY)
+
+    from prices import SERVICE_CATALOG
+    assert SERVICE_CATALOG[wh._BOTH_KEY]["duration"] == 110

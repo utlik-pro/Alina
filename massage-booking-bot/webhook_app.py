@@ -763,6 +763,45 @@ def _enforce_english_reply(response_text: str, inbound_text: str) -> str:
 
 
 _COMBO_KEY = "lymphatic_cupping_combo"
+_BOTH_KEY = "body_face_combo"
+
+# «Body massage or facial?» в предыдущей реплике агента — только после него
+# голое «both» означает выбор услуги, а не что-то ещё.
+_BODY_OR_FACE_ASK_RE = re.compile(r"body\s*(?:massage)?\s*or\s*fac(?:e|ial)", re.I)
+_BOTH_PAIR_RE = re.compile(
+    r"body\s*(?:massage\s*)?(?:and|\+|&|with)\s*fac(?:e|ial)"
+    r"|fac(?:e|ial)\s*(?:massage\s*)?(?:and|\+|&|with)\s*body"
+    r"|и\s*тел[оа]\s*и\s*лиц|и\s*лиц[оа]\s*и\s*тел", re.I)
+_BOTH_BARE_RE = re.compile(
+    r"\bboth\b|\bthe\s+two\b|\bоба\b|\bобе\b|\bи\s+то,?\s+и\s+другое\b", re.I)
+
+
+def _detect_both_kinds(text: str, context) -> bool:
+    """Клиент выбрал ОБЕ услуги — лицо и тело, а не одну из них.
+
+    Живой диалог latiifaa.an 2026-09-08 03:39: на «Body massage or facial?»
+    она ответила «For both». Агент даже назвал комбо («110 min — 650 AED»),
+    но выбор нигде не сохранился: `_massage_kind_from_text("For both")`
+    не находит ни «body», ни «face», service_type остался пустым — и через
+    пять минут агент снова спросил «We offer body or facial massage 😊».
+    Владелец: «Она спросила про два типа. Зачем переспрашивать потом?»
+
+    Голое «both» само по себе неоднозначно («for both of us» — это ГРУППА,
+    два человека, а не две услуги), поэтому оно засчитывается только сразу
+    после нашего же вопроса body-or-face. Явная пара («face and body»)
+    распознаётся всегда.
+    """
+    t = (text or "").lower()
+    if _looks_like_group(t):
+        return False                      # «for both of us» — это два человека
+    if _BOTH_PAIR_RE.search(t):
+        return True
+    if not _BOTH_BARE_RE.search(t):
+        return False
+    prev = next((m.get("content") for m in
+                 reversed(getattr(context, "recent_messages", None) or [])
+                 if m.get("role") == "assistant"), "") or ""
+    return bool(_BODY_OR_FACE_ASK_RE.search(prev))
 
 
 def _detect_combo_choice(text: str) -> bool:
@@ -4626,6 +4665,18 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # The advertised cupping combo has a FIXED length: choosing it settles
         # BOTH the service and the duration, so the 60-or-90 question is never
         # asked (it cost a hot lead on 2026-08-16 — see _detect_combo_choice).
+        # «For both» на вопрос body-or-face = комбо лицо+тело (110 мин, 650),
+        # и услуга считается НАЗВАННОЙ — иначе гейт спрашивает то же самое
+        # снова (latiifaa.an 08.09 03:45).
+        if (_detect_both_kinds(text, context)
+                and context.booking_data.get("service_type") != _BOTH_KEY):
+            from prices import SERVICE_CATALOG as _SVC
+            dialog_manager.update_booking_data(user_id, "service_type", _BOTH_KEY)
+            dialog_manager.update_booking_data(
+                user_id, "service_duration", int(_SVC[_BOTH_KEY]["duration"]))
+            dialog_manager.update_booking_data(user_id, "service_named", True)
+            logger.info(f"both-kinds detected → body_face_combo, 110 min ({phone})")
+
         if (_is_ig_key(phone) and _detect_combo_choice(text)
                 and context.booking_data.get("service_type") != _COMBO_KEY):
             from prices import SPECIAL_OFFERS as _SO

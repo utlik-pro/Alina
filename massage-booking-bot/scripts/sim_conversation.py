@@ -203,6 +203,14 @@ async def run(scenario):
             ctx.booking_data["service_type"] = cat
             if ctx.booking_data.get("service_duration"):
                 ctx.booking_data["service_duration"] = None
+        # Mirror prod: «For both» на вопрос body-or-face = комбо лицо+тело.
+        if (wh._detect_both_kinds(msg, ctx)
+                and ctx.booking_data.get("service_type") != wh._BOTH_KEY):
+            from prices import SERVICE_CATALOG as _SVC
+            ctx.booking_data["service_type"] = wh._BOTH_KEY
+            ctx.booking_data["service_duration"] = int(_SVC[wh._BOTH_KEY]["duration"])
+            ctx.booking_data["service_named"] = True
+
         # Mirror prod: the client's "body massage" answer upgrades the kind
         # (same category — the duration survives).
         kind = wh._massage_kind_from_text(msg)
