@@ -2004,6 +2004,15 @@ _ASKS_FOR_NUMBER_RE = re.compile(
     r"\b(?:your|whatsapp|phone)\s+(?:whatsapp\s+)?number\b|ваш\s+номер", re.I)
 
 _CONFIRMED_MARK_RE = re.compile(r"✅|✔|\bbooked\b|\bis confirmed\b", re.I)
+
+# УЖЕ утверждает, что запись сделана. Намеренно уже, чем _CONFIRMED_MARK_RE:
+# голая ✅ не годится — карточка услуги начинается с «✅WE have an offer»,
+# и на ней фантом-гейт срывался бы на каждом первом ходе.
+_CLAIMS_BOOKED_RE = re.compile(
+    r"\b(?:is|are|you'?re|has been|have been)\s+(?:now\s+)?"
+    r"(?:booked|reserved|confirmed)\b"
+    r"|\bbooking\s+(?:is\s+)?confirmed\b"
+    r"|\bзаписал[аи]?\s+вас\b|\bвы\s+записан", re.I)
 BOOKING_PENDING_LINE = (
     "One moment dear 🙏 Our team is finalizing your booking — the "
     "administrator will contact you shortly to confirm the exact time 🌹")
@@ -2238,6 +2247,112 @@ def _enforce_admin_service_card(response_text: str, context,
     elif keep_q:
         card += "\n\n" + "\n".join(keep_q[-2:])
     return card
+
+
+_KIND_QUESTION_RE = re.compile(
+    r"\b(?:body\s*(?:massage)?\s*or\s*(?:a\s*)?fac(?:e|ial)|"
+    r"fac(?:e|ial)\s*(?:massage)?\s*or\s*(?:a\s*)?body)\b", re.I)
+
+
+def _settled_service_line(svc: str) -> str:
+    """Одна строка о выбранной услуге — на случай, если после вырезанного
+    вопроса от ответа не осталось ничего."""
+    from prices import SERVICE_CATALOG as _cat
+    entry = _cat.get(svc) or {}
+    name = entry.get("name") or "Massage"
+    dur = int(entry.get("duration") or 0)
+    price = int(entry.get("price") or 0)
+    return f"{name} — {dur} min, {price} AED 🌹" if dur and price else f"{name} 🌹"
+
+
+def _enforce_kind_settled(response_text: str, context, who: str = "") -> str:
+    """Выбор «тело или лицо» сделан — второй раз его не спрашивают.
+
+    Услуга теперь фиксируется в состоянии (`_detect_both_kinds`), но
+    формулирует ответ всё равно модель: latiifaa.an (08.09 03:45) получила
+    «We offer body or facial massage 😊» уже ПОСЛЕ того, как агент сам
+    назвал ей комбо за 650. Состояние — половина гейта; вторая половина
+    вырезает вопрос из текста, который уходит клиенту.
+    """
+    if not response_text:
+        return response_text
+    svc = (context.booking_data or {}).get("service_type") or ""
+    if not _is_massage_service(svc) or not _massage_kind_known(svc):
+        return response_text
+    if not _KIND_QUESTION_RE.search(response_text):
+        return response_text
+    kept = [ln for ln in response_text.split("\n") if not _KIND_QUESTION_RE.search(ln)]
+    out = "\n".join(kept).strip() or _settled_service_line(svc)
+    logger.info(f"kind-settled gate: вопрос «тело или лицо» вырезан ({who})")
+    return out
+
+
+_TYPES_ASK_RE = re.compile(
+    r"\b(?:what|which|какие|какой|какая)\b[^?\n]{0,24}\b(?:types?|kinds?|вид\w*|техник\w*)\b",
+    re.I)
+_TYPES_OFFTOPIC_RE = re.compile(
+    r"\b(?:payment|pay|card|cash|transfer|оплат\w*|карт\w*|oil|cream)\b", re.I)
+_TECHNIQUE_WORDS_RE = re.compile(
+    r"\b(lymphatic|maderatherapie|cellulite|postpartum|deep tissue|prenatal|"
+    r"guasha|goasha|aftersurgery|buccal|myofascial|lifting)\b", re.I)
+
+
+def _asks_about_massage_types(text: str) -> bool:
+    """«What type of massage?» — вопрос о ТЕХНИКАХ, а не о «тело или лицо».
+
+    Живой случай 08.09 03:44: «What type of message» — та же опечатка, что
+    «Faicial» и «what tame», поэтому слово ищется через difflib. Клиентка к
+    тому моменту уже сказала «оба», так что ответ «body or facial» был
+    промахом дважды.
+    """
+    import difflib
+
+    t = (text or "").lower()
+    if not _TYPES_ASK_RE.search(t) or _TYPES_OFFTOPIC_RE.search(t):
+        return False
+    if "massage" in t or "масса" in t:
+        return True
+    return any(difflib.SequenceMatcher(None, w, "massage").ratio() >= 0.75
+               for w in re.findall(r"[a-z]{5,10}", t))
+
+
+def _techniques_answer(svc: str) -> str:
+    """Список техник — из каталога (это и есть перечень админов)."""
+    from prices import SERVICE_CATALOG as _cat
+    body = (_cat.get("body_massage_60") or {}).get("techniques") or []
+    face = (_cat.get("face_massage") or {}).get("techniques") or []
+    blocks = ["We do different techniques dear 🌹"]
+    if svc in (_BOTH_KEY, "body_massage") and body:
+        blocks.append("Body: " + ", ".join(body))
+    if svc in (_BOTH_KEY, "face_massage") and face:
+        blocks.append("Face: " + ", ".join(face))
+    return "\n".join(blocks)
+
+
+def _enforce_massage_types_answered(response_text: str, inbound_text: str,
+                                    context, who: str = "") -> str:
+    """Спросили, КАКИЕ бывают массажи — отвечают техниками.
+
+    Пока вид (тело/лицо/оба) не выбран, такой вопрос честно ведёт к выбору —
+    этим занимается гейт тела-или-лица. Но когда выбор уже сделан, «мы делаем
+    массаж тела или лица» — это не ответ, а тот же вопрос по кругу.
+    """
+    if not response_text or not _asks_about_massage_types(inbound_text):
+        return response_text
+    svc = (context.booking_data or {}).get("service_type") or ""
+    if svc not in (_BOTH_KEY, "body_massage", "face_massage"):
+        return response_text
+    named = {w.lower() for w in _TECHNIQUE_WORDS_RE.findall(response_text)}
+    if len(named) >= 2:
+        return response_text          # техники уже названы — не вмешиваемся
+    out = _techniques_answer(svc)
+    keep_q = [ln for ln in response_text.split("\n")
+              if "?" in ln and not _KIND_QUESTION_RE.search(ln)
+              and not _TYPES_ASK_RE.search(ln)]
+    if keep_q:
+        out += "\n\n" + keep_q[-1].strip()
+    logger.info(f"types gate: вопрос о видах массажа отвечен техниками ({who})")
+    return out
 
 
 def _asks_about_time(text: str) -> bool:
@@ -5495,6 +5610,31 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             _night_event("booking_sync_failed", who=phone,
                          text=f"{getattr(booking_call, 'date', '')} "
                                 f"{getattr(booking_call, 'time', '')}")
+            response_text = BOOKING_PENDING_LINE
+
+        # ФАНТОМНАЯ ЗАПИСЬ: «booked» БЕЗ вызова инструмента вообще. Гейт выше
+        # ловит только «вызвали, а YClients отказал» (booking_call is not None)
+        # — а бейк-офф 08.09 показал другое: модель вызывает инструмент на
+        # рекапе, гейт справедливо ждёт «да», клиент говорит «да» — и модель
+        # просто пишет «booked ✅», не вызвав инструмент повторно. Так вели
+        # себя ВСЕ проверенные модели. Клиент уходил ждать мастера, которого
+        # никто не отправит, а админам не приходило ничего.
+        elif (booking_call is None
+                and not context.booking_data.get("yc_sync_ok")
+                and not getattr(context, "last_booking_sig", None)
+                and _CLAIMS_BOOKED_RE.search(response_text)):
+            logger.error(f"фантомная запись: «booked» без вызова инструмента "
+                         f"({phone}) — заменено честной строкой")
+            _night_event("phantom_booking", who=phone, text=response_text[:160])
+            if bot_module.notification_service:
+                try:
+                    await bot_module.notification_service.send_booking_failed(
+                        telegram_id=telegram_id,
+                        reason=("Агент написал клиенту «booked», но записи НЕТ — "
+                                "инструмент не вызывался. Свяжитесь с клиентом "
+                                "и оформите запись вручную."))
+                except Exception as e:
+                    logger.error(f"не смог оповестить админов о фантоме: {e}")
             response_text = BOOKING_PENDING_LINE
 
         if actions.cancel_call is not None:

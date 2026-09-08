@@ -1124,3 +1124,31 @@ def test_for_both_is_remembered_as_the_face_plus_body_combo():
 
     from prices import SERVICE_CATALOG
     assert SERVICE_CATALOG[wh._BOTH_KEY]["duration"] == 110
+
+
+def test_claims_booked_regex_ignores_the_service_card_checkmarks():
+    """The phantom-booking guard must not fire on an ordinary offer card.
+
+    ADMIN_CARD_FACE opens with «✅WE have an offer for facial massage !!!», so
+    the old _CONFIRMED_MARK_RE (a bare ✅) would have replaced every first
+    reply with the "team is finalizing your booking" line.
+    """
+    import webhook_app as wh
+    from prices import ADMIN_CARD_BODY, ADMIN_CARD_FACE
+
+    for card in (ADMIN_CARD_FACE, ADMIN_CARD_BODY):
+        assert not wh._CLAIMS_BOOKED_RE.search(card)
+    for benign in ("Tomorrow we have 10:00 AM 🌹 Which suits you?",
+                   "✅WE have an offer for facial massage !!!",
+                   "Shall I reserve it?",
+                   "Cash - tax free ✅"):
+        assert not wh._CLAIMS_BOOKED_RE.search(benign), benign
+
+    # The real phantom lines seen in the 08.09 bake-off must all be caught.
+    for phantom in ("Your face massage is booked ✅",
+                    "Your facial massage is booked for tomorrow, "
+                    "Wednesday 9th September at 10:00 AM ✅",
+                    "Your lymphatic cupping combo is booked ✅",
+                    "You're booked for tomorrow dear 🌹",
+                    "Your booking is confirmed ✅"):
+        assert wh._CLAIMS_BOOKED_RE.search(phantom), phantom
