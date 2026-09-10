@@ -2385,8 +2385,16 @@ def _asks_about_time(text: str) -> bool:
     return False
 
 
+# Признак того, что о ВРЕМЕНИ в ответе речь всё-таки идёт.
+# «which/what time» добавлены 2026-09-10: на «what tame» агент отвечал
+# «Which time suits you?» — это прямой разговор о времени и корректный ответ,
+# но детектор его не знал. Гейт дописывал сверху свой «Which day suits you —
+# today or tomorrow?», и в одном сообщении оказывались два вопроса подряд об
+# одном и том же. Ассерт прод-смоука такой ответ принимал, детектор — нет;
+# расхождение двух определений «о времени» и держало сценарий красным.
 _TIME_TALK_RE = re.compile(
-    r"\b(?:today|tomorrow|morning|evening|which day|what day|fully booked|"
+    r"\b(?:today|tomorrow|morning|evening|which day|what day|"
+    r"which time|what time|fully booked|"
     r"free slots?|available|availability|schedule)\b", re.I)
 
 
@@ -5577,9 +5585,6 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Строка о зоне обслуживания всегда называет все три эмирата.
         response_text = _enforce_all_emirates_line(response_text, who=phone)
 
-        # «Когда?» нельзя отвечать прайсом — даже если спрошено с опечаткой.
-        response_text = _enforce_time_ask_answered(response_text, text, context, who=phone)
-
         # Ни одной ссылки или ника, которых нет в наших данных.
         response_text = _enforce_no_invented_links(response_text, who=phone)
 
@@ -5627,6 +5632,20 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _pay_now and _pay_now != _pay_known:
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
+
+        # «Когда?» нельзя отвечать прайсом — даже если спрошено с опечаткой.
+        # ⚠️ СТОИТ В КОНЦЕ ЦЕПОЧКИ НАМЕРЕННО. Раньше гейт вызывался в
+        # середине (сразу после эмиратов) и судил ПРОМЕЖУТОЧНЫЙ текст: пока
+        # в нём была строка о времени, гейт справедливо молчал — а девять
+        # гейтов ниже эту строку переписывали, и клиенту уходил ответ, где о
+        # времени уже ни слова. Прод-смоук 09→10.09: на «what tame» уходило
+        # «275 AED instead of 430 / Which time suits you?» — и ни одного лога
+        # гейта, потому что на его ходу текст ещё был другим. Это урок 9 из
+        # SKILL: гейт обязан судить ВЫЖИВШИЙ текст. Обещание «спросили когда —
+        # ответ о времени» проверяем последним, по факту отправки.
+        # Единственный, кто идёт после, — polite_close: если клиент вежливо
+        # закрыл разговор, дожимать его не надо, и он вправе снять этот вопрос.
+        response_text = _enforce_time_ask_answered(response_text, text, context, who=phone)
 
         # После «я напишу позже» дожим вырезается из любого ответа.
         response_text = _enforce_polite_close(response_text, context, who=phone)

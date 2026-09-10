@@ -21,6 +21,7 @@
 """
 
 import ast
+import re
 import types
 
 import webhook_app as w
@@ -165,3 +166,55 @@ def test_a_known_phone_is_never_asked_again():
     ctx = _ctx(ad_prefill="massage", phone_asked=True)
     assert w._enforce_phone_first(reply, ctx, phone_known=True, is_ig=True,
                                   who="test") == reply
+
+
+# --- 4. «когда?» проверяется по ФИНАЛЬНОМУ тексту, а не по промежуточному ---
+
+def test_time_ask_gate_runs_after_every_rewriting_gate():
+    """Гейт судит текст, который реально уйдёт клиенту.
+
+    Живой дефект 09→10.09: гейт стоял в середине цепочки, видел строку о
+    времени и справедливо молчал — а девять гейтов ниже эту строку
+    переписывали. Клиент получал ответ без единого слова о времени, и в
+    логах прода не было ни одной записи гейта: на его ходу текст был другим.
+    """
+    graph, _ = _call_graph()
+    src = open(w.__file__, encoding="utf-8").read().split("\n")
+    start = next(i for i, ln in enumerate(src)
+                 if ln.startswith(f"async def {ENTRY_POINT}"))
+    end = next(i for i in range(start + 1, len(src))
+               if re.match(r"^(async )?def ", src[i]))
+    body = src[start:end]
+
+    def line_of(gate):
+        return next(i for i, ln in enumerate(body)
+                    if f"response_text = {gate}(" in ln
+                    or f"response_text = await {gate}(" in ln)
+
+    time_ask = line_of("_enforce_time_ask_answered")
+    rewriters = ["_enforce_offer_was_price", "_enforce_package_service_known",
+                 "_enforce_summer_offers", "_enforce_price_sanity",
+                 "_enforce_payment_terms", "_enforce_cleansing_facts"]
+    for gate in rewriters:
+        assert line_of(gate) < time_ask, (
+            f"{gate} переписывает текст ПОСЛЕ проверки «когда?» — "
+            "гейт снова будет судить промежуточный вариант")
+
+
+def test_asking_which_time_counts_as_talking_about_time():
+    """«Which time suits you?» — это ответ о времени, а не повод дописать свой."""
+    reply = "275 AED instead of 430, dear 🌹\nWhich time suits you?"
+    ctx = types.SimpleNamespace(
+        booking_data={"service_type": "lymphatic_cupping_combo"},
+        client_data={"area": "abu_dhabi"})
+    assert w._enforce_time_ask_answered(reply, "what tame", ctx, "t") == reply
+
+
+def test_a_bare_price_still_gets_the_day_question():
+    """Прайс без единого слова о времени — исходная жалоба Um Nasser 30.08."""
+    ctx = types.SimpleNamespace(
+        booking_data={"service_type": "lymphatic_cupping_combo"},
+        client_data={"area": "abu_dhabi"})
+    out = w._enforce_time_ask_answered("275 AED instead of 430, dear 🌹",
+                                       "what tame", ctx, "t")
+    assert "today or tomorrow" in out.lower()
