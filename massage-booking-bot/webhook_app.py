@@ -2050,8 +2050,18 @@ def _enforce_phone_first(response_text: str, context, phone_known: bool,
         need_pref = False
     if not (need_phone or need_pref):
         return response_text
-    if not _PRICE_IN_REPLY_RE.search(response_text):
-        return response_text          # цены ещё не было — просить рано
+    if not _PRICE_IN_REPLY_RE.search(response_text) and not bd.get("ad_prefill"):
+        # Цены в ответе нет — обычному гостю просить номер рано. Но лид С
+        # РЕКЛАМЫ цену уже видел в креативе, и правило Татьяны 25.08 писалось
+        # именно про них: «мы сразу просим номер». Ночь 09→10.09 показала
+        # цену этой оговорки: два клиента прислали ОДИН И ТОТ ЖЕ префилл
+        # («consult on a massage and make an appointment in Al Ain»), но
+        # ответы модели разошлись — у одного цены были и номер спросили, у
+        # второго модель ограничилась «Body massage or facial dear?», гейт
+        # промолчал, и лид ушёл без номера. Номер — единственное, что делает
+        # молчащего лида возвратным, поэтому он не может зависеть от того,
+        # как модель сформулировала ход.
+        return response_text
 
     kept = []
     for ln in response_text.split("\n"):
@@ -2620,6 +2630,13 @@ def _enforce_all_emirates_line(response_text: str, who: str = "") -> str:
 # ногтями и ресницами (прод-смоук 2026-09-07).
 _WELCOME_MENU_RE = re.compile(r"wh(?:at|ich)\s+services?\b[^?\n]{0,60}\?", re.I)
 
+# Услуги ВНЕ трёх, о которых спрашивает Татьяна (лицо / тело / чистка).
+# Их присутствие означает, что перед нами МЕНЮ, а не её вопрос из трёх.
+_OFF_MENU_SERVICE_RE = re.compile(
+    r"manicure|pedicure|\bnails?\b|eyelash|\blash(?:es)?\b|\bbrows?\b|"
+    r"lamination|waxing|permanent\s+makeup|"
+    r"маникюр|педикюр|ресниц|бров", re.I)
+
 
 def _enforce_full_intro(response_text: str, context, inbound_text: str,
                         who: str = "") -> str:
@@ -2650,7 +2667,16 @@ def _enforce_full_intro(response_text: str, context, inbound_text: str,
     if not _WELCOME_MENU_RE.search(response_text):
         return response_text          # модель ответила не меню — не трогаем
     _low = response_text.lower()
-    if all(k in _low for k in ("face massage", "body massage", "cleansing")):
+    # ⚠️ Страж «уже спрошено ровно тремя услугами» обязан смотреть, что в
+    # ответе НЕТ ничего сверх этих трёх. Проверка «все три подстроки есть»
+    # ловилась приветственным МЕНЮ: «- Body massage / - Face massage /
+    # - Deep facial cleansing / - Manicure and pedicure / - Eyelash
+    # extension and lifting» содержит все три как пункты списка, страж
+    # срабатывал и пропускал меню клиенту. Ночь 09→10.09: двое из пяти
+    # живых лидов получили именно его и ушли (и меню обещает маникюр,
+    # которого некому делать). Ключевое слово — «ровно».
+    if (all(k in _low for k in ("face massage", "body massage", "cleansing"))
+            and not _OFF_MENU_SERVICE_RE.search(response_text)):
         return response_text          # уже спрошено ровно тремя услугами
     from prices import build_full_intro
     logger.info(f"full-intro gate: меню заменено карточками Алины ({who})")
@@ -5504,6 +5530,19 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # «Тут добавляем это»). Правило клиента важнее стиля v2.
         response_text = _enforce_admin_service_card(
             response_text, context, text, who=phone)
+
+        # «Какие бывают массажи?» при выбранном виде — отвечают ТЕХНИКАМИ,
+        # а не «тело или лицо?» по кругу. Гейт был написан под жалобу
+        # владельца 08.09 (latiifaa.an), но его НИ РАЗУ не вызвали из
+        # пайплайна — дефект жил в проде, пока юнит-тесты были зелёными
+        # (тот же провал, что с карточками в v2). Идёт ПЕРЕД kind-settled:
+        # переписывает ответ целиком, и вопрос вида надо резать уже в нём.
+        response_text = _enforce_massage_types_answered(
+            response_text, text, context, who=phone)
+
+        # Вид (тело/лицо/оба) уже выбран — второй раз его не спрашивают.
+        # Тоже не вызывался ни разу.
+        response_text = _enforce_kind_settled(response_text, context, who=phone)
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
         _ph_known = bool((context.client_data or {}).get("phone"))
