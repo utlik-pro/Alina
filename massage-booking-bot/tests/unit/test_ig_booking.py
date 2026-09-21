@@ -290,7 +290,10 @@ def test_create_booking_refuses_unavailable_staff():
         out = asyncio.run(svc.create_booking(
             staff_id=3726110, service_ids=[1], date="2026-08-22", time="19:00",
             client_name="Dmitry", client_phone="0501234567", duration_minutes=60))
-    assert out is None
+    # A DEFINITIVE refusal is a dict without "id" (so the caller can release
+    # the calendar attempt and retry with a free master); None is reserved
+    # for uncertain outcomes after a POST.
+    assert isinstance(out, dict) and out.get("refused") == "busy" and not out.get("id")
     assert free.called
     assert not sess.called, "no HTTP call may happen for an unavailable master"
 

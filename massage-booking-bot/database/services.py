@@ -335,7 +335,17 @@ class BookingService:
         self.db = db
 
     async def claim_calendar_attempt(self, operation_key: str) -> bool:
-        """One committed winner across processes. DB outages propagate (fail closed)."""
+        """One committed winner across processes. DB outages propagate (fail closed).
+
+        A previous attempt that ended in a DEFINITIVE refusal (status
+        ``failed``) does not block the key: it is re-armed as ``pending`` and
+        the caller may try again — e.g. with a master who is actually free.
+        Живой случай 2026-09-20 23:38: YClients отказал (мастер занят), клиент
+        написал «Ok», модель повторила вызов — и ключ, навсегда застрявший в
+        ``pending``, ответил «Calendar attempt already exists». Повтор был
+        невозможен в принципе. ``pending`` (исход неизвестен: таймаут после
+        POST) и ``accepted`` по-прежнему блокируют — там повтор опасен.
+        """
         try:
             async with self.db.session() as session:
                 session.add(BookingAttempt(operation_key=operation_key))
@@ -345,9 +355,26 @@ class BookingService:
             # Only an existing key is a duplicate; unrelated constraint errors
             # must not masquerade as a successful protection check.
             async with self.db.session() as session:
-                if await session.get(BookingAttempt, operation_key) is not None:
-                    return False
-            raise
+                existing = await session.get(BookingAttempt, operation_key)
+                if existing is None:
+                    raise
+                if existing.status == "failed":
+                    existing.status = "pending"
+                    existing.booking_id = None
+                    existing.yclients_id = None
+                    existing.created_at = datetime.utcnow()
+                    await session.flush()
+                    return True
+                return False
+
+    async def fail_calendar_attempt(self, operation_key: str) -> None:
+        """Mark a DEFINITIVE calendar refusal (busy master, 4xx). Only such
+        attempts may be re-claimed; uncertain ones stay ``pending``."""
+        async with self.db.session() as session:
+            await session.execute(update(BookingAttempt).where(
+                BookingAttempt.operation_key == operation_key,
+                BookingAttempt.status == "pending",
+            ).values(status="failed"))
 
     async def link_calendar_attempt(self, operation_key: str, booking_id: int) -> None:
         async with self.db.session() as session:

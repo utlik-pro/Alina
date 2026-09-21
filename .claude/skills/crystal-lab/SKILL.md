@@ -900,6 +900,20 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
    Multiple actors commit to this repo in parallel — check `git log` before assuming.
 5. Report what's **verified** vs only **coded**. Don't imply the whole flow works when
    only part was tested.
+6. **The master is chosen by FREEDOM at the confirmed time, never by roster order**
+   (2026-09-20, Maryam Alzaabi): the agent offered «1:30 PM» from the MERGED Abu Dhabi
+   slot list, the model named no master, `find_staff_id(name=None)` returned the first
+   of the roster (Махабат, busy all day) → `create_booking` precheck refused → client got
+   «One moment…» twice, no record, admins got two alerts nobody acted on — while three
+   masters were free at 13:30. Since 2026-09-21 `find_staff_id(time=, duration_minutes=,
+   service_name=)` filters the pool by role AND real freedom; a definitive YClients
+   refusal returns `{"refused": …}` (not None) and `fail_calendar_attempt` re-arms the
+   operation key so the client's next «yes» retries with a free master; `_pending_line`
+   never repeats «One moment» verbatim; the master's name sent to the client comes from
+   the record's staff_id (`_resolve_master_name`), not the model's guess (11.09: told
+   «Махабат», booked Нина). **An alert to the Leads group is not a fix** — nobody read
+   those two alerts for 8 hours; the code path itself must complete the booking.
+   Regressions: `tests/unit/test_live_failures_2026_09_21.py`.
 
 ## Business rules (authoritative)
 

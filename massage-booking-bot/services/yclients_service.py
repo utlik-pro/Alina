@@ -88,6 +88,44 @@ def _normalize_area(area: str) -> str:
     return a
 
 
+def _service_role(service_name: str) -> str:
+    """'nails' | 'lashes' | 'massage' — the specialist a service needs. Mirrors
+    the keyword rule of get_available_slots_summary."""
+    _sn = (service_name or "").lower()
+    if any(kw in _sn for kw in ("mani", "pedi", "nail", "gel", "маникюр")):
+        return "nails"
+    if any(kw in _sn for kw in ("lash", "eyelash", "brow", "lamination", "ресниц", "бров")):
+        return "lashes"
+    return "massage"
+
+
+def _staff_serves(staff: Dict, service_name: str) -> bool:
+    """True when this roster entry has the role `service_name` needs."""
+    spec = (staff.get("specialization", "") or "").lower()
+    _pos = ((staff.get("position") or {}).get("title") or "").lower()
+    role = f"{spec} {_pos}"
+    is_nail_tech = "маникюр" in role or "nail" in role
+    is_lash_tech = ("лэш" in role or "lash" in role or "ресниц" in role or "бров" in role)
+    is_masseur = "масс" in role or "massage" in role
+    need = _service_role(service_name)
+    if need == "nails":
+        return is_nail_tech
+    if need == "lashes":
+        return is_lash_tech
+    return is_masseur
+
+
+def _hhmm_key(value) -> Optional[tuple]:
+    """'9:30' / '09:30' / '13:30:00' → (h, m); None when unparsable. Slot lists
+    come back as 'H:MM' while the tool call carries 'HH:MM' — compare keys,
+    never strings."""
+    try:
+        parts = str(value or "").strip().split(":")
+        return int(parts[0]), int(parts[1])
+    except (ValueError, IndexError, TypeError):
+        return None
+
+
 def _staff_area(staff_name: str) -> str:
     """Classify a therapist's service area from the tag in their YClients name.
 
@@ -780,12 +818,34 @@ class YClientsService:
         name: Optional[str] = None,
         area: Optional[str] = None,
         date: Optional[str] = None,
+        time: Optional[str] = None,
+        duration_minutes: Optional[int] = None,
+        service_name: Optional[str] = None,
     ) -> Optional[int]:
-        """Find staff ID by name and/or area.
+        """Find staff ID by name and/or area — and, when `time` is given, only
+        among masters who are REALLY free at that moment.
+
+        Живой провал 2026-09-20 23:37 (Maryam Alzaabi, Khalifa City): агент
+        показал «1:30 PM» из сводного списка по всем мастерам Абу-Даби, модель
+        не назвала мастера, и безымянная ветка вернула ПЕРВОГО в ростере —
+        Махабат, у которой день был забит клиентками Аль-Айна. Предпроверка
+        в create_booking честно отказала, клиентка получила «One moment»,
+        записи не было — при трёх свободных мастерах в 13:30. Свободность
+        теперь проверяется ЗДЕСЬ, до выбора.
 
         Args:
             name: therapist first name (English or Russian). Matched
                 by substring, case-insensitive.
+            time: 'HH:MM' the client confirmed. When set (with `date`), a
+                master is eligible only if get_real_available_slots lists that
+                time; a named master who is busy is NOT booked — a free one is
+                picked instead and the caller logs the swap.
+            duration_minutes: session length for the travel-buffer check.
+            service_name: the booked service; when given, the pool is limited
+                to the matching ROLE (massage therapist / nail tech / lash
+                maker) — same rule as the slot summary. Without it the
+                free-filter could hand a body massage to the lash maker, who
+                used to be shielded only by her place at the end of the roster.
             area: "abu_dhabi" | "al_ain" | "dubai" | None. When set, keeps
                 only therapists whose YClients name tags them to that emirate
                 ("Al Ain" / "Дубай"; untagged = Abu Dhabi). Each master serves
@@ -813,6 +873,15 @@ class YClientsService:
         # name tag, EXCEPT a floating master whose daily marker (for `date`)
         # overrides it — matches what get_available_slots_summary offered.
         pool = [s for s in staff if not _is_admin(s)]
+        if service_name:
+            _role_pool = [s for s in pool if _staff_serves(s, service_name)]
+            if _role_pool:
+                pool = _role_pool
+            else:
+                logger.warning(
+                    f"YClients.find_staff_id: no master with the role for "
+                    f"{service_name!r} — falling back to the full pool")
+        _recs_by_id: Dict[int, Any] = {}
         if area in ("al_ain", "abu_dhabi", "dubai"):
             if date:
                 import asyncio as _asyncio
@@ -824,6 +893,7 @@ class YClientsService:
                 for s, recs in zip(pool, _recs):
                     if isinstance(recs, Exception):
                         recs = None
+                    _recs_by_id[s["id"]] = recs
                     eff = _marker_area_from_records(recs) or _staff_area(s.get("name", ""))
                     if eff == area:
                         _kept.append(s)
@@ -837,6 +907,42 @@ class YClientsService:
                 f"area={area!r} name={name!r}"
             )
             return None
+
+        # Свободность на подтверждённое время — жёсткий фильтр. Мастер, у
+        # которого в этот момент визит (или не хватает часа на дорогу), из
+        # пула выбывает ДО именного поиска и до «первого в списке».
+        # None от get_real_available_slots = сбой API, не «занят»: такой
+        # мастер остаётся кандидатом, но после тех, чья свободность известна.
+        if time and date:
+            _want = _hhmm_key(time)
+            _free_known, _free_unknown = [], []
+            for s in pool:
+                try:
+                    _free = await self.get_real_available_slots(
+                        s["id"], date, int(duration_minutes or 60),
+                        records=_recs_by_id.get(s["id"]),
+                    )
+                except Exception as _e:
+                    logger.warning(
+                        f"YClients.find_staff_id: free-check failed for "
+                        f"{s.get('name')!r}: {_e}")
+                    _free = None
+                if _free is None:
+                    _free_unknown.append(s)
+                elif _want is not None and any(_hhmm_key(t) == _want for t in _free):
+                    _free_known.append(s)
+            _busy = [s.get("name") for s in pool
+                     if s not in _free_known and s not in _free_unknown]
+            if _busy:
+                logger.info(
+                    f"YClients.find_staff_id: busy at {date} {time} → skipped "
+                    f"{_busy}; free={[s.get('name') for s in _free_known]}")
+            pool = _free_known + _free_unknown
+            if not pool:
+                logger.warning(
+                    f"YClients.find_staff_id: NOBODY free in area={area!r} on "
+                    f"{date} at {time} (duration {duration_minutes or 60})")
+                return None
 
         if name:
             # Catalog names are in Russian ("Алеся", "Марина", …) but
@@ -895,13 +1001,22 @@ class YClientsService:
                 )
                 return pool[0]["id"]
 
+            # Названный мастер занят (пул уже отфильтрован по свободности):
+            # клиенту важнее время, чем имя, которого он в IG и не видел.
+            if time and date:
+                logger.warning(
+                    f"YClients.find_staff_id: {name!r} is not free on {date} at "
+                    f"{time} → booking a free master {pool[0].get('name')!r}")
+                return pool[0]["id"]
+
             logger.warning(
                 f"YClients.find_staff_id: name {name!r} (aliases={aliases}) "
                 f"not found in area={area!r} pool (size={len(pool)})"
             )
             return None
 
-        # No name — return first from filtered pool.
+        # No name — first FREE master of the area (pool is free-filtered when
+        # a time is known; without a time this is the plain roster order).
         return pool[0]["id"]
 
     async def staff_area_of(self, staff_id: int, date: Optional[str] = None) -> Optional[str]:
@@ -1175,12 +1290,17 @@ class YClientsService:
         except Exception as e:  # availability unknown → don't block the booking
             logger.warning(f"YClients: availability precheck failed ({e}) — proceeding")
             free = None
-        if free is not None and time not in free:
+        _want = _hhmm_key(time)
+        if free is not None and not any(_hhmm_key(t) == _want for t in free):
             logger.error(
                 f"YClients: refusing booking — staff {staff_id} is NOT free on "
                 f"{date} at {time} (free: {free[:8] if free else 'none'})"
             )
-            return None
+            # A DEFINITIVE refusal (nothing was sent to YClients) is returned as
+            # a dict without "id" so the caller can release the calendar
+            # attempt and retry with another master; a bare None stays reserved
+            # for uncertain outcomes (exception/timeout after a POST).
+            return {"refused": "busy", "staff_id": staff_id, "free": list(free)}
 
         # Build services array
         services = [{"id": sid} for sid in service_ids]
@@ -1261,10 +1381,11 @@ class YClientsService:
                     f"YClients: fallback (no services) also failed: "
                     f"{(data2.get('meta') or {}).get('message', 'Unknown error')}"
                 )
-            return None
+            # YClients answered and said no — definitive, retry is allowed.
+            return {"refused": "rejected", "error": error_msg}
         except Exception as e:
             logger.error(f"YClients: create booking exception: {e}")
-            return None
+            return None  # uncertain: the request may have landed
 
     # ─── RECORD MUTATIONS (owner decision 2026-07-10) ─────────────────────
     # The agent fully manages YClients for ITS OWN clients: create, cancel

@@ -959,10 +959,11 @@ async def _extract_and_save_data(
                         comment=f"Telegram bot booking #{booking.id}",
                         is_test=_is_test,
                     )
-                    if yc_result:
+                    if isinstance(yc_result, dict) and yc_result.get("id"):
                         logger.info(f"✅ YClients booking created: #{yc_result.get('id', '?')}")
                     else:
-                        logger.warning("⚠️ YClients booking creation failed")
+                        # A dict without "id" is a definitive refusal (busy/4xx).
+                        logger.warning(f"⚠️ YClients booking creation failed ({(yc_result or {}).get('refused') or 'uncertain'})")
                 else:
                     logger.warning(f"⚠️ YClients: service_id={yc_service_id}, staff_id={yc_staff_id} — skipping")
             except Exception as e:

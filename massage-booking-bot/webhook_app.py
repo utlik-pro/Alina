@@ -1235,14 +1235,32 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
         # Instagram closing template — the client's (Tatyana's) verbatim rule
         # from 2026-07-28: every IG booking ends with the admin follow-up
         # promise. The model drops it about half the time, so append it here.
+        # «Tomorrow our administrator will contact you» про запись на СЕГОДНЯ
+        # (11.09, Anwar: «Today is friday, not tomorrow») — для сегодняшнего
+        # визита обещание звучит как «shortly».
+        _same_day = _booking_is_today(getattr(booking_call, "date", None))
+        if _same_day:
+            response_text = re.sub(
+                r"\bTomorrow\s+our\s+administrator\s+will\s+contact\s+you\b",
+                "Our administrator will contact you shortly", response_text, flags=re.I)
         if is_ig and not re.search(
             r"administrator|admin will|tomorrow.*(contact|confirm)", response_text, re.I
         ):
             response_text = response_text.rstrip() + (
-                "\n\nTomorrow our administrator will contact you to confirm "
-                "the details 🌹"
+                ("\n\nOur administrator will contact you shortly to confirm "
+                 "the details 🌹") if _same_day else
+                ("\n\nTomorrow our administrator will contact you to confirm "
+                 "the details 🌹")
             )
     return response_text
+
+
+def _booking_is_today(date_str) -> bool:
+    """True when the booked date is today's date in the UAE (UTC+4)."""
+    if not date_str:
+        return False
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    return str(date_str)[:10] == _dt.now(_tz(_td(hours=4))).strftime("%Y-%m-%d")
 
 
 # Words that count as the client's explicit "yes" to the final recap. Checked
@@ -1375,6 +1393,10 @@ def _detect_requested_time(text: str) -> Optional[str]:
         # «Evening at 9:00» — живой провал 28.08 00:08: парсер прочёл 09:00
         # утра, календарь проверил утро, модель пообещала вечер, YClients
         # отказал. Слово evening/вечер в той же фразе доводит час до вечера.
+        hour += 12
+    elif not mer and 1 <= hour <= 8 and not _MORNING_RE.search(t):
+        # «Tuesday between 1:30 to 5» (20.09) читалось как 01:30 ночи. Салон
+        # не работает до 10:00, поэтому голые 1–8 часов — это день/вечер.
         hour += 12
     elif mer == "am" and hour == 12:
         hour = 0
@@ -2009,13 +2031,66 @@ _CONFIRMED_MARK_RE = re.compile(r"✅|✔|\bbooked\b|\bis confirmed\b", re.I)
 # голая ✅ не годится — карточка услуги начинается с «✅WE have an offer»,
 # и на ней фантом-гейт срывался бы на каждом первом ходе.
 _CLAIMS_BOOKED_RE = re.compile(
-    r"\b(?:is|are|you'?re|has been|have been)\s+(?:now\s+)?"
-    r"(?:booked|reserved|confirmed)\b"
-    r"|\bbooking\s+(?:is\s+)?confirmed\b"
+    # The CLIENT (or the client's booking/appointment) is declared booked.
+    # A bare «is booked» is not enough: 13.09 the policy answer «exception if
+    # husband is booked by wife» tripped the gate, the correct reply was
+    # replaced with «finalizing your booking» and a false alarm went out.
+    r"\b(?:you'?re|you are|you have been)\s+(?:now\s+|all\s+)?(?:booked|reserved|confirmed)\b"
+    r"|\byour\s+(?:[\w-]+\s+){0,4}?(?:is|has been|are)\s+(?:now\s+)?(?:booked|reserved|confirmed)\b"
+    r"|\b(?:booking|appointment|reservation|visit|slot)\s+(?:is\s+|has been\s+)?(?:booked|reserved|confirmed)\b"
     r"|\bзаписал[аи]?\s+вас\b|\bвы\s+записан", re.I)
 BOOKING_PENDING_LINE = (
     "One moment dear 🙏 Our team is finalizing your booking — the "
     "administrator will contact you shortly to confirm the exact time 🌹")
+# Второй и последующие разы (клиент ответил «Ok» на «One moment», а запись
+# всё ещё не прошла): та же фраза дважды подряд читается как зависший бот
+# (скрин владельца 2026-09-21). Короткий честный ack вместо копии.
+BOOKING_PENDING_AGAIN_LINE = (
+    "Still with you dear 🙏 our administrator will confirm the exact time "
+    "with you shortly 🌹")
+
+
+def _pending_line(context) -> str:
+    """BOOKING_PENDING_LINE the first time in a dialogue, the short ack after."""
+    bd = getattr(context, "booking_data", None)
+    if bd is None:
+        return BOOKING_PENDING_LINE
+    n = int(bd.get("pending_line_sent") or 0)
+    bd["pending_line_sent"] = n + 1
+    return BOOKING_PENDING_LINE if n == 0 else BOOKING_PENDING_AGAIN_LINE
+
+
+def _booking_stage_reached(context) -> bool:
+    """A booking was actually being arranged (a day or an hour is on the
+    table). The phantom gate may only judge replies at this stage — outside
+    it «is booked» is ordinary English (13.09: «if husband is booked by wife»)."""
+    bd = getattr(context, "booking_data", None) or {}
+    return bool(bd.get("date") or bd.get("time"))
+
+
+def _hhmm_tuple(value):
+    """'9:30' / '09:30' → (9, 30); None when unparsable."""
+    try:
+        h, m = str(value or "").strip().split(":")[:2]
+        return int(h), int(m)
+    except (ValueError, TypeError):
+        return None
+
+
+async def _resolve_master_name(yc_staff_id, model_guess: str = "") -> str:
+    """Name of the master the record was ACTUALLY created with. The model's
+    master_name is a guess from a merged slot list and may name someone else
+    (11.09: told «Махабат», record with Нина) — it is only the last resort."""
+    import bot as bot_module
+    if yc_staff_id and bot_module.yclients_service:
+        try:
+            _all_staff = await bot_module.yclients_service.get_staff()
+            for s in (_all_staff or []):
+                if str(s.get("id")) == str(yc_staff_id):
+                    return str(s.get("name", "") or "").strip()
+        except Exception:
+            pass
+    return (model_guess or "").strip()
 
 PHONE_FIRST_LINE = "May I have your number dear? 🌹"
 TIME_PREF_LINE = "And what time suits you better — morning or evening?"
@@ -3795,15 +3870,8 @@ async def _maybe_create_booking(
             payment_method=booking_call.payment_method,
         )
         await bot_module.booking_service.link_calendar_attempt(operation_key, booking.id)
-        # Remember who they booked with, so "same as last time" works next visit.
-        if booking_call.master_name:
-            try:
-                await bot_module.client_service.update_client(
-                    telegram_id, preferred_therapist=booking_call.master_name)
-                if context:
-                    context.client_data["preferred_therapist"] = booking_call.master_name
-            except Exception as _e:
-                logger.warning(f"couldn't persist preferred_therapist on booking: {_e}")
+        # preferred_therapist is persisted AFTER the YClients record exists —
+        # from the master actually booked, not from the model's guess.
         logger.info(
             f"✅ Wappi booking {booking.id} saved "
             f"({booking_call.service} {booking_call.date} {booking_call.time} "
@@ -3814,8 +3882,12 @@ async def _maybe_create_booking(
         return
 
     # Only explicit mock mode may confirm without YClients. The durable
-    # attempt remains pending on failure and requires calendar reconciliation.
+    # attempt remains pending on an UNCERTAIN failure (timeout after a POST)
+    # and requires reconciliation; a DEFINITIVE refusal releases it so the
+    # client's next "yes" can retry with a free master.
     _yc_synced = bool(config.MOCK_YCLIENTS)
+    _definitive_fail = False
+    _alert_sent = False
     context.booking_data["yc_sync_ok"] = _yc_synced
 
     # Create in YClients
@@ -3829,6 +3901,7 @@ async def _maybe_create_booking(
                 duration_minutes=booking_call.duration_minutes,
             )
             if yc_service_id is None:
+                _definitive_fail = True
                 logger.error(
                     f"YClients: couldn't map service {booking_call.service!r} "
                     f"({booking_call.duration_minutes}min) to any catalog entry"
@@ -3871,13 +3944,34 @@ async def _maybe_create_booking(
                         f"client area {booking_call.area!r} — re-resolving by area"
                     )
                     yc_staff_id = None
+            if yc_staff_id and booking_call.date and booking_call.time:
+                # Модель может назвать мастера из списка на ДРУГОЙ день. Занятый
+                # мастер отбрасывается здесь, а не в предпроверке create_booking
+                # — там уже поздно менять исполнителя, и клиент получал
+                # «One moment» при свободных коллегах (2026-09-20).
+                try:
+                    _mid_free = await bot_module.yclients_service.get_real_available_slots(
+                        yc_staff_id, booking_call.date,
+                        int(booking_call.duration_minutes or 60))
+                except Exception:
+                    _mid_free = None
+                if _mid_free is not None and not any(
+                        _hhmm_tuple(t) == _hhmm_tuple(booking_call.time) for t in _mid_free):
+                    logger.warning(
+                        f"book: master_id {yc_staff_id} is busy on {booking_call.date} "
+                        f"at {booking_call.time} — re-resolving a free master")
+                    yc_staff_id = None
             if not yc_staff_id:
                 yc_staff_id = await bot_module.yclients_service.find_staff_id(
                     name=booking_call.master_name,
                     area=booking_call.area,
                     date=booking_call.date,
+                    time=booking_call.time,
+                    duration_minutes=booking_call.duration_minutes,
+                    service_name=booking_call.service,
                 )
             if not yc_staff_id:
+                _definitive_fail = True
                 logger.error(
                     f"YClients: no staff found for area={booking_call.area!r} "
                     f"master_name={booking_call.master_name!r}. "
@@ -3888,12 +3982,15 @@ async def _maybe_create_booking(
                         await bot_module.notification_service.send_booking_failed(
                             telegram_id=telegram_id,
                             reason=(
-                                f"Couldn't find a therapist in {booking_call.area} "
-                                f"for {booking_call.master_name or 'any'}. "
+                                f"No therapist in {booking_call.area} is free on "
+                                f"{booking_call.date} at {booking_call.time} "
+                                f"({booking_call.duration_minutes or 60} min"
+                                f"{', asked: ' + booking_call.master_name if booking_call.master_name else ''}). "
                                 f"Local booking #{booking.id} saved but NOT "
                                 f"synced to YClients. Admin must assign manually."
                             ),
                         )
+                        _alert_sent = True
                     except Exception:
                         pass
 
@@ -3960,15 +4057,19 @@ async def _maybe_create_booking(
                     # IG replies deliberately never name a therapist — so the
                     # morning retro used to show an empty master on every IG
                     # booking. Resolve it from the id we just booked with.
-                    _master_log = (getattr(booking_call, "master_name", "") or "").strip()
-                    if not _master_log and yc_staff_id:
+                    # 11.09 (Anwar): клиентке написали «Махабат», запись легла
+                    # на Нину — имя бралось из догадки модели, а не из записи.
+                    # Источник имени — ТОЛЬКО staff_id созданной записи.
+                    _master_log = await _resolve_master_name(
+                        yc_staff_id, getattr(booking_call, "master_name", ""))
+                    if _master_log:
                         try:
-                            _all_staff = await bot_module.yclients_service.get_staff()
-                            _master_log = next(
-                                (str(s.get("name", "")) for s in (_all_staff or [])
-                                 if str(s.get("id")) == str(yc_staff_id)), "")
-                        except Exception:
-                            _master_log = ""
+                            await bot_module.client_service.update_client(
+                                telegram_id, preferred_therapist=_master_log)
+                            if context:
+                                context.client_data["preferred_therapist"] = _master_log
+                        except Exception as _e:
+                            logger.warning(f"couldn't persist preferred_therapist: {_e}")
                     _night_event(
                         "booking_created", who=phone,
                         record=str(yc_result.get("id", "?")),
@@ -3997,7 +4098,13 @@ async def _maybe_create_booking(
                     # Create failed (4xx / slot conflict / save_if_busy). This
                     # used to be a bare log — the appointment silently never
                     # reached the calendar. Alert the admin so it's reconciled.
-                    logger.warning("⚠️ YClients booking creation failed")
+                    # A dict without "id" is a DEFINITIVE refusal (nothing
+                    # landed in YClients) → the attempt is released for a retry;
+                    # None means uncertain → stays pending.
+                    _refused = yc_result.get("refused") if isinstance(yc_result, dict) else None
+                    if _refused:
+                        _definitive_fail = True
+                    logger.warning(f"⚠️ YClients booking creation failed ({_refused or 'uncertain'})")
                     if bot_module.notification_service:
                         try:
                             await bot_module.notification_service.send_booking_failed(
@@ -4005,11 +4112,13 @@ async def _maybe_create_booking(
                                 reason=(
                                     f"YClients did NOT accept booking #{booking.id} "
                                     f"({booking_call.service} {booking_call.date} "
-                                    f"{booking_call.time}, {booking_call.area}). "
+                                    f"{booking_call.time}, {booking_call.area}"
+                                    f"{', reason: ' + str(_refused) if _refused else ''}). "
                                     f"Local record saved — admin must create the "
                                     f"YClients record manually."
                                 ),
                             )
+                            _alert_sent = True
                         except Exception:
                             pass
             else:
@@ -4025,7 +4134,14 @@ async def _maybe_create_booking(
     if not _yc_synced:
         # Keep the local record pending. A rejected/uncertain calendar write
         # must never dispatch a therapist or trigger confirmed reminders.
-        if bot_module.notification_service:
+        if _definitive_fail:
+            # Nothing reached the calendar — let the next confirm retry (with
+            # a free master) instead of dying on "attempt already exists".
+            try:
+                await bot_module.booking_service.fail_calendar_attempt(operation_key)
+            except Exception as e:
+                logger.error(f"couldn't mark calendar attempt failed: {e}")
+        if bot_module.notification_service and not _alert_sent:
             try:
                 await bot_module.notification_service.send_booking_failed(
                     telegram_id=telegram_id,
@@ -5697,7 +5813,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             _night_event("booking_sync_failed", who=phone,
                          text=f"{getattr(booking_call, 'date', '')} "
                                 f"{getattr(booking_call, 'time', '')}")
-            response_text = BOOKING_PENDING_LINE
+            response_text = _pending_line(context)
 
         # ФАНТОМНАЯ ЗАПИСЬ: «booked» БЕЗ вызова инструмента вообще. Гейт выше
         # ловит только «вызвали, а YClients отказал» (booking_call is not None)
@@ -5709,6 +5825,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         elif (booking_call is None
                 and not context.booking_data.get("yc_sync_ok")
                 and not getattr(context, "last_booking_sig", None)
+                and _booking_stage_reached(context)
                 and _CLAIMS_BOOKED_RE.search(response_text)):
             logger.error(f"фантомная запись: «booked» без вызова инструмента "
                          f"({phone}) — заменено честной строкой")
@@ -5722,7 +5839,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                                 "и оформите запись вручную."))
                 except Exception as e:
                     logger.error(f"не смог оповестить админов о фантоме: {e}")
-            response_text = BOOKING_PENDING_LINE
+            response_text = _pending_line(context)
 
         if actions.cancel_call is not None:
             response_text = ("I'm checking your cancellation request dear 🌹" if actions.cancel_call.confirmed
