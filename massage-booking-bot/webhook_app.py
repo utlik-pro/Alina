@@ -1044,6 +1044,54 @@ _MONTHS_EN = {
 }
 
 
+_DAY_KEYWORDS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+    "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+    "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
+    "пятниц": 4, "суббот": 5, "воскрес": 6,
+}
+
+
+def _weekday_target_date(text_lower: str, now) -> Optional[str]:
+    """'wednesday' / 'next tuesday' / 'в четверг' → the next such day as
+    YYYY-MM-DD (today if today matches, unless 'next'); None without a weekday
+    word. Word-boundary match: 'sat' must not match 'satellite', 'mon' not
+    'money', 'fri' not 'afraid'; Russian prefixes anchor at start only."""
+    from datetime import timedelta as _td
+    t = text_lower or ""
+    for kw, weekday in _DAY_KEYWORDS.items():
+        if not re.search(r"\b" + kw, t):
+            continue
+        if kw.isascii() and not re.search(r"\b" + kw + r"\b", t):
+            continue
+        days_ahead = (weekday - now.weekday()) % 7
+        if days_ahead == 0 and "next" in t:
+            days_ahead = 7
+        return (now + _td(days=days_ahead)).strftime("%Y-%m-%d")
+    return None
+
+
+def _resolve_named_date(text_lower: str, now) -> tuple:
+    """(YYYY-MM-DD | None, 'explicit' | 'weekday' | 'none') — the day the
+    client named in this message.
+
+    An EXPLICIT date always wins over a weekday word in the same message.
+    Live 2026-09-22 13:50 (T3): «Actually Thursday 1 October» — the explicit
+    parser stored 2026-10-01 and two seconds later the weekday branch
+    overwrote it with the NEAREST Thursday, 2026-09-24; the recap went out
+    with the wrong day and was fixed only after the client objected. Exactly
+    Tatyana's F21 («исправляет 10 на 12, ответ повторяет 10»).
+    """
+    explicit = _detect_explicit_date(text_lower, now)
+    if explicit:
+        return explicit, "explicit"
+    wd = _weekday_target_date(text_lower, now)
+    if wd:
+        return wd, "weekday"
+    return None, "none"
+
+
 def _detect_explicit_date(text: str, now) -> Optional[str]:
     """Resolve a date the client spelled out: '20 August', 'Aug 20', '20/08',
     '20.08', 'the 20th'. Returns YYYY-MM-DD or None.
@@ -2473,6 +2521,87 @@ _TIME_TALK_RE = re.compile(
     r"free slots?|available|availability|schedule)\b", re.I)
 
 
+_AREA_CITY = {"abu_dhabi": "Abu Dhabi", "al_ain": "Al Ain", "dubai": "Dubai"}
+
+
+def _next_step_question(context) -> str:
+    """The next missing funnel step, asked directly (phone → address → name →
+    payment → confirm) — used when a gate rewrites a reply and must still
+    move the booking forward."""
+    bd = getattr(context, "booking_data", None) or {}
+    cd = getattr(context, "client_data", None) or {}
+    if not cd.get("phone"):
+        return PHONE_FIRST_LINE
+    if not (cd.get("location") or (cd.get("location_details") or "").strip()):
+        city = _AREA_CITY.get(cd.get("area") or "", "")
+        return f"Please type your address{' in ' + city if city else ''} — area, building or villa number 🌹"
+    nm = (cd.get("name") or "").strip()
+    if not nm or nm.lower() in ("client", "whatsapp client"):
+        return "May I have your name, dear?"
+    if not bd.get("payment_method"):
+        return "How would you like to pay?\n💵 Cash (tax free)\n🏦 Bank transfer (+5% VAT)"
+    return "Shall I confirm?"
+
+
+async def _enforce_stored_time_kept(response_text: str, inbound_text: str,
+                                    context, who: str = "") -> str:
+    """The hour the client already chose is not silently replaced by a list.
+
+    T3 22.09 13:47: the client had said «5:30 pm», then switched to a 60-min
+    body massage; the next reply was «Today we have 6:00 PM, 6:30 PM or
+    7:00 PM» — while 5:30 PM was free (Маша). Tatyana's F03: «номер и время
+    уже даны — агент начинает заново». If the stored time is free on the day
+    in question it is confirmed and the funnel moves on; if it is busy the
+    client is told so BEFORE the alternatives.
+    """
+    import bot as bot_module
+    bd = getattr(context, "booking_data", None) or {}
+    cd = getattr(context, "client_data", None) or {}
+    stored = bd.get("time")
+    if not response_text or not stored:
+        return response_text
+    if _detect_requested_time(inbound_text) or _asks_about_time(inbound_text):
+        return response_text          # клиент сам говорит о времени — не наш случай
+    offered = _ampm_times_set(response_text)
+    if len(offered) < 2 or any(_hhmm_tuple(t) == _hhmm_tuple(stored) for t in offered):
+        return response_text          # не список, или выбранное время в нём есть
+    area = cd.get("area")
+    svc = getattr(bot_module, "yclients_service", None)
+    if not area or not svc:
+        return response_text
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    _now = _dt.now(_tz(_td(hours=4)))
+    today = _now.strftime("%Y-%m-%d"); tomorrow = (_now + _td(days=1)).strftime("%Y-%m-%d")
+    date = bd.get("date") or (tomorrow if re.search(r"\btomorrow\b", response_text, re.I) else today)
+    duration = int(bd.get("service_duration") or 60)
+    try:
+        free = await svc.is_slot_available(area, date, stored, duration)
+    except Exception as e:
+        logger.warning(f"stored-time gate: availability check failed ({e}) — reply left as is")
+        return response_text
+    if free is None:
+        return response_text
+    when = "today" if date == today else ("tomorrow" if date == tomorrow else f"on {_nice_day(date)}")
+    if free:
+        logger.info(f"stored-time gate: {stored} {date} свободно — список заменён подтверждением ({who})")
+        return f"{_to_ampm(stored)} is available {when} 🌹\n{_next_step_question(context)}"
+    logger.info(f"stored-time gate: {stored} {date} занято — сказано прямо перед списком ({who})")
+    return f"{_to_ampm(stored)} isn't free {when} for {duration} min dear 🙏\n{response_text}"
+
+
+_ASKS_CLIENT_FOR_TIME_RE = re.compile(
+    r"\b(?:what|which)\s+time\b[^?\n]*\?|\bwhich\s+(?:one\s+)?suits\s+you\b", re.I)
+
+
+def _nice_day(date_str) -> str:
+    """'2026-10-01' → 'Thursday 1 October' (falls back to the raw string)."""
+    try:
+        from datetime import datetime as _dt
+        return _dt.strptime(str(date_str)[:10], "%Y-%m-%d").strftime("%A %-d %B")
+    except (ValueError, TypeError):
+        return str(date_str)
+
+
 def _enforce_time_ask_answered(response_text: str, inbound_text: str,
                                context, who: str = "") -> str:
     """Вопрос «когда?» не может быть отвечен прайсом.
@@ -2484,9 +2613,27 @@ def _enforce_time_ask_answered(response_text: str, inbound_text: str,
     """
     if not response_text or not _asks_about_time(inbound_text):
         return response_text
+    bd = context.booking_data or {}
+    # Время уже выбрано, а клиент коротко спрашивает «what time?» («what
+    # tame», T3 22.09) — ответ обязан НАЗВАТЬ его, а не спросить снова
+    # («what time would you like?»). Длинный вопрос про другой день («what
+    # time do you have tomorrow») — не про выбранное время, идёт как раньше.
+    _stored = bd.get("time")
+    _short_q = len(re.findall(r"[a-zа-яё]+", (inbound_text or "").lower())) <= 4 and not re.search(
+        r"\b(?:tomorrow|today|next|available|free|have)\b|" + "|".join(_DAY_KEYWORDS), (inbound_text or "").lower())
+    if _stored and _short_q and (
+            _ASKS_CLIENT_FOR_TIME_RE.search(response_text)
+            or not any(_hhmm_tuple(t) == _hhmm_tuple(_stored) for t in _ampm_times_set(response_text))):
+        when = _to_ampm(_stored)
+        if bd.get("date"):
+            when += f" on {_nice_day(bd.get('date'))}"
+        rest = "\n".join(ln for ln in response_text.split("\n")
+                         if ln.strip() and not _ASKS_CLIENT_FOR_TIME_RE.search(ln)
+                         and not _AMPM_TIMES_RE.search(ln)).strip()
+        logger.info(f"time-ask gate: выбранное время названо клиенту ({who})")
+        return (f"Your time is {when} dear 🌹" + (f"\n{rest}" if rest else "")).strip()
     if _AMPM_TIMES_RE.search(response_text) or _TIME_TALK_RE.search(response_text):
         return response_text          # о времени ответ есть — не вмешиваемся
-    bd = context.booking_data or {}
     svc = bd.get("service_type") or ""
     area = (context.client_data or {}).get("area")
     if not area:
@@ -5080,56 +5227,20 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     # "the 20th") instead of naming a weekday — without this
                     # the day's slots were never loaded and the agent said it
                     # had no schedule for a day that was wide open.
-                    _explicit = _detect_explicit_date(_text_lower, _now)
-                    if _explicit and _explicit not in (today, tomorrow):
-                        extra_dates.append(_explicit)
-                        dialog_manager.update_booking_data(user_id, "date", _explicit)
+                    _named_date, _named_src = _resolve_named_date(_text_lower, _now)
                     logger.info(
                         f"weekday_detect: text_low={_text_lower!r} "
                         f"today={today} tomorrow={tomorrow} "
-                        f"current_wd={_now.weekday()}"
+                        f"current_wd={_now.weekday()} → {_named_date} ({_named_src})"
                     )
-                    _day_keywords = {
-                        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-                        "friday": 4, "saturday": 5, "sunday": 6,
-                        "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
-                        "понедел": 0, "вторник": 1, "сред": 2, "четверг": 3,
-                        "пятниц": 4, "суббот": 5, "воскрес": 6,
-                    }
-                    import re as _re_day
-                    for kw, weekday in _day_keywords.items():
-                        # Word-boundary match: "sat" must not match "satellite",
-                        # "mon" must not match "money", "fri" must not match
-                        # "afraid". Russian prefixes (e.g. "понедел") anchor
-                        # only at start — still match "понедельник".
-                        if _re_day.search(r"\b" + kw, _text_lower):
-                            # For English full/short forms also require \b at
-                            # end. "понедел" is a prefix, leave trailing open.
-                            if kw.isascii() and not _re_day.search(r"\b" + kw + r"\b", _text_lower):
-                                continue
-                            _current_wd = _now.weekday()
-                            days_ahead = (weekday - _current_wd) % 7
-                            # If today matches — today (not next week)
-                            if days_ahead == 0 and "next" in _text_lower:
-                                days_ahead = 7
-                            target_date = (_now + _td(days=days_ahead)).strftime("%Y-%m-%d")
-                            if target_date != today and target_date != tomorrow:
-                                extra_dates.append(target_date)
-                                # Persist the chosen day so a later turn with no
-                                # weekday word (villa/name/GPS/"cash") keeps
-                                # injecting THIS day's slots — fixes the
-                                # "loses Sunday then says no schedule" dead-end.
-                                dialog_manager.update_booking_data(
-                                    user_id, "date", target_date
-                                )
-                            logger.info(
-                                f"weekday_detect: matched kw={kw!r} → "
-                                f"weekday={weekday} days_ahead={days_ahead} "
-                                f"target={target_date} appended={target_date not in (today, tomorrow)}"
-                            )
-                            break
-                    else:
-                        logger.info("weekday_detect: no weekday keyword matched")
+                    if _named_date and _named_date not in (today, tomorrow):
+                        extra_dates.append(_named_date)
+                        # Persist the chosen day so a later turn with no
+                        # weekday word (villa/name/GPS/"cash") keeps
+                        # injecting THIS day's slots — fixes the
+                        # "loses Sunday then says no schedule" dead-end.
+                        dialog_manager.update_booking_data(user_id, "date", _named_date)
+                    _explicit = _named_date if _named_src == "explicit" else None
 
                     # Fetch slots for specific date if mentioned.
                     # We label each date with its weekday name so the LLM
@@ -5762,6 +5873,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Единственный, кто идёт после, — polite_close: если клиент вежливо
         # закрыл разговор, дожимать его не надо, и он вправе снять этот вопрос.
         response_text = _enforce_time_ask_answered(response_text, text, context, who=phone)
+        response_text = await _enforce_stored_time_kept(response_text, text, context, who=phone)
 
         # После «я напишу позже» дожим вырезается из любого ответа.
         response_text = _enforce_polite_close(response_text, context, who=phone)

@@ -914,6 +914,16 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
    «Махабат», booked Нина). **An alert to the Leads group is not a fix** — nobody read
    those two alerts for 8 hours; the code path itself must complete the booking.
    Regressions: `tests/unit/test_live_failures_2026_09_21.py`.
+7. **Live test T3 (2026-09-22) — three context bugs the unit suite never saw:**
+   (a) «Actually Thursday 1 October» → the weekday branch overwrote the explicit
+   date with the nearest Thursday (F21) — `_resolve_named_date`: explicit date always
+   wins; (b) «what tame» with a chosen time → «what time would you like?» (F04) —
+   `_enforce_time_ask_answered` now STATES the stored time on a short question;
+   (c) after «60 min» the list dropped the client's free 5:30 PM (F03) —
+   `_enforce_stored_time_kept` confirms a free stored time / says «isn't free» before
+   alternatives. Rule: **drive the dialogue with a mid-flow correction** (date change,
+   service change, typo question) — the happy path alone hides these.
+   Regressions: `tests/unit/test_t3_live_2026_09_22.py`.
 
 ## Business rules (authoritative)
 
