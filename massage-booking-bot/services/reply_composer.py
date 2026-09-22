@@ -20,6 +20,12 @@ def compose_reply(text, context):
     awaiting_phone = (str(getattr(context, 'user_id', '')).startswith('ig_') and not known.get('phone')
                       and not re.search(r'what time|available|slot|when|\b\d{1,2}(?::\d{2})?\s*[ap]m\b', latest_user, re.I))
     text = (text or '').replace('---MESSAGE_SPLIT---', '\n\n')
+    # The phone-first gate appends its number request AFTER the model's own
+    # question; "one question per turn" used to keep the model's and drop the
+    # number (T4 2026-09-22 16:16) while the gate had already marked the
+    # number as asked. When a number is awaited, its request is the question.
+    number_re = re.compile(r'(?:your|whatsapp|phone)\s+(?:whatsapp\s+)?number', re.I)
+    phone_ask_present = awaiting_phone and bool(number_re.search(text))
     truth = getattr(context, 'slot_truth', {}) or {}
     target_date = booking.get('date')
     # An EMPTY slot_truth means no calendar lookup ran this turn — the funnel
@@ -81,6 +87,8 @@ def compose_reply(text, context):
                     continue
                 normalize = lambda value: re.sub(r'\W+|\bdear\b', '', value.lower())
                 if '?' in latest_user and normalize(sentence) in normalize(earlier):
+                    continue
+                if phone_ask_present and not number_re.search(sentence):
                     continue
                 if asked:
                     continue

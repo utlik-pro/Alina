@@ -924,6 +924,17 @@ point** (`services/instagram_client.py`, `agents/instagram_agent.py`).
    alternatives. Rule: **drive the dialogue with a mid-flow correction** (date change,
    service change, typo question) — the happy path alone hides these.
    Regressions: `tests/unit/test_t3_live_2026_09_22.py`.
+8. **Live test T4 (2026-09-22, summer promo → Al Ain → «face massage instead of
+   cleansing»):** (a) the card gate chose the card by a KEYWORD («cleansing» in the
+   sentence) / ad label and sent the cleansing card after the client switched to face
+   (F02) — now the CURRENT service_type wins; (b) `_enforce_summer_offers` prepended the
+   420 line to every reply up to the booking confirmation — silent once another service
+   is chosen; (c) a service card («✅WE have an offer…») was reported to admins as a
+   PHANTOM booking — `_looks_like_phantom_confirmation` requires a booking stage and a
+   claim about the client; (d) the composer's «one question per turn» dropped the
+   phone-first gate's number request while `phone_asked` was already set — the number
+   request now wins, and a missing one lifts the flag (`phone_ask_pending`).
+   Regressions: `tests/unit/test_t4_live_2026_09_22.py`.
 
 ## Business rules (authoritative)
 

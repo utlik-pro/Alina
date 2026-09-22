@@ -1953,7 +1953,7 @@ def _enforce_price_sanity(response_text: str, who: str = "") -> str:
 _AD_OFFER_PRICES = (420, 350, 370, 275)
 
 
-def _enforce_summer_offers(response_text: str, ad_prefill) -> str:
+def _enforce_summer_offers(response_text: str, ad_prefill, service_type: str = "") -> str:
     """На summer-префилле обязаны прозвучать рекламные акции, а не что попало.
 
     Клиент пришёл по объявлению об акции: ответ с ценами, в котором нет ни
@@ -1962,6 +1962,11 @@ def _enforce_summer_offers(response_text: str, ad_prefill) -> str:
     чисткой показала, что инъекцию модель может проигнорировать.
     """
     if ad_prefill != "summer" or not response_text:
+        return response_text
+    if service_type and "clean" not in service_type and service_type != "massage":
+        # Клиент явно выбрал другую услугу (T4 22.09: «face massage instead of
+        # cleansing») — строка про чистку перед каждым ответом, рекапом и даже
+        # подтверждением записи читается как глухота, а не как продажа.
         return response_text
     if not _PRICE_IN_REPLY_RE.search(response_text):
         return response_text  # цен нет — вмешиваться не в чем
@@ -2106,6 +2111,33 @@ def _pending_line(context) -> str:
     n = int(bd.get("pending_line_sent") or 0)
     bd["pending_line_sent"] = n + 1
     return BOOKING_PENDING_LINE if n == 0 else BOOKING_PENDING_AGAIN_LINE
+
+
+_PHANTOM_NEGATION_RE = re.compile(
+    r"(?:not\s+yet|won'?t\s+be|will\s+be|going\s+to\s+be|"
+    r"cannot\s+be|can'?t\s+be|is\s+not|isn'?t|aren'?t|"
+    r"would\s+be|should\s+be|could\s+be|maybe|might)\s+booked", re.I)
+_PHANTOM_SOFT_CUES_RE = re.compile(r"\b(?:all set|scheduled|see you)\b", re.I)
+
+
+def _looks_like_phantom_confirmation(response_text: str, context) -> bool:
+    """A reply that tells the client they are booked while no tool ran.
+
+    Карточки услуг начинаются с «✅WE have an offer» — голая галочка плюс
+    бытовое слово («see you») давали ЛОЖНУЮ тревогу админам: T4 22.09 16:21
+    карточка чистки ушла в группу как «фантомная запись». Фантом — это
+    заявление о ЗАПИСИ КЛИЕНТА (_CLAIMS_BOOKED_RE) или ✅ + «all set /
+    scheduled / see you», и только когда бронь реально обсуждалась
+    (_booking_stage_reached). Отрицания («not yet booked») не считаются.
+    """
+    if not response_text or not _booking_stage_reached(context):
+        return False
+    low = response_text.lower()
+    if _PHANTOM_NEGATION_RE.search(low):
+        return False
+    if _CLAIMS_BOOKED_RE.search(response_text):
+        return True
+    return "✅" in response_text and bool(_PHANTOM_SOFT_CUES_RE.search(low))
 
 
 def _booking_stage_reached(context) -> bool:
@@ -2345,7 +2377,14 @@ def _enforce_admin_service_card(response_text: str, context,
     low = response_text.lower()
     from prices import ADMIN_CARD_BODY, ADMIN_CARD_CLEANSING, ADMIN_CARD_FACE
 
-    wants_clean = bool(_CLEANSING_ASK_RE.search(low_in)) or bd.get("ad_prefill") == "cleansing"
+    # Текущая услуга в состоянии главнее слова в сообщении: «I want face
+    # massage instead of cleansing» (T4 22.09 16:21) содержит «cleansing», но
+    # состояние уже переключено на лицо — а гейт прислал карточку чистки
+    # (Татьяна F02: «на явный запрос выдано не то»).
+    _svc_is_clean = "clean" in svc
+    wants_clean = _svc_is_clean or (
+        svc not in ("face_massage", "body_massage")
+        and (bool(_CLEANSING_ASK_RE.search(low_in)) or bd.get("ad_prefill") == "cleansing"))
     kind_in = _massage_kind_from_text(inbound_text or "")
     wants_face = svc == "face_massage" or kind_in == "face"
     wants_body = svc == "body_massage" or kind_in == "body"
@@ -3695,23 +3734,7 @@ async def _maybe_create_booking(
     # "confirmed", "scheduled", "see you", which previously escaped both the
     # creation AND the admin alert (silent false confirmation to the client).
     text_low = response_text.lower()
-    has_confirm_marker = (
-        "✅" in response_text
-        and _re.search(
-            r"\b(?:booked|confirmed|all set|scheduled|see you|you'?re all set)\b",
-            text_low,
-        ) is not None
-    )
-    if has_confirm_marker:
-        # Filter out negated forms ("not yet booked", "will be booked"…)
-        negation_re = _re.compile(
-            r"(?:not\s+yet|won'?t\s+be|will\s+be|going\s+to\s+be|"
-            r"cannot\s+be|can'?t\s+be|is\s+not|isn'?t|aren'?t|"
-            r"would\s+be|should\s+be|could\s+be|maybe|might)\s+booked",
-            _re.IGNORECASE,
-        )
-        if negation_re.search(text_low):
-            has_confirm_marker = False
+    has_confirm_marker = _looks_like_phantom_confirmation(response_text, context)
 
     if booking_call is None:
         if has_confirm_marker:
@@ -5794,6 +5817,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             if (PHONE_FIRST_LINE in response_text
                     or _ASKS_FOR_NUMBER_RE.search(response_text)):
                 dialog_manager.update_booking_data(user_id, "phone_asked", True)
+                # Проверяется ПОСЛЕ композера: если строка с номером до
+                # клиента не дошла, флаг снимается (T4 22.09 16:16 — композер
+                # оставил вопрос модели и выкинул наш запрос номера, а флаг
+                # уже стоял; номер больше не спрашивали никогда).
+                dialog_manager.update_booking_data(user_id, "phone_ask_pending", True)
             if TIME_PREF_LINE in response_text:
                 dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
@@ -5831,7 +5859,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # На summer-префилле обязаны звучать рекламные акции.
         response_text = _enforce_summer_offers(
-            response_text, (context.booking_data or {}).get("ad_prefill"))
+            response_text, (context.booking_data or {}).get("ad_prefill"),
+            service_type=(context.booking_data or {}).get("service_type") or "")
 
         # Последний рубеж: запрещённая цена не уходит, незнакомая — под сигнал.
         response_text = _enforce_price_sanity(response_text, who=phone)
@@ -5964,6 +5993,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         from services.reply_composer import compose_reply, split_chat_messages
         response_text = compose_reply(response_text, context)
+        if (context.booking_data or {}).get("phone_ask_pending"):
+            dialog_manager.update_booking_data(user_id, "phone_ask_pending", False)
+            if (not (context.client_data or {}).get("phone")
+                    and not _ASKS_FOR_NUMBER_RE.search(response_text)):
+                dialog_manager.update_booking_data(user_id, "phone_asked", False)
+                logger.warning(f"phone-first gate: запрос номера не дошёл до клиента "
+                               f"— флаг снят, спросим в следующем ходе ({phone})")
 
         await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
         dialog_manager.add_bot_response(user_id, response_text)
