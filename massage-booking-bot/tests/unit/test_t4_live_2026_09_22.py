@@ -85,3 +85,28 @@ def test_composer_without_a_pending_number_keeps_the_first_question():
                [{"role": "user", "content": "0501112233"}])
     out = compose_reply("Which day would suit you?\n\nAnd what time suits you better — morning or evening?", ctx)
     assert "which day" in out.lower() and "morning or evening" not in out.lower()
+
+
+# ── D7 (T5, F05): «which therapist will come?» is answered honestly ─────────
+
+def test_therapist_question_gets_the_assignment_rule_before_a_booking():
+    reply = ("Facial massage is 370 AED for 50 min 🌹\n"
+             "Our specialist will come to your home with free transportation.\n"
+             "Which day would you like dear?")
+    out = wh._enforce_therapist_question_answered(
+        reply, "Which therapist will come and how much?", _ctx({"service_type": "face_massage"}))
+    assert out.startswith(wh.THERAPIST_ASSIGNED_LINE) and "370 AED" in out
+
+
+def test_therapist_question_after_a_booking_names_the_real_master():
+    out = wh._enforce_therapist_question_answered(
+        "See you on Friday dear 🌹", "who will come?",
+        _ctx({"confirmed_master": "Марина", "yc_sync_ok": True, "date": "2026-10-02"}))
+    assert out.startswith("Your specialist will be Марина")
+
+
+def test_therapist_gate_stays_out_of_unrelated_or_already_answered_replies():
+    reply = "Which day would you like dear?"
+    assert wh._enforce_therapist_question_answered(reply, "how much is facial?", _ctx({})) == reply
+    answered = "Our therapist is assigned when we confirm your time dear 🌹"
+    assert wh._enforce_therapist_question_answered(answered, "which therapist?", _ctx({})) == answered

@@ -2628,6 +2628,39 @@ async def _enforce_stored_time_kept(response_text: str, inbound_text: str,
     return f"{_to_ampm(stored)} isn't free {when} for {duration} min dear 🙏\n{response_text}"
 
 
+_ASKS_WHICH_THERAPIST_RE = re.compile(
+    r"\b(?:which|what|who)\b[^?\n]{0,40}\b(?:therapist|specialist|master|masseuse|lady|girl)s?\b"
+    r"|\bwho\s+(?:will|is|would)\s+(?:be\s+)?com|\b(?:therapist|specialist|master)'?s?\s+name\b"
+    r"|\bname\s+of\s+(?:the\s+|your\s+)?(?:therapist|specialist|master)\b"
+    r"|\bкакой\s+мастер|\bкто\s+приед", re.I)
+_THERAPIST_ANSWERED_RE = re.compile(
+    r"\bassign|\bspecialist will be\b|\btherapist will be\b|\bher name\b|\bname (?:right )?after\b|"
+    r"\bwhen we confirm\b|\bonce (?:we|the time is) confirm", re.I)
+THERAPIST_ASSIGNED_LINE = ("Our therapist is assigned when we confirm your time dear — "
+                           "I'll tell you her name right after the booking 🌹")
+
+
+def _enforce_therapist_question_answered(response_text: str, inbound_text: str,
+                                         context, who: str = "") -> str:
+    """«Which therapist will come?» gets an honest answer, not a dodge.
+
+    T5 22.09 (Tatyana's F05): the client asked «Which therapist will come and
+    how much?» and got the price plus «Our specialist will come to your home»
+    — the therapist half was skipped. Before a record exists the truth is
+    that the master is assigned at confirmation (from real availability), and
+    her name is sent right after the booking (`confirmed_master`). Say so.
+    """
+    if not response_text or not _ASKS_WHICH_THERAPIST_RE.search(inbound_text or ""):
+        return response_text
+    if _THERAPIST_ANSWERED_RE.search(response_text):
+        return response_text
+    bd = getattr(context, "booking_data", None) or {}
+    master = (bd.get("confirmed_master") or "").strip()
+    line = f"Your specialist will be {master} 🌹" if master and bd.get("yc_sync_ok") else THERAPIST_ASSIGNED_LINE
+    logger.info(f"therapist gate: вопрос о мастере отвечен явно ({who})")
+    return f"{line}\n{response_text}"
+
+
 _ASKS_CLIENT_FOR_TIME_RE = re.compile(
     r"\b(?:what|which)\s+time\b[^?\n]*\?|\bwhich\s+(?:one\s+)?suits\s+you\b", re.I)
 
@@ -5903,6 +5936,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # закрыл разговор, дожимать его не надо, и он вправе снять этот вопрос.
         response_text = _enforce_time_ask_answered(response_text, text, context, who=phone)
         response_text = await _enforce_stored_time_kept(response_text, text, context, who=phone)
+        response_text = _enforce_therapist_question_answered(response_text, text, context, who=phone)
 
         # После «я напишу позже» дожим вырезается из любого ответа.
         response_text = _enforce_polite_close(response_text, context, who=phone)
