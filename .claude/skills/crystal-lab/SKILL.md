@@ -19,6 +19,10 @@ description: Canonical business rules, gotchas and verification checklist for th
   matching `codex/crystal-v2` at `/Users/admin/Alina/.worktrees/crystal-v2`.
   Check the live revision before using older `develop`/auto-deploy notes.
   The local Sharjah fix is not evidence of deployment.
+- **Deployment dependency, 2026-10-09:** install `sqlalchemy[asyncio]`, not
+  bare `sqlalchemy`. A clean Render build omitted `greenlet` and failed at
+  import of `sqlalchemy.ext.asyncio`; the old developer environment already
+  had it installed, so local tests alone did not expose the missing extra.
 
 **Read this before touching `/Users/admin/Alina/massage-booking-bot/`.** Whenever the
 client states a new rule, ADD it here in the same edit as the code change.
