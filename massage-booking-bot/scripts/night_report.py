@@ -35,8 +35,9 @@ def _secret() -> str:
 
 
 def fetch(limit: int) -> dict:
-    q = urllib.parse.urlencode({"secret": _secret(), "limit": limit})
-    with urllib.request.urlopen(f"{BASE}/admin/night-log?{q}", timeout=30) as r:
+    q = urllib.parse.urlencode({"limit": limit})
+    request = urllib.request.Request(f"{BASE}/admin/night-log?{q}", headers={"X-Manychat-Secret": _secret()})
+    with urllib.request.urlopen(request, timeout=30) as r:
         return json.loads(r.read())
 
 

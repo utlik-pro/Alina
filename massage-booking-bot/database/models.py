@@ -280,3 +280,11 @@ class ConversationSnapshot(Base):
     user_id = Column(String(80), primary_key=True)
     payload = Column(JSON, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CalendarExpectation(Base):
+    """Exact intended calendar write, saved before the external POST."""
+    __tablename__ = "calendar_expectations"
+    operation_key = Column(String(64), ForeignKey("booking_attempts.operation_key"), primary_key=True)
+    payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
-from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList, BookingAttempt, ConversationSnapshot
+from .models import Client, Message, Booking, DialogSession, Package, MasterAccount, WaitingList, BookingAttempt, ConversationSnapshot, CalendarExpectation
 from .db import Database
 
 
@@ -389,6 +389,11 @@ class BookingService:
             await session.execute(update(BookingAttempt).where(
                 BookingAttempt.operation_key == operation_key
             ).values(booking_id=booking_id))
+
+    async def save_calendar_expectation(self, operation_key: str, payload: dict) -> None:
+        """Commit intended fields before POST; failure must prevent that write."""
+        async with self.db.session() as session:
+            await session.merge(CalendarExpectation(operation_key=operation_key, payload=payload))
 
     async def complete_calendar_attempt(self, operation_key: str, yclients_id=None) -> None:
         async with self.db.session() as session:

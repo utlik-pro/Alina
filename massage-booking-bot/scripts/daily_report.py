@@ -3,13 +3,13 @@
 
 Combines three sources:
   1. System status  — prod health + Wappi profile status / payment expiry.
-  2. Agent metrics  — from the prod turn-logs (/admin/logs): conversations,
-     bookings, drop-off, errors/timeouts, top services & areas (last 24h).
+  2. Agent metrics  — from durable /admin/funnel-report: contacts, calendar IDs,
+     conversion and next actions (last 24h).
   3. Bug reports    — new tester feedback from feedback_log.json.
 
-Metrics need the prod WEBHOOK_SECRET (env WEBHOOK_SECRET) to read /admin/logs;
-without it the report still sends status + bug reports and notes metrics are
-unavailable.
+Metrics use the protected /admin/funnel-report endpoint with MANYCHAT_WEBHOOK_SECRET
+or WEBHOOK_SECRET. If it is unavailable, the report says so instead of claiming
+zero bookings.
 
 Run daily via launchd/cron. Usage:
     python3.11 scripts/daily_report.py            # build + send
@@ -23,7 +23,7 @@ import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-import requests
+import httpx
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -52,7 +52,7 @@ def uae_now() -> datetime:
 def system_status() -> str:
     lines = []
     try:
-        h = requests.get(f"{PROD}/", timeout=15).json()
+        h = httpx.get(f"{PROD}/", timeout=15).json()
         lines.append(f"• Сервер: {'🟢 работает' if h.get('status') == 'ok' else '🔴 ' + str(h)}")
     except Exception as e:
         lines.append(f"• Сервер: 🔴 недоступен ({str(e)[:60]})")
@@ -61,7 +61,7 @@ def system_status() -> str:
     try:
         from config import config
         if config.WAPPI_TOKEN and config.WAPPI_PROFILE_ID:
-            r = requests.get(
+            r = httpx.get(
                 "https://wappi.pro/api/sync/get/status",
                 params={"profile_id": config.WAPPI_PROFILE_ID},
                 headers={"Authorization": config.WAPPI_TOKEN}, timeout=15,
@@ -88,54 +88,13 @@ def system_status() -> str:
 
 # ── 2) agent metrics from prod turn-logs ──────────────────────────────
 def agent_metrics() -> str:
-    secret = os.getenv("WEBHOOK_SECRET", "")
-    if not secret:
-        # Optional gitignored file so the prod secret stays out of the plist.
-        _sf = os.path.join(ROOT, ".report_secret")
-        if os.path.exists(_sf):
-            secret = open(_sf, encoding="utf-8").read().strip()
-    if not secret:
-        return ("метрики недоступны: не задан WEBHOOK_SECRET для чтения "
-                "prod-логов (добавь его в env, чтобы видеть конверсию и т.д.)")
+    # Count persisted calendar IDs, never attempted model tool calls.
+    from scripts.operations_report import fetch_report
+    from services.operations_report import format_funnel_report
     try:
-        r = requests.get(f"{PROD}/admin/logs", params={"n": 800},
-                         headers={"X-Admin-Secret": secret}, timeout=25)
-        if r.status_code != 200:
-            return f"_метрики: /admin/logs вернул {r.status_code}_"
-        logs = r.json().get("logs", [])
-    except Exception as e:
-        return f"_метрики: ошибка чтения логов ({str(e)[:60]})_"
-
-    cutoff = (uae_now() - timedelta(hours=24)).replace(tzinfo=None)
-    day = []
-    for x in logs:
-        try:
-            if datetime.fromisoformat(x["ts"]) >= cutoff:
-                day.append(x)
-        except Exception:
-            continue
-    if not day:
-        return "_за сутки диалогов не было_"
-
-    phones = {x.get("phone") for x in day if x.get("phone")}
-    bookings = sum(1 for x in day if x.get("action") == "book_appointment")
-    errors = sum(1 for x in day if x.get("error"))
-    had_slots = sum(1 for x in day if x.get("had_slots"))
-    services = Counter(x.get("service") for x in day if x.get("service"))
-    areas = Counter(x.get("area") for x in day if x.get("area"))
-    conv = f"{(bookings / len(phones) * 100):.0f}%" if phones else "—"
-
-    top_svc = ", ".join(f"{s}×{c}" for s, c in services.most_common(3)) or "—"
-    top_area = ", ".join(f"{a}×{c}" for a, c in areas.most_common()) or "—"
-    return (
-        f"• Диалогов (сообщений): {len(day)}\n"
-        f"• Уникальных клиентов: {len(phones)}\n"
-        f"• Броней создано: {bookings}  (конверсия ~{conv})\n"
-        f"• Ходов со слотами: {had_slots}\n"
-        f"• Ошибок/сбоев: {errors}\n"
-        f"• Топ услуг: {top_svc}\n"
-        f"• Районы: {top_area}"
-    )
+        return format_funnel_report(fetch_report('/admin/funnel-report', {'hours': 24}))
+    except Exception:
+        return 'Метрики недоступны: не удалось прочитать отчёт из базы. Это не нулевая конверсия.'
 
 
 # ── 3) new tester bug reports ─────────────────────────────────────────
@@ -182,7 +141,7 @@ def build_report() -> str:
 def send(text: str):
     # Plain text (no parse_mode) — stylised unicode names and underscores in
     # log fields break Telegram Markdown.
-    requests.post(
+    httpx.post(
         f"https://api.telegram.org/bot{_bot_token()}/sendMessage",
         json={"chat_id": DMITRY_CHAT_ID, "text": text},
         timeout=20,

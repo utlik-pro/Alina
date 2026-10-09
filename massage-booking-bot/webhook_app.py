@@ -492,7 +492,10 @@ async def _send_to_client(phone: str, text: str) -> bool:
         _night_event("sent" if _ok else "send_failed", who=phone, text=text)
         return _ok
     if wappi_client:
-        return await wappi_client.send_message(phone, text)
+        delivered = await wappi_client.send_message(phone, text)
+        _night_event("sent" if delivered else "send_failed", who=f"wappi:{phone}")
+        return delivered
+    _night_event("send_failed", who=f"wappi:{phone}")
     return False
 
 # Reset/clear commands (WhatsApp + Telegram). The team kept typing "/clean"
@@ -4249,6 +4252,15 @@ async def _maybe_create_booking(
                 # Whitelisted IG testers always create [TEST]-prefixed records.
                 if _is_ig_key(phone) and _is_ig_test_subscriber(phone[len(IG_KEY_PREFIX):]):
                     _is_test = True
+                await bot_module.booking_service.save_calendar_expectation(operation_key, {
+                    "staff_id": yc_staff_id, "service_ids": [yc_service_id],
+                    "datetime": booking_date.isoformat(),
+                    "duration_seconds": int(booking_call.duration_minutes or 60) * 60,
+                    "client_name": client_name, "client_phone": client_phone,
+                    "payment_method": booking_call.payment_method,
+                    "base_price": booking_call.base_price_aed,
+                    "area": booking_call.area, "is_test": _is_test,
+                })
                 yc_result = await bot_module.yclients_service.create_booking(
                     staff_id=yc_staff_id,
                     service_ids=[yc_service_id],
@@ -4906,6 +4918,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             # at all when wappi wasn't configured (live-caught 2026-08-15).
             await _send_to_client(phone, _RESET_GREETING)
             return
+
+        if not _is_ig_key(phone):
+            _night_event("inbound", who=f"wappi:{phone}", live=True)
+            _night_event("routed_to_booking", who=f"wappi:{phone}")
 
         client = await bot_module.client_service.get_or_create_client(telegram_id)
         if sender_name and not client.name:
@@ -6868,3 +6884,8 @@ async def admin_logs(request: Request):
 
 # (The old canned-reply ManyChat stub from Task #14 lived here — replaced by
 # the authenticated consult bridge above; one route, one handler.)
+
+
+# Read-only reporting is kept outside the conversation pipeline.
+from services.admin_reports import router as admin_reports_router
+app.include_router(admin_reports_router)

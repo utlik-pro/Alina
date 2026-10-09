@@ -5,6 +5,21 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Read-only operations reports — owner approved, 2026-10-09
+
+- Save the exact intended calendar fields before POST in `CalendarExpectation`.
+  A snapshot write failure prevents the calendar POST; never infer old snapshots.
+- Reconciliation is read-only: compare schedule, specialist/service IDs, contact,
+  price, payment/VAT terms and the `paid_full` flag. A method in a comment is not
+  proof of payment, and `paid_full` is not a bank-receipt verification.
+- Never retry uncertain calendar writes, silently attach recovered IDs, or undo
+  administrator changes from this report. Missing evidence stays unknown.
+- Funnel conversion uses unique calendar IDs and unique routed inbound contacts,
+  not model calls. Exclude testers/smoke IDs; distinguish explicit human ownership,
+  daytime silence, refusals, unsupported cities and still-active conversations.
+- See `massage-booking-bot/docs/operations.md`. Protected GET reports and the new
+  CLI are read-only; no new notification schedule or automatic client messages.
+
 ## Dialogue and release improvements — owner approved, 2026-10-09
 
 - Explicit corrections win over rejected city/service mentions ("not Sharjah,
