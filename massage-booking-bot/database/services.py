@@ -49,6 +49,8 @@ class ClientService:
         area: Optional[str] = None,
         preferred_therapist: Optional[str] = None,
         avoid_therapist: Optional[str] = None,
+        clear_area: bool = False,
+        clear_location: bool = False,
     ) -> Client:
         """Update client information"""
         async with self.db.session() as session:
@@ -57,6 +59,12 @@ class ClientService:
             )
             client = result.scalar_one()
 
+            if clear_area:
+                client.area = None
+            if clear_location:
+                client.location_latitude = None
+                client.location_longitude = None
+                client.location_details = None
             if name:
                 client.name = name
             if phone:

@@ -230,3 +230,172 @@ async def test_sharjah_close_survives_restart_and_dubai_reopens(dialogue, monkey
     assert not restored.booking_data.get('out_of_area')
     assert wh.booking_agent.process_message_with_tools.await_count == 1
     assert "don't currently operate in Sharjah" not in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('correction,expected', [
+    ("Not Sharjah, I'm in Dubai", 'dubai'),
+    ("Dubai, not Sharjah", 'dubai'),
+    ("Не в Шардже, я в Дубае", 'dubai'),
+    ("Sharjah was wrong, actually Abu Dhabi", 'abu_dhabi'),
+    ("I live in Sharjah but want the massage in Dubai", 'dubai'),
+])
+async def test_city_correction_reopens_without_losing_booking(dialogue, correction, expected):
+    dialogue.ctx.client_data['phone'] = '971500000000'
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_duration=50,
+                                     date='2026-11-12', time='17:30')
+    await dialogue.turn('Sharjah', 'Facial massage 370 AED')
+    out = await dialogue.turn(correction, 'We can come to your home. Which day?')
+    assert not dialogue.ctx.booking_data.get('out_of_area')
+    assert dialogue.ctx.client_data['area'] == expected
+    assert dialogue.ctx.client_data['phone'] == '971500000000'
+    assert dialogue.ctx.booking_data['date'] == '2026-11-12'
+    assert dialogue.ctx.booking_data['time'] == '17:30'
+    assert "don't currently operate" not in out
+    assert wh.booking_agent.process_message_with_tools.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', ['Dubai or Sharjah?', 'Dubai or Abu Dhabi?', 'Not Dubai'])
+async def test_unclear_city_asks_before_using_cached_city(dialogue, monkeypatch, message):
+    create = AsyncMock()
+    monkeypatch.setattr(wh, '_maybe_create_booking', create)
+    out = await dialogue.turn(message, 'Your booking in Abu Dhabi is confirmed!')
+    assert 'which city' in out.lower()
+    assert out.count('?') == 1
+    assert not dialogue.ctx.client_data.get('area')
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+    create.assert_not_awaited()
+    await dialogue.turn('Dubai', 'We come to your home in Dubai.')
+    assert dialogue.ctx.client_data['area'] == 'dubai'
+    assert wh.booking_agent.process_message_with_tools.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('correction,kind', [
+    ('Not facial, body massage please', 'body_massage'),
+    ('Not body, facial massage please', 'face_massage'),
+    ('Body massage instead of facial', 'body_massage'),
+    ('Не массаж лица, хочу массаж тела', 'body_massage'),
+])
+async def test_rejected_service_does_not_win_over_correction(dialogue, correction, kind):
+    dialogue.ctx.client_data['phone'] = '971500000000'
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_duration=50,
+                                     time='17:30', service_named=True)
+    await dialogue.turn(correction, 'Which time suits you?')
+    assert dialogue.ctx.booking_data['service_type'] == kind
+    assert dialogue.ctx.client_data['phone'] == '971500000000'
+    assert dialogue.ctx.booking_data['time'] == '17:30'
+    if kind == 'body_massage':
+        assert dialogue.ctx.booking_data.get('service_duration') != 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('question,answer', [
+    ('Location', 'home service'),
+    ('Do you have a branch in Dubai?', 'home service'),
+    ('Do you come to my hotel?', 'home service'),
+    ('Is transportation free?', 'free transportation'),
+    ('Do I pay before or after the massage?', 'after'),
+    ('Can I pay by bank transfer?', '5% VAT'),
+])
+async def test_direct_question_survives_ad_and_service_card(dialogue, question, answer):
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_named=True,
+                                     ad_prefill='summer')
+    out = await dialogue.turn(question, 'Hello dear! Facial massage is 370 AED. Which time suits you?')
+    assert answer.lower() in out.lower()
+    assert '370' not in out and '420' not in out and '1650' not in out
+    assert out.count('?') <= 1
+    assert not dialogue.ctx.booking_data.get('face_card_sent')
+    # The deferred card is still available when the client actually asks for a price.
+    out = await dialogue.turn('How much is facial massage?', 'Facial massage is 370 AED.')
+    assert '370' in out and '1650' in out
+    assert dialogue.ctx.booking_data.get('face_card_sent')
+
+
+@pytest.mark.asyncio
+async def test_location_clarification_survives_restart(dialogue):
+    dialogue.ctx.client_data.update(phone='971500000000', location_details='Old villa in Abu Dhabi')
+    dialogue.ctx.booking_data['pending_booking'] = {'service': 'face_massage', 'time': '17:30'}
+    await dialogue.turn('Not Abu Dhabi', 'Confirmed!')
+    snapshot = bot.message_service.save_context.await_args.args[1]
+    bot.message_service.load_context.return_value = snapshot
+    wh.dialog_manager.clear_context('ig_555')
+    out = await dialogue.turn('Okay', 'Facial massage 370 AED')
+    assert 'which city' in out.lower()
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+    ctx = wh.dialog_manager.get_context('ig_555')
+    assert ctx.client_data['phone'] == '971500000000'
+    assert not ctx.client_data.get('location_details')
+    assert not ctx.booking_data.get('pending_booking')
+    await dialogue.turn('Dubai', 'We can come to your home.')
+    assert ctx.client_data['area'] == 'dubai'
+    assert not ctx.booking_data.get('area_needs_clarification')
+
+
+@pytest.mark.asyncio
+async def test_unsupported_city_correction_does_not_choose_negated_dubai(dialogue):
+    out = await dialogue.turn("I'm in Sharjah, not Dubai", 'Facial massage 370 AED')
+    assert "don't currently operate in Sharjah" in out
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('question,needed', [
+    ('Which therapist will come?', 'therapist is assigned'),
+    ('What types of facial massage do you offer?', 'buccal'),
+    ('Where are you and how much is facial massage?', 'home service'),
+])
+async def test_mixed_and_other_direct_questions_keep_answer_first(dialogue, question, needed):
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_named=True, ad_prefill='summer')
+    out = await dialogue.turn(question, 'Facial massage is 370 AED for 50 min. Which day?')
+    assert needed in out.lower()
+    assert '420' not in out and '1650' not in out
+    if 'how much' in question:
+        assert '370' in out
+        assert out.lower().index('home service') < out.index('370')
+    assert not dialogue.ctx.booking_data.get('face_card_sent')
+    assert 'THIS CLIENT CAME FROM THE SUMMER' not in dialogue.ctx.extra_system_info
+
+
+@pytest.mark.asyncio
+async def test_payment_question_does_not_select_payment_method(dialogue):
+    dialogue.ctx.booking_data['payment_method'] = 'cash'
+    out = await dialogue.turn('Can I also pay by bank transfer?', 'Facial massage 370 AED')
+    assert '5% VAT' in out
+    assert dialogue.ctx.booking_data['payment_method'] == 'cash'
+
+
+@pytest.mark.asyncio
+async def test_service_correction_invalidates_pending_confirmation(dialogue):
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_duration=50,
+                                    pending_booking={'service': 'face_massage', 'time': '17:30'})
+    await dialogue.turn('Not facial, body massage please', '60 or 90 min?')
+    assert dialogue.ctx.booking_data['service_type'] == 'body_massage'
+    assert not dialogue.ctx.booking_data.get('pending_booking')
+
+
+@pytest.mark.asyncio
+async def test_city_correction_clears_persisted_address_but_keeps_phone(dialogue, monkeypatch, tmp_path):
+    from database.db import Database
+    from database.services import ClientService
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'city.db'}")
+    await db.create_tables()
+    clients = ClientService(db)
+    await clients.get_or_create_client('ig_555')
+    await clients.update_client('ig_555', phone='971500000000', area='abu_dhabi',
+                                location_details='Old villa', location_latitude=24.4,
+                                location_longitude=54.4)
+    monkeypatch.setattr(bot, 'client_service', clients)
+    try:
+        await dialogue.turn('Not Abu Dhabi', 'Which time?')
+        client = await clients.get_or_create_client('ig_555')
+        assert client.area is None
+        assert client.location_details is None
+        assert client.location_latitude is None and client.location_longitude is None
+        assert client.phone == '971500000000'
+        await dialogue.turn('Dubai', 'We come to your home.')
+        client = await clients.get_or_create_client('ig_555')
+        assert client.area == 'dubai'
+    finally:
+        await db.close()

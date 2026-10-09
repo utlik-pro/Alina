@@ -5,6 +5,23 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Dialogue and release improvements — owner approved, 2026-10-09
+
+- Explicit corrections win over rejected city/service mentions ("not Sharjah,
+  I'm in Dubai", "not facial, body"). Two possible cities or only a rejected city
+  require clarification before calendar/model/booking calls. Persist this state.
+- Preserve the contact and desired date/time, but invalidate the previous city's
+  address and pending confirmation when the city changes; invalidate a pending
+  confirmation when the service changes. Re-check availability for the new choice.
+- Direct questions come before sales: suppress ad instructions and promotional
+  rewrites for that turn. Answer home-service/payment facts explicitly; retain
+  calendar, booking and price safeguards. A deferred card must remain unsent so
+  an actual later price request can receive the client's approved card.
+- Release from `codex/crystal-v2`; Render auto-deploy is OFF. Follow
+  `massage-booking-bot/docs/release.md`: locked dependencies, complete pytest,
+  Linux Docker startup in Bot CI, then `scripts/deploy_checked.py` for the exact
+  successful SHA. Dashboard/API access can still bypass this command.
+
 ## Current clarification — Tatyana, 2026-10-08 (recorded 2026-10-09)
 
 - **Sharjah is currently NOT served.** On a direct question such as

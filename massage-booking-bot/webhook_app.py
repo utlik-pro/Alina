@@ -17,6 +17,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from loguru import logger
+from services.customer_intent import (affirmative_choice_text, direct_question_topics,
+                                      factual_answer, QUESTION_RE)
 
 # Deduplication cache: message_id → timestamp (processed within last 5 min).
 # OrderedDict so we can evict oldest entries when hitting the size cap —
@@ -539,7 +541,7 @@ def _detect_service_category(text: str) -> Optional[str]:
     slot injection shows the RIGHT specialists (a manicure client was being
     shown massage-therapist availability because service_type was never set).
     """
-    t = (text or "").lower()
+    t = affirmative_choice_text(text).lower()
     if any(k in t for k in _NAILS_KW):
         return "nails"
     if any(k in t for k in _MASSAGE_KW):
@@ -802,7 +804,7 @@ def _detect_both_kinds(text: str, context) -> bool:
     после нашего же вопроса body-or-face. Явная пара («face and body»)
     распознаётся всегда.
     """
-    t = (text or "").lower()
+    t = affirmative_choice_text(text).lower()
     if _looks_like_group(t):
         return False                      # «for both of us» — это два человека
     if _BOTH_PAIR_RE.search(t):
@@ -825,7 +827,7 @@ def _detect_combo_choice(text: str) -> bool:
     massage" and walked away. Choosing the combo must set the service AND its
     fixed duration in code so no gate ever asks about either again.
     """
-    t = (text or "").lower()
+    t = affirmative_choice_text(text).lower()
     if "special offer" in t or "275" in t:
         return True
     if "cupping" in t or "банк" in t or "хиджам" in t or "hijama" in t:
@@ -853,7 +855,7 @@ def _massage_kind_from_text(text: str) -> Optional[str]:
     """
     import difflib
 
-    t = (text or "").lower()
+    t = affirmative_choice_text(text).lower()
     has_face = any(k in t for k in ("face", "facial", "лиц", "фейш", "фэйш"))
     has_body = any(k in t for k in ("body", "тел", "спин", "back"))
     if not has_face and re.search(r"lymphatic|lymph drainage|maderotherapy|wooden rollers|лимфодрен", t):
@@ -966,28 +968,47 @@ _AREA_ABU_DHABI_KW = (
 _AL_AIN_TYPO_RE = re.compile(r"\ba[li][\s\-]*[aie]i[nm]\b", re.IGNORECASE)
 
 
-def detect_area(text: str) -> Optional[str]:
-    """Detect an EXPLICIT emirate mention in a client message.
-
-    Returns 'al_ain' | 'dubai' | 'abu_dhabi' | None. Word-boundary matched so
-    short tokens ("yas", "mbz") don't fire inside unrelated words ("always").
-    Shared by webhook slot-injection AND scripts/sim_conversation.py so the two
-    never diverge.
-    """
-    t = (text or "").lower()
-
-    def _has(kw: str) -> bool:
-        return re.search(r"\b" + re.escape(kw) + r"\b", t) is not None
-
-    if _AL_AIN_TYPO_RE.search(t) or any(
-        _has(k) for k in ("al ain", "alain", "al-ain", "аль айн", "аль-айн")
+def _area_mentions(text: str):
+    matches = []
+    for area, words in (
+        ("al_ain", ("al ain", "alain", "al-ain", "аль айн", "аль-айн")),
+        ("dubai", _AREA_DUBAI_KW), ("abu_dhabi", _AREA_ABU_DHABI_KW),
     ):
-        return "al_ain"
-    if any(_has(k) for k in _AREA_DUBAI_KW):
-        return "dubai"
-    if any(_has(k) for k in _AREA_ABU_DHABI_KW):
-        return "abu_dhabi"
-    return None
+        for word in words:
+            for match in re.finditer(r"\b" + re.escape(word) + r"\b", text, re.I):
+                matches.append((match.start(), match.end(), area))
+    matches.extend((m.start(), m.end(), "al_ain") for m in _AL_AIN_TYPO_RE.finditer(text))
+    matches.extend((m.start(), m.end(), "outside:" + m.group(1).lower())
+                   for m in _OUT_OF_AREA_RE.finditer(text))
+    return matches
+
+
+def _resolve_area_choice(text: str):
+    """Return (supported area, outside city, needs clarification).
+
+    Explicit corrections win. Two affirmed cities or a rejected city without a
+    replacement require clarification, never a guess based on the cached city.
+    """
+    raw = _area_mentions(text or "")
+    chosen = affirmative_choice_text(text)
+    # A final correction clause can name the destination rather than residence.
+    clauses = re.split(r"\b(?:actually|but|теперь|на самом деле)\b", chosen, flags=re.I)
+    if len(clauses) > 1 and _area_mentions(clauses[-1]):
+        chosen = clauses[-1]
+    mentions = [(start, end, area) for start, end, area in _area_mentions(chosen)
+                if not re.match(r"\s+(?:was wrong|is wrong|ошибочно)\b", chosen[end:], re.I)]
+    values = {area for _, _, area in mentions}
+    if len(values) != 1:
+        return None, None, bool(raw)
+    value = values.pop()
+    if value.startswith("outside:"):
+        return None, value.split(":", 1)[1], False
+    return value, None, False
+
+
+def detect_area(text: str) -> Optional[str]:
+    """Explicit, affirmed and unambiguous service city (also used by simulations)."""
+    return _resolve_area_choice(text)[0]
 
 
 # Pull an explicit session length from a client message ("90 min", "90 минут",
@@ -4941,6 +4962,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
 
+        _question_topics = direct_question_topics(text)
+        _direct_question = bool(
+            _question_topics - {"price"} or _asks_about_time(text)
+            or _asks_about_massage_types(text) or _ASKS_WHICH_THERAPIST_RE.search(text)
+            or (QUESTION_RE.search(text) and "price" not in _question_topics))
+
         # Client replied — reset the follow-up counter so nudges restart from
         # the beginning next time they go quiet (was Telegram-only before).
         if getattr(bot_module, "follow_up_service", None):
@@ -5144,13 +5171,35 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # is exactly where the model used to resume selling (client complaint
         # 2026-08-16: «зачем спрашивать какой сервис… можно попрощаться
         # красиво и всё»). Naming one of OUR cities lifts the flag.
-        _ooa_city = _detect_out_of_area(text)
-        if _ooa_city:
+        _explicit_area, _ooa_city, _area_unclear = _resolve_area_choice(text)
+        if _explicit_area or _ooa_city or _area_unclear:
+            previous_area = context.client_data.get("area")
+            _clear_location = previous_area != _explicit_area or _area_unclear
+            if _clear_location:
+                context.slot_truth = {}
+                context.extra_system_info = ""
+                context.booking_data.pop("pending_booking", None)
+                # A desired day/time survives; the old city's address does not.
+                for field in ("location", "location_details"):
+                    context.client_data.pop(field, None)
+            dialog_manager.update_client_data(user_id, "area", _explicit_area)
+            dialog_manager.update_booking_data(user_id, "area_needs_clarification", _area_unclear)
             dialog_manager.update_booking_data(user_id, "out_of_area", _ooa_city)
-            logger.info(f"out-of-area detected: {_ooa_city} — funnel stops")
-        elif detect_area(text) and context.booking_data.get("out_of_area"):
-            dialog_manager.update_booking_data(user_id, "out_of_area", None)
-            logger.info("client named a served emirate — out-of-area lifted")
+            try:
+                await bot_module.client_service.update_client(
+                    telegram_id, area=_explicit_area, clear_area=_explicit_area is None,
+                    clear_location=_clear_location)
+            except Exception as exc:
+                logger.warning(f"couldn't persist corrected area: {exc}")
+
+        if context.booking_data.get("area_needs_clarification"):
+            response_text = ("We offer home service in Abu Dhabi, Al Ain and Dubai. "
+                             "Which city would you like the appointment in?")
+            await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
+            dialog_manager.add_bot_response(user_id, response_text)
+            await bot_module.message_service.save_context(user_id, context.to_dict())
+            await _send_to_client(phone, response_text)
+            return
 
         # Tatyana 2026-10-08: "U have branch in sharjaha" received the facial
         # card. A prompt-only refusal was overwritten by later sales gates.
@@ -5195,6 +5244,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 user_id, "service_duration", int(_SO[_COMBO_KEY]["duration"]))
             logger.info("combo choice detected → lymphatic_cupping_combo, 45 min fixed")
 
+        if context.booking_data.get("service_type") != _cur_svc:
+            # A confirmation collected for the previous service is no longer valid.
+            context.booking_data.pop("pending_booking", None)
+
         # Explicit refusal/defer ends this turn before the model or booking tools.
         # Retain collected contact/service data for a later voluntary return.
         if _detect_deferred_close(text):
@@ -5224,32 +5277,13 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 f"slot_inject_entry: text_low={_text_lower!r} "
                 f"area_cached={_client_area!r}"
             )
-            # Detect an EXPLICIT area mention in THIS message. This runs even
-            # when an area is already cached, so a client can CHANGE area
-            # mid-session ("actually I'm in Abu Dhabi" must override a cached
-            # al_ain — was stuck before, showing the wrong emirate's masters).
-            # Detection lives in the shared detect_area() helper so the offline
-            # simulator matches prod exactly.
-            _explicit_area = detect_area(_text_lower)
-            # Explicit mention wins over any cached value.
-            if _explicit_area and _explicit_area != _client_area:
-                logger.info(
-                    f"area switch: {_client_area!r} → {_explicit_area!r} "
-                    f"(explicit mention in message)"
-                )
-                _client_area = _explicit_area
-                dialog_manager.update_client_data(user_id, "area", _explicit_area)
-                # Persist so it survives a restart / delayed survey reply.
-                try:
-                    await bot_module.client_service.update_client(telegram_id, area=_explicit_area)
-                except Exception as _e:
-                    logger.warning(f"couldn't persist area to client record: {_e}")
+            # The affirmed city was persisted before the coverage/clarification gates.
 
             # Capture the session length on ANY message (even before area is
             # known) and persist it, so slots only offer times the WHOLE session
             # fits. An explicitly-stated length ("90 минут") wins; otherwise the
             # recognised service's own length (a gel manicure is 2h, a combo 3h).
-            _dur_detected = _detect_duration_minutes(_text_lower) or _detect_service_duration(_text_lower)
+            _dur_detected = _detect_duration_minutes(affirmative_choice_text(_text_lower)) or _detect_service_duration(affirmative_choice_text(_text_lower))
             if _dur_detected and _dur_detected != context.booking_data.get("service_duration"):
                 dialog_manager.update_booking_data(user_id, "service_duration", _dur_detected)
                 logger.info(f"duration_detect: {_dur_detected} min (from message)")
@@ -5624,7 +5658,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 "it in English, and politely add: 'In English please 🙏'."
             )
 
-        _ad = (context.booking_data or {}).get("ad_prefill")
+        _ad = None if _direct_question else (context.booking_data or {}).get("ad_prefill")
         if _ad == "cleansing":
             from prices import SPECIAL_OFFERS as _SOC
             _cl = _SOC["offer_deep_cleansing"]
@@ -5678,6 +5712,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 "evasive (owner 2026-08-24). Instead add ONE selling line: "
                 "we work with top Russian therapists. The emirate is already "
                 "in their message: never re-ask it."
+            )
+
+        if _direct_question:
+            context.extra_system_info += (
+                "\n\nAnswer the client's current question first. Do not replace it "
+                "with an ad, service card or a request for their phone. Preserve "
+                "their chosen service, city, date and time. Ask at most one "
+                "necessary next question after answering."
             )
 
         response_text: str = ""
@@ -5807,21 +5849,31 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _is_ig_key(phone) and "📍" in response_text:
             response_text = response_text.replace(" 📍", "").replace("📍", "")
 
-        # Оффер 275 обязан прозвучать хотя бы раз — при любой названной цене.
-        _offer_shown = bool((context.booking_data or {}).get("offer_275_shown"))
-        response_text = _enforce_package_offer_first(
-            response_text, (context.booking_data or {}).get("ad_prefill"),
-            inbound_text=text, already_shown=_offer_shown)
-        if not _offer_shown and "275" in response_text:
-            dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+        # Direct questions take precedence over promotional rewrites. Safety and
+        # calendar checks above/below still apply; deferred cards remain unsent.
+        _facts = factual_answer(_question_topics, text)
+        if _facts and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None:
+            if "price" not in _question_topics and not _asks_about_time(text) and not _ASKS_WHICH_THERAPIST_RE.search(text):
+                response_text = _facts
+            else:
+                response_text = _facts + "\n\n" + response_text
 
-        # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
-        # v2 отключил этот вызов («no forced full sales card») — и прод стал
-        # отвечать ровно тем, на что она жаловалась: голым «Face massage
-        # 50 min — 370 AED» вместо карточки с абонементом (Frenchie 31.08,
-        # «Тут добавляем это»). Правило клиента важнее стиля v2.
-        response_text = _enforce_admin_service_card(
-            response_text, context, text, who=phone)
+        # Оффер 275 обязан прозвучать хотя бы раз — при любой названной цене.
+        if not _direct_question:
+            _offer_shown = bool((context.booking_data or {}).get("offer_275_shown"))
+            response_text = _enforce_package_offer_first(
+                response_text, (context.booking_data or {}).get("ad_prefill"),
+                inbound_text=text, already_shown=_offer_shown)
+            if not _offer_shown and "275" in response_text:
+                dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
+
+            # Первая цена лица/тела = полная карточка админов (Татьяна 31.08).
+            # v2 отключил этот вызов («no forced full sales card») — и прод стал
+            # отвечать ровно тем, на что она жаловалась: голым «Face massage
+            # 50 min — 370 AED» вместо карточки с абонементом (Frenchie 31.08,
+            # «Тут добавляем это»). Правило клиента важнее стиля v2.
+            response_text = _enforce_admin_service_card(
+                response_text, context, text, who=phone)
 
         # «Какие бывают массажи?» при выбранном виде — отвечают ТЕХНИКАМИ,
         # а не «тело или лицо?» по кругу. Гейт был написан под жалобу
@@ -5837,36 +5889,37 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         response_text = _enforce_kind_settled(response_text, context, who=phone)
 
         # Услышал цену — сразу номер, потом половина дня (Татьяна 2026-08-25).
-        _ph_known = bool((context.client_data or {}).get("phone"))
-        _pf_before = response_text
-        # Гейт молчит, когда запись только что создана (иначе он резал
-        # строку подтверждения с временем и спрашивал «утро или вечер?»
-        # ПОСЛЕ брони — аудит 2026-08-26) и для вне-зонных клиентов
-        # (Шарджа получала «May I have your number?» вместо прощания).
-        if (getattr(actions, "booking_call", None) is None
-                and not (context.booking_data or {}).get("out_of_area")):
-            response_text = _enforce_phone_first(
-                response_text, context, _ph_known, _is_ig_key(phone), who=phone)
-        if response_text != _pf_before:
-            if (PHONE_FIRST_LINE in response_text
-                    or _ASKS_FOR_NUMBER_RE.search(response_text)):
-                dialog_manager.update_booking_data(user_id, "phone_asked", True)
-                # Проверяется ПОСЛЕ композера: если строка с номером до
-                # клиента не дошла, флаг снимается (T4 22.09 16:16 — композер
-                # оставил вопрос модели и выкинул наш запрос номера, а флаг
-                # уже стоял; номер больше не спрашивали никогда).
-                dialog_manager.update_booking_data(user_id, "phone_ask_pending", True)
-            if TIME_PREF_LINE in response_text:
-                dialog_manager.update_booking_data(user_id, "pref_asked", True)
+        if not _direct_question:
+            _ph_known = bool((context.client_data or {}).get("phone"))
+            _pf_before = response_text
+            # Гейт молчит, когда запись только что создана (иначе он резал
+            # строку подтверждения с временем и спрашивал «утро или вечер?»
+            # ПОСЛЕ брони — аудит 2026-08-26) и для вне-зонных клиентов
+            # (Шарджа получала «May I have your number?» вместо прощания).
+            if (getattr(actions, "booking_call", None) is None
+                    and not (context.booking_data or {}).get("out_of_area")):
+                response_text = _enforce_phone_first(
+                    response_text, context, _ph_known, _is_ig_key(phone), who=phone)
+            if response_text != _pf_before:
+                if (PHONE_FIRST_LINE in response_text
+                        or _ASKS_FOR_NUMBER_RE.search(response_text)):
+                    dialog_manager.update_booking_data(user_id, "phone_asked", True)
+                    # Проверяется ПОСЛЕ композера: если строка с номером до
+                    # клиента не дошла, флаг снимается (T4 22.09 16:16 — композер
+                    # оставил вопрос модели и выкинул наш запрос номера, а флаг
+                    # уже стоял; номер больше не спрашивали никогда).
+                    dialog_manager.update_booking_data(user_id, "phone_ask_pending", True)
+                if TIME_PREF_LINE in response_text:
+                    dialog_manager.update_booking_data(user_id, "pref_asked", True)
 
-        # Первый контакт без узнанной рекламы → вопрос об услуге, не меню
-        # (Татьяна 01.09). v2 тоже отключил его, и голое «Hi» получало
-        # «We offer body and face massage, facials, nails and lashes» —
-        # то самое меню, которое она просила заменить вопросом.
-        _fi_before = response_text
-        response_text = _enforce_full_intro(response_text, context, text, who=phone)
-        if response_text != _fi_before:
-            dialog_manager.update_booking_data(user_id, "cards_intro_sent", True)
+            # Первый контакт без узнанной рекламы → вопрос об услуге, не меню
+            # (Татьяна 01.09). v2 тоже отключил его, и голое «Hi» получало
+            # «We offer body and face massage, facials, nails and lashes» —
+            # то самое меню, которое она просила заменить вопросом.
+            _fi_before = response_text
+            response_text = _enforce_full_intro(response_text, context, text, who=phone)
+            if response_text != _fi_before:
+                dialog_manager.update_booking_data(user_id, "cards_intro_sent", True)
 
         # Вопрос «где вы находитесь» обязан получить выездной формат.
         response_text = _enforce_location_answer(response_text, text, who=phone)
@@ -5881,33 +5934,37 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         response_text = _enforce_courses_wording(response_text)
 
         # Оффер 275 — телесный, выбирать «тело или лицо» не из чего.
-        response_text = _enforce_package_service_known(
-            response_text, (context.booking_data or {}).get("ad_prefill"),
-            booking=context.booking_data)
+        if not _direct_question:
+            response_text = _enforce_package_service_known(
+                response_text, (context.booking_data or {}).get("ad_prefill"),
+                booking=context.booking_data)
 
         # Названа цена оффера — старая цена обязана стоять рядом.
         response_text = _enforce_offer_was_price(response_text)
 
         # Спросили про чистку — цена и длительность обязаны быть от чистки.
-        response_text = _enforce_cleansing_facts(response_text, text)
+        if not _facts or "price" in _question_topics:
+            response_text = _enforce_cleansing_facts(response_text, text)
 
         # На summer-префилле обязаны звучать рекламные акции.
-        response_text = _enforce_summer_offers(
-            response_text, (context.booking_data or {}).get("ad_prefill"),
-            service_type=(context.booking_data or {}).get("service_type") or "")
+        if not _direct_question:
+            response_text = _enforce_summer_offers(
+                response_text, (context.booking_data or {}).get("ad_prefill"),
+                service_type=(context.booking_data or {}).get("service_type") or "")
 
         # Последний рубеж: запрещённая цена не уходит, незнакомая — под сигнал.
         response_text = _enforce_price_sanity(response_text, who=phone)
 
         # Названа цена — разговор должен идти дальше, к записи.
-        _mom_before = response_text
-        response_text = await _ensure_booking_momentum(
-            response_text, context, (context.client_data or {}).get("area") or "",
-            inbound_text=text, who=phone)
-        if response_text != _mom_before:
-            dialog_manager.update_booking_data(user_id, "momentum_shown", True)
+        if not _direct_question:
+            _mom_before = response_text
+            response_text = await _ensure_booking_momentum(
+                response_text, context, (context.client_data or {}).get("area") or "",
+                inbound_text=text, who=phone)
+            if response_text != _mom_before:
+                dialog_manager.update_booking_data(user_id, "momentum_shown", True)
 
-        # Сказали «мест нет» — обязаны назвать, когда они есть.
+        # Calendar alternatives remain available for direct availability questions.
         response_text = await _offer_nearest_day_when_empty(
             response_text, context, (context.client_data or {}).get("area") or "",
             who=phone)
@@ -5918,7 +5975,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # later price (recap, confirmation) must still say +5% VAT.
         _pay_known = (context.booking_data or {}).get("payment_method")
         _pay_now = (getattr(booking_call, "payment_method", None)
-                    or _detect_payment_method(text))
+                    or (None if "payment" in _question_topics else _detect_payment_method(text)))
         if _pay_now and _pay_now != _pay_known:
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
