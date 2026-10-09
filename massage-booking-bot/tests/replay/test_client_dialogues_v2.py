@@ -178,3 +178,55 @@ async def test_fresh_facial_request_loads_calendar_without_body_duration_gate(di
     await dialogue.turn('Facial massage in Abu Dhabi please', 'Facial massage is 370 AED for 50 minutes.')
     assert dialogue.ctx.booking_data['service_duration'] == 50
     summary.assert_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('question', [
+    'U have branch in sharjaha',
+    'Do you do facial massage in Sharjah?',
+    'Home service in Sharja?',
+    'Вы работаете в Шардже?',
+])
+async def test_sharjah_question_gets_explicit_refusal_before_sales(dialogue, monkeypatch, question):
+    """Tatyana 2026-10-08: a city list hidden in the card is not an answer."""
+    calendar = SimpleNamespace(get_available_slots_summary=AsyncMock(return_value=None))
+    monkeypatch.setattr(bot, 'yclients_service', calendar)
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    create = AsyncMock()
+    monkeypatch.setattr(wh, '_maybe_create_booking', create)
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_named=True,
+                                     ad_prefill='summer')
+    out = await dialogue.turn(question,
+        'Hello 👋 ✅WE have an offer for facial massage !!! 370 AED. Free transportation')
+    assert "don't currently operate in Sharjah" in out
+    assert 'home service in Abu Dhabi, Al Ain and Dubai' in out
+    assert '370' not in out and 'offer for' not in out and '?' not in out
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+    calendar.get_available_slots_summary.assert_not_awaited()
+    create.assert_not_awaited()
+    assert dialogue.ctx.booking_data['out_of_area']
+    assert not dialogue.ctx.booking_data.get('face_card_sent')
+    saved = bot.message_service.save_context.await_args.args[1]
+    assert saved['booking_data']['out_of_area']
+
+
+@pytest.mark.asyncio
+async def test_sharjah_close_survives_restart_and_dubai_reopens(dialogue, monkeypatch):
+    await dialogue.turn('U have branch in sharjaha', 'Facial massage 370 AED')
+    snapshot = bot.message_service.save_context.await_args.args[1]
+    bot.message_service.load_context.return_value = snapshot
+    wh.dialog_manager.clear_context('ig_555')
+    wh.booking_agent.process_message_with_tools.reset_mock()
+    for message in ('Okay', 'Thanks'):
+        out = await dialogue.turn(message, 'Which service do you want? 370 AED')
+        assert 'Abu Dhabi, Al Ain or Dubai' in out
+        assert '?' not in out and '370' not in out
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
+    restored = wh.dialog_manager.get_context('ig_555')
+    assert restored.booking_data['out_of_area']
+    # A client can voluntarily return with a supported service location.
+    out = await dialogue.turn('I can have the facial at my hotel in Dubai',
+                              'We can come to your hotel in Dubai.')
+    assert not restored.booking_data.get('out_of_area')
+    assert wh.booking_agent.process_message_with_tools.await_count == 1
+    assert "don't currently operate in Sharjah" not in out

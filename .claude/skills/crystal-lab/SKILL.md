@@ -5,6 +5,21 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Current clarification — Tatyana, 2026-10-08 (recorded 2026-10-09)
+
+- **Sharjah is currently NOT served.** On a direct question such as
+  `U have branch in sharjaha`, explicitly say we do not currently operate
+  in Sharjah and offer home service only in Abu Dhabi, Al Ain and Dubai.
+  Listing those cities at the bottom of a sales card is insufficient.
+- This coverage answer must win over service cards, prices and slot offers.
+  Preserve the earlier graceful-close rule: no sales questions or nudges
+  after refusal; resume when the client names a supported service location.
+- **Checkout correction:** on 2026-10-09 public production health reported
+  `version=v2`, revision `c15792e7fd8b1a10814ac377daab9d3c10c59a5e`,
+  matching `codex/crystal-v2` at `/Users/admin/Alina/.worktrees/crystal-v2`.
+  Check the live revision before using older `develop`/auto-deploy notes.
+  The local Sharjah fix is not evidence of deployment.
+
 **Read this before touching `/Users/admin/Alina/massage-booking-bot/`.** Whenever the
 client states a new rule, ADD it here in the same edit as the code change.
 
