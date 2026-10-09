@@ -5193,7 +5193,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 logger.warning(f"couldn't persist corrected area: {exc}")
 
         if context.booking_data.get("area_needs_clarification"):
-            response_text = ("We offer home service in Abu Dhabi, Al Ain and Dubai. "
+            response_text = (POLITE_CLOSE_LINE if context.booking_data.get("closed_politely") else
+                             "We offer home service in Abu Dhabi, Al Ain and Dubai. "
                              "Which city would you like the appointment in?")
             await bot_module.message_service.save_message(telegram_id, "assistant", response_text)
             dialog_manager.add_bot_response(user_id, response_text)

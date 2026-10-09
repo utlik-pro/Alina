@@ -399,3 +399,13 @@ async def test_city_correction_clears_persisted_address_but_keeps_phone(dialogue
         assert client.area == 'dubai'
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_refusal_stops_even_a_pending_city_clarification(dialogue):
+    await dialogue.turn('Dubai or Abu Dhabi?', 'Which time suits you?')
+    for message in ('No thank you', 'Okay'):
+        out = await dialogue.turn(message, 'Which city would you like?')
+        assert out == wh.POLITE_CLOSE_LINE
+        assert '?' not in out
+    wh.booking_agent.process_message_with_tools.assert_not_awaited()
