@@ -77,7 +77,7 @@ def compose_reply(text, context):
                     and re.search(r'another day|different day|alternative date',
                                   sentence, re.I)):
                 continue
-            if unavailable and re.search(
+            if unavailable and not sentence.startswith("I can't verify availability for ") and re.search(
                 r'we can (?:do|book|arrange).*(?:today|tomorrow)|fully booked|no (?:free )?slots|(?:don.t|do not|we have no).*slots|'
                 r'slots.*available|(?:free|available) (?:slots|times)|\b\d{1,2}(?::\d{2})?\s*[ap]m\b',
                 sentence, re.I):

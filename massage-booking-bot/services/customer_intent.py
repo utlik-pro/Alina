@@ -31,8 +31,14 @@ PRICE_QUESTION_RE = re.compile(
 QUESTION_RE = re.compile(r'\?|^\s*(?:what|which|where|when|how|can|do|is|are|когда|где|как|сколько)\b', re.I)
 
 
+MEDIA_REQUEST_RE = re.compile(
+    r"\b(?:photo|picture|pic|video|portfolio)s?\b|фото|видео|портфолио", re.I)
+
+
 def direct_question_topics(text: str) -> set[str]:
     topics = set()
+    if MEDIA_REQUEST_RE.search(text or ''):
+        topics.add('media')
     if LOCATION_QUESTION_RE.search(text or ''):
         topics.add('location')
     if QUESTION_RE.search(text or '') and PAYMENT_QUESTION_RE.search(text or ''):
@@ -42,9 +48,17 @@ def direct_question_topics(text: str) -> set[str]:
     return topics
 
 
-def factual_answer(topics: set[str], text: str) -> str:
+def factual_answer(topics: set[str], text: str, ig_handle: str = "") -> str:
     """Catalogue-independent facts; never promises availability or a booking."""
     lines = []
+    if 'media' in topics:
+        handle = (ig_handle or '').strip().lstrip('@')
+        if re.fullmatch(r'[A-Za-z0-9_.]+', handle):
+            lines.append(f"You can view our work on our Instagram page: @{handle} 🌹")
+        else:
+            lines.append("I don't have a verified gallery link to share here.")
+        if re.search(r"your (?:picture|photo|pic)|therapist|specialist|мастер", text, re.I):
+            lines.append("I don't have a verified photo of the therapist to share here.")
     if 'location' in topics:
         lines.append('We offer home service in Abu Dhabi, Al Ain and Dubai. '
                      'We come to your home, villa or hotel — free transportation.')

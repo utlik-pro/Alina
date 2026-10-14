@@ -7,6 +7,16 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 ## Client feedback received 2026-10-14
 
+- Screenshot “Ms”: `after tomorrow` / `day after tomorrow` / `послезавтра`
+  means UAE today +2 days. A later bare `Around 9 pm` keeps that date.
+  `I txt you tomorrow` is contact timing, not a new appointment date.
+  Exact-slot results must name the actual date in the final reply; neither
+  a summary shortlist nor a proposed alternative may replace a chosen day.
+- Photo/video requests must be answered on that turn, ahead of the booking
+  funnel. Use the approved public handle `@crystal_lab_ae` from the supplied
+  price cards (configurable); never invent or promise an unavailable therapist
+  photo. A profile reference is not a claim that an image was sent.
+
 - New promotional nail records include `first_cost`, `discount=30`, and `cost`
   in YClients. Reject a quote that differs from the canonical offer; do not retry
   without services/pricing. Existing calendar records/catalog are not edited.

@@ -127,11 +127,9 @@ class Config:
     # The WhatsApp number clients are funneled to (digits only, e.g. 9715XXXXXXXX)
     WHATSAPP_CTA_NUMBER: Optional[str] = os.getenv("WHATSAPP_CTA_NUMBER")
     # Публичный аккаунт салона, который агенту РАЗРЕШЕНО называть клиенту.
-    # Пусто по умолчанию: 2026-08-23 модель выдумала «@crystallab.beauty» и
-    # трижды отправила туда рекламного лида, хотя настоящий аккаунт другой.
-    # Пока сюда не вписан проверенный ник, агент не называет никаких ссылок
-    # и аккаунтов вообще — см. _enforce_no_invented_links.
-    IG_PUBLIC_HANDLE: str = os.getenv("IG_PUBLIC_HANDLE", "")
+    # Handle confirmed on the owner's October 2026 price cards. An explicitly
+    # empty environment value disables sharing; never substitute a guessed handle.
+    IG_PUBLIC_HANDLE: str = os.getenv("IG_PUBLIC_HANDLE", "crystal_lab_ae")
     # Эмират дня мастера — ещё и по пометкам в ИМЕНАХ клиентов («Azza Al
     # Ain»). Выключено до подтверждения Татьяной, что это их правило
     # (2026-09-02: Махабат в Аль-Айне без маркер-записи, лид ушёл на пятницу).

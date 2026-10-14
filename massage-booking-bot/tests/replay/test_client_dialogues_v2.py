@@ -517,3 +517,49 @@ async def test_nails_special_offer_never_switches_to_cupping(dialogue):
     out = await dialogue.turn('How much is the special offer?', 'Manicure and pedicure combo — 266 AED')
     assert dialogue.ctx.booking_data['service_type'] == 'nails'
     assert '275' not in out
+
+@pytest.mark.asyncio
+async def test_photo_request_answer_survives_booking_gates(dialogue, monkeypatch):
+    monkeypatch.setattr(wh.config, 'IG_PUBLIC_HANDLE', 'crystal_lab_ae')
+    dialogue.ctx.booking_data.update(service_type='body_massage', service_duration=60,
+                                    service_named=True, date='2026-10-16', time='21:00')
+    out = await dialogue.turn('Can I see your picture or your massage',
+                              'Ok dear. Which time suits you?')
+    assert '@crystal_lab_ae' in out
+    assert 'photo of the therapist' in out
+    assert 'which time' not in out.lower()
+    assert dialogue.ctx.booking_data['date'] == '2026-10-16'
+    assert dialogue.ctx.booking_data['time'] == '21:00'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('free', [True, False, None])
+async def test_after_tomorrow_then_nine_pm_uses_that_calendar_day(dialogue, monkeypatch, free):
+    from datetime import datetime, timedelta, timezone
+    target = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime('%Y-%m-%d')
+    calendar = SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value='10:00 AM, 2:00 PM'),
+        is_slot_available=AsyncMock(return_value=free))
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', calendar)
+    dialogue.ctx.booking_data.update(service_type='body_massage', service_duration=60, service_named=True)
+    await dialogue.turn('After tomorrow', 'Which time suits you?')
+    assert dialogue.ctx.booking_data['date'] == target
+    assert any(c.kwargs['date'] == target for c in calendar.get_available_slots_summary.await_args_list)
+    out = await dialogue.turn('Around 9 pm',
+        'Friday schedule is not loaded yet.\nYes dear, 9:00 PM is available today.\nPlease type your address.')
+    assert dialogue.ctx.booking_data['date'] == target
+    assert dialogue.ctx.booking_data['time'] == '21:00'
+    assert 'today' not in out.lower() and 'not loaded' not in out.lower()
+    assert wh._nice_day(target) in out
+    assert '9:00 PM' in out
+    calendar.is_slot_available.assert_any_await('abu_dhabi', target, '21:00', 60)
+    if free is True:
+        assert 'is available' in out
+    elif free is False:
+        assert "isn't available" in out
+    else:
+        assert "can't verify" in out
+        assert 'is available' not in out
+    await dialogue.turn('Good night tomorrow i txt you', 'Of course dear, good night.')
+    assert dialogue.ctx.booking_data['date'] == target

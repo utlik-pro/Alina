@@ -1117,7 +1117,7 @@ def _weekday_target_date(text_lower: str, now) -> Optional[str]:
 
 
 def _resolve_named_date(text_lower: str, now) -> tuple:
-    """(YYYY-MM-DD | None, 'explicit' | 'weekday' | 'none') — the day the
+    """(YYYY-MM-DD | None, 'explicit' | 'weekday' | 'relative' | 'none') — the day the
     client named in this message.
 
     An EXPLICIT date always wins over a weekday word in the same message.
@@ -1127,6 +1127,16 @@ def _resolve_named_date(text_lower: str, now) -> tuple:
     with the wrong day and was fixed only after the client objected. Exactly
     Tatyana's F21 («исправляет 10 на 12, ответ повторяет 10»).
     """
+    # Contact timing is not an appointment date: "I'll text you tomorrow".
+    text_lower = re.sub(
+        r"\b(?:i\s+(?:will\s+)?|i['’]ll\s+)?(?:text|txt|message|call|contact|write)"
+        r"\s+(?:(?:to\s+)?you\s+)?(?:the\s+)?(?:day\s+after\s+tomorrow|after\s+tomorrow|tomorrow|today)\b"
+        r"|(?:напишу|позвоню|свяжусь)\s+(?:вам\s+)?(?:послезавтра|завтра|сегодня)",
+        " ", text_lower or "", flags=re.I)
+    text_lower = re.sub(
+        r"\b(?:tomorrow|today|after tomorrow)\s+(?:i\s+(?:will\s+)?|i['’]ll\s+)"
+        r"(?:text|txt|message|call|contact|write)\s+(?:to\s+)?you\b",
+        " ", text_lower, flags=re.I)
     explicit = _detect_explicit_date(text_lower, now)
     if explicit:
         return explicit, "explicit"
@@ -1136,11 +1146,13 @@ def _resolve_named_date(text_lower: str, now) -> tuple:
     # A bare 'Tomorrow' must be retained before any calendar call (including
     # when the client has not chosen a service or the calendar is unavailable).
     chosen = affirmative_choice_text(text_lower or "")
+    after = bool(re.search(r"\b(?:(?:the\s+)?day\s+after\s+tomorrow|after\s+tomorrow|послезавтра)\b", chosen, re.I))
+    chosen = re.sub(r"\b(?:(?:the\s+)?day\s+after\s+tomorrow|after\s+tomorrow|послезавтра)\b", " ", chosen, flags=re.I)
     today = bool(re.search(r"\b(?:today|сегодня)\b", chosen, re.I))
     tomorrow = bool(re.search(r"\b(?:tomorrow|завтра)\b", chosen, re.I))
-    if today != tomorrow:
+    if sum((today, tomorrow, after)) == 1:
         from datetime import timedelta
-        return (now + timedelta(days=int(tomorrow))).strftime("%Y-%m-%d"), "relative"
+        return (now + timedelta(days=2 if after else int(tomorrow))).strftime("%Y-%m-%d"), "relative"
     return None, "none"
 
 
@@ -1225,25 +1237,18 @@ def _booking_day_mismatch(user_text: str, booking_call):
         bd = _dt.strptime(booking_call.date, "%Y-%m-%d").date()
     except ValueError:
         return None
-    tomorrow = (now + _td(days=1)).date()
-    today = now.date()
-    if ("tomorrow" in t or "завтра" in t) and bd != tomorrow:
-        return ("tomorrow", tomorrow.isoformat())
-    if (("today" in t or "сегодня" in t) and "tomorrow" not in t and "завтра" not in t) and bd != today:
-        return ("today", today.isoformat())
-    # Weekday names: "on Saturday" = the NEXT such day, strictly in the future;
-    # "next Saturday" said ON a Saturday means +7 days, never today. Caught
-    # live 2026-08-15: "next Saturday at 7 pm" was booked for the same evening.
-    for word, idx in _WEEKDAYS.items():
-        if not re.search(rf"\b{word}\b", t):
-            continue
-        delta = (idx - today.weekday()) % 7
-        if delta == 0:  # the named day IS today
-            delta = 7 if re.search(r"\bnext\b|\bследующ", t) else 0
-        expected = today + _td(days=delta)
-        if bd != expected:
-            return (f"{'next ' if delta == 7 else ''}{word}", expected.isoformat())
-        break
+    expected, source = _resolve_named_date(t, now)
+    if expected and bd.isoformat() != expected:
+        label = expected
+        if source == "relative":
+            offset = (_dt.strptime(expected, "%Y-%m-%d").date() - now.date()).days
+            label = {0: "today", 1: "tomorrow", 2: "the day after tomorrow"}[offset]
+        elif source == "weekday":
+            label = next((word for word in _WEEKDAYS if re.search(rf"\b{word}\b", t)), expected)
+            if re.search(r"\bnext\b|\bследующ", t):
+                label = "next " + label
+        return label, expected
+
     return None
 
 
@@ -1816,6 +1821,15 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
     now = _dtm.now(_tzm(_tdm(hours=4)))
     dur = (context.booking_data or {}).get("service_duration") or 60
     svc = (context.booking_data or {}).get("service_type")
+    chosen = (context.booking_data or {}).get("date")
+    if chosen and not _claims:
+        return response_text  # asking for an hour does not reject the chosen day
+    start_offset = 0
+    if chosen:
+        try:
+            start_offset = max(0, (_dtm.strptime(chosen, "%Y-%m-%d").date() - now.date()).days)
+        except ValueError:
+            return response_text
 
     async def _day(offset: int):
         d = (now + _tdm(days=offset)).strftime("%Y-%m-%d")
@@ -1831,7 +1845,7 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
     try:
         # Дни проверяем разом: последовательный обход упёрся бы в лимит ответа.
         found = await asyncio.wait_for(
-            asyncio.gather(*[_day(i) for i in range(0, 7)]), timeout=14)
+            asyncio.gather(*[_day(i) for i in range(start_offset, start_offset + 7)]), timeout=14)
     except Exception:
         return response_text      # календарь не ответил — молчим, не врём
 
@@ -1849,9 +1863,13 @@ async def _offer_nearest_day_when_empty(response_text: str, context, area: str,
     # «5:30» из пятничного списка, а без сохранённой даты модель пересказала
     # это как «tomorrow at 5:30 PM» — четверг, выходной Элизы.
     try:
-        context.booking_data["date"] = when.strftime("%Y-%m-%d")
+        if not chosen:
+            context.booking_data["date"] = when.strftime("%Y-%m-%d")
     except Exception:
         pass
+    if chosen == when.strftime("%Y-%m-%d"):
+        times = _display_times_from_summary(summary)
+        return f"On {_nice_day(chosen)} we have {', '.join(times)} 🌹\nWhich time suits you?"
     times = _display_times_from_summary(summary)
     if not times:
         return response_text
@@ -5207,6 +5225,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         from datetime import datetime as _dt_n, timedelta as _td_n, timezone as _tz_n
         _said_date, _ = _resolve_named_date(text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
         if _said_date and _said_date != context.booking_data.get("date"):
+            context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "date", _said_date)
             logger.info(f"клиент назвал день → {_said_date}")
         # Голый день месяца как ПОПРАВКА даты (живой случай M.a 2026-08-30).
@@ -5221,6 +5240,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         _said_time = _detect_requested_time(text)
         if _said_time and _said_time != context.booking_data.get("time"):
+            context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "time", _said_time)
             logger.info(f"клиент назвал время → {_said_time}")
         # Вежливое закрытие: «я подтвержу позже» останавливает воронку;
@@ -5339,6 +5359,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # STALE slots with an outdated date. Start clean.
         context.extra_system_info = ""
         context.slot_truth = {}  # reset with it — same staleness argument
+        requested_slot_check = None  # (date, time, available); only this turn
 
         # Inject YClients slots if we know the area
         logger.info(
@@ -5568,8 +5589,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         "have [weekday] schedule yet' / 'no availability info' for a weekday "
                         "that is IN this context — that's a hallucination from earlier in the "
                         "chat, ignore your past replies on this point.\n"
-                        "🚨 PRESENTATION ORDER: when the client hasn't named a specific day, "
-                        "offer TODAY's slots first. If the client doesn't want today, ask 'When "
+                        "🚨 PRESENTATION ORDER: when the client hasn't named a specific day "
+                        "and has NO stored booking date, offer TODAY's slots first. "
+                        "Otherwise use the stored date. If the client doesn't want today, ask 'When "
                         "would suit you dear?' instead of jumping straight to tomorrow.\n"
                         "🚨 Use ONLY these real slots. Answer immediately — do NOT say 'checking'."
                         f"{area_note}{_pref_note}"
@@ -5602,6 +5624,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         except Exception as _e:
                             logger.warning(f"requested-time check failed: {_e}")
                             _time_free = None
+                        requested_slot_check = (_asked_date, _asked_time, _time_free)
+                        # The full-slot check outranks the summary's short display list.
+                        if _time_free is True:
+                            context.slot_truth[_asked_date] = (context.slot_truth.get(_asked_date) or set()) | {_asked_time}
+                        elif _time_free is False and context.slot_truth.get(_asked_date) is not None:
+                            context.slot_truth[_asked_date].discard(_asked_time)
                         if _time_free is not None:
                             _pretty = _to_ampm(_asked_time)
                             logger.info(
@@ -5930,7 +5958,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         # Direct questions take precedence over promotional rewrites. Safety and
         # calendar checks above/below still apply; deferred cards remain unsent.
-        _facts = factual_answer(_question_topics, text)
+        _facts = factual_answer(_question_topics, text, ig_handle=config.IG_PUBLIC_HANDLE)
         if _facts and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None:
             if "price" not in _question_topics and not _asks_about_time(text) and not _ASKS_WHICH_THERAPIST_RE.search(text):
                 response_text = _facts
@@ -6162,6 +6190,23 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 and context.booking_data.get("confirmed_master")
                 and context.booking_data["confirmed_master"].casefold() not in response_text.casefold()):
             response_text += f"\nYour specialist will be {context.booking_data['confirmed_master']} 🌹"
+
+        # Judge the surviving reply, not an intermediate draft. A bare hour
+        # belongs to the stored appointment date, never the model's "today".
+        if (booking_call is None and actions.cancel_call is None and actions.reschedule_call is None
+                and context.state != "completed" and not _question_topics
+                and requested_slot_check is not None):
+            day, hour, free = requested_slot_check
+            when = f"{_to_ampm(hour)} on {_nice_day(day)}"
+            if free is True:
+                response_text = f"{when} is available 🌹\n{_next_step_question(context)}"
+            elif free is False:
+                response_text = f"{when} isn't available for your session. Would another time on that day suit you?"
+            else:
+                response_text = f"I can't verify availability for {when} right now. Your appointment is not confirmed yet."
+        if ("media" in _question_topics and _question_topics <= {"media"}
+                and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None):
+            response_text = _enforce_no_invented_links(_facts, who=phone)
 
         response_text = _enforce_nails_promotion(response_text, context, text)
         from services.reply_composer import compose_reply, split_chat_messages
