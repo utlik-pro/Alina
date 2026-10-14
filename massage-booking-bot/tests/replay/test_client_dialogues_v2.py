@@ -543,7 +543,9 @@ async def test_after_tomorrow_then_nine_pm_uses_that_calendar_day(dialogue, monk
     monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
     monkeypatch.setattr(bot, 'yclients_service', calendar)
     dialogue.ctx.booking_data.update(service_type='body_massage', service_duration=60, service_named=True)
-    await dialogue.turn('After tomorrow', 'Which time suits you?')
+    date_reply = await dialogue.turn('After tomorrow', 'Yes dear, I can send our massage room setup and service photos. Which time suits you?')
+    assert 'photo' not in date_reply.lower()
+    assert wh._nice_day(target) in date_reply
     assert dialogue.ctx.booking_data['date'] == target
     assert any(c.kwargs['date'] == target for c in calendar.get_available_slots_summary.await_args_list)
     out = await dialogue.turn('Around 9 pm',

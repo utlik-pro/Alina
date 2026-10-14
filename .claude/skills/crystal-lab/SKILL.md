@@ -7,6 +7,9 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 ## Client feedback received 2026-10-14
 
+- Live replay: after the photo request is answered, a bare `After tomorrow`
+  must acknowledge the chosen date and ask for the missing hour, never repeat
+  the previous photo answer or promise to send media.
 - Screenshot “Ms”: `after tomorrow` / `day after tomorrow` / `послезавтра`
   means UAE today +2 days. A later bare `Around 9 pm` keeps that date.
   `I txt you tomorrow` is contact timing, not a new appointment date.

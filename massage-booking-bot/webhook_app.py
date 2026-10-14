@@ -5224,6 +5224,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # и «6 pm», а следующий ход снова спросил «Which day would you like?».
         from datetime import datetime as _dt_n, timedelta as _td_n, timezone as _tz_n
         _said_date, _ = _resolve_named_date(text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
+        _date_only_reply = bool(_said_date and re.fullmatch(
+            r"\s*(?:(?:the\s+)?day\s+after\s+tomorrow|after\s+tomorrow|tomorrow|today|послезавтра|завтра|сегодня)[.!\s]*",
+            text, re.I))
         if _said_date and _said_date != context.booking_data.get("date"):
             context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "date", _said_date)
@@ -5613,7 +5616,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     # booking lost to a slot we actually had. The short list is
                     # a PRESENTATION choice; it must never become the truth
                     # about what exists.
-                    _asked_time = _detect_requested_time(text)
+                    _asked_time = (_detect_requested_time(text)
+                                   or (context.booking_data.get("time") if _date_only_reply else None))
                     _asked_date = ((context.booking_data or {}).get("date")
                                    or (extra_dates[0] if extra_dates else ""))
                     if _asked_time and _asked_date:
@@ -6204,6 +6208,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 response_text = f"{when} isn't available for your session. Would another time on that day suit you?"
             else:
                 response_text = f"I can't verify availability for {when} right now. Your appointment is not confirmed yet."
+        if (_date_only_reply and not context.booking_data.get("time")
+                and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None
+                and context.state != "completed"):
+            response_text = f"For {_nice_day(_said_date)}, what time suits you?"
         if ("media" in _question_topics and _question_topics <= {"media"}
                 and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None):
             response_text = _enforce_no_invented_links(_facts, who=phone)
