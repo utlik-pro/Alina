@@ -823,7 +823,7 @@ def _detect_both_kinds(text: str, context) -> bool:
     return bool(_BODY_OR_FACE_ASK_RE.search(prev))
 
 
-def _detect_combo_choice(text: str) -> bool:
+def _detect_combo_choice(text: str, service_type: str = "") -> bool:
     """The client is choosing the advertised cupping combo (275 AED).
 
     Live-caught 2026-08-16, 02:48 UAE: a lead said "I like the special offer /
@@ -834,7 +834,11 @@ def _detect_combo_choice(text: str) -> bool:
     fixed duration in code so no gate ever asks about either again.
     """
     t = affirmative_choice_text(text).lower()
-    if "special offer" in t or "275" in t:
+    if "275" in t:
+        return True
+    if "special offer" in t and not (
+            any(k in t for k in _NAILS_KW) or _WAXING_RE.search(t)
+            or service_type in ("nails", "waxing")):
         return True
     if "cupping" in t or "банк" in t or "хиджам" in t or "hijama" in t:
         # The standalone cupping add-on exists (15 min / 100 AED), but in the
@@ -2110,7 +2114,8 @@ _PKG_PRICES_RE = re.compile(r"1[,.\s]?550|1[,.\s]?650")
 
 def _enforce_package_offer_first(response_text: str, ad_prefill,
                                  inbound_text: str = "",
-                                 already_shown: bool = False) -> str:
+                                 already_shown: bool = False,
+                                 service_type: str = "") -> str:
     """Клиент с баночной рекламы обязан услышать оффер 275 — при ЛЮБОЙ цене.
 
     Первая версия ловила только ответы с пакетными ценами (1 550 / 1 650), и
@@ -2124,7 +2129,7 @@ def _enforce_package_offer_first(response_text: str, ad_prefill,
     """
     if not response_text or already_shown:
         return response_text
-    wants_combo = bool(inbound_text) and _detect_combo_choice(inbound_text)
+    wants_combo = bool(inbound_text) and _detect_combo_choice(inbound_text, service_type)
     if ad_prefill != "package" and not wants_combo:
         return response_text
     if "275" in response_text or not _PRICE_IN_REPLY_RE.search(response_text):
@@ -5303,7 +5308,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             dialog_manager.update_booking_data(user_id, "service_named", True)
             logger.info(f"both-kinds detected → body_face_combo, 110 min ({phone})")
 
-        if (_is_ig_key(phone) and _detect_combo_choice(text)
+        if (_is_ig_key(phone) and _detect_combo_choice(text, context.booking_data.get("service_type") or "")
                 and context.booking_data.get("service_type") != _COMBO_KEY):
             from prices import SPECIAL_OFFERS as _SO
             dialog_manager.update_booking_data(user_id, "service_type", _COMBO_KEY)
@@ -5934,7 +5939,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             _offer_shown = bool((context.booking_data or {}).get("offer_275_shown"))
             response_text = _enforce_package_offer_first(
                 response_text, (context.booking_data or {}).get("ad_prefill"),
-                inbound_text=text, already_shown=_offer_shown)
+                inbound_text=text, already_shown=_offer_shown,
+                service_type=context.booking_data.get("service_type") or "")
             if not _offer_shown and "275" in response_text:
                 dialog_manager.update_booking_data(user_id, "offer_275_shown", True)
 

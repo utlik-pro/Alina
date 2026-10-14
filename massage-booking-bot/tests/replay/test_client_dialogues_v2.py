@@ -506,3 +506,14 @@ async def test_nails_discount_survives_phone_first_composer(dialogue):
     assert '30%' in out and '266 AED' in out
     out = await dialogue.turn('0500000000', 'Thank you!')
     assert '30%' not in out
+
+
+@pytest.mark.asyncio
+async def test_nails_special_offer_never_switches_to_cupping(dialogue):
+    out = await dialogue.turn('Manicure and pedicure special offer',
+        'Manicure and pedicure combo — 266 AED')
+    assert dialogue.ctx.booking_data['service_type'] == 'nails'
+    assert '30%' in out and '275' not in out
+    out = await dialogue.turn('How much is the special offer?', 'Manicure and pedicure combo — 266 AED')
+    assert dialogue.ctx.booking_data['service_type'] == 'nails'
+    assert '275' not in out
