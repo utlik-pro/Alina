@@ -11,10 +11,11 @@ from agents.tools import BookingCall
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["rejected", "exception", "missing", "accepted", "missing_id", "snapshot_failure"])
-async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, outcome, tmp_path):
+@pytest.mark.parametrize("service,price", [("Body massage",300), ("russian_manicure",140)])
+async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, outcome, tmp_path, service, price):
     day = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime("%Y-%m-%d")
-    call = BookingCall("Body massage", 60, day, "14:00", "abu_dhabi", "cash",
-                       "Test Client", 300, master_id=7, address="Test villa 5")
+    call = BookingCall(service, 60, day, "14:00", "abu_dhabi", "cash",
+                       "Test Client", price, master_id=7, address="Test villa 5")
     ctx = SimpleNamespace(booking_data={}, client_data={},
                           recent_messages=[{"role": "user", "content": "yes"}])
     client = SimpleNamespace(phone="971500000000", name="Test Client", location_details="Test villa 5")
@@ -57,7 +58,10 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
         expected = bs.save_calendar_expectation.await_args.args[1]
         assert expected["staff_id"] == 7 and expected["service_ids"] == [9]
         assert expected["client_phone"] == client.phone
-        assert expected["base_price"] == 300
+        assert expected["base_price"] == price
+    if yc.create_booking.await_count:
+        from prices import nail_promotion_terms
+        assert yc.create_booking.await_args.kwargs['service_pricing'] == nail_promotion_terms(service,price)
     if outcome == "accepted":
         bs.update_booking_status.assert_awaited_once_with(123, "confirmed", area="abu_dhabi", therapist_name=None)
         ns.send_booking_confirmed.assert_awaited_once()

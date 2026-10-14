@@ -581,3 +581,28 @@ def build_full_intro() -> str:
     сначала один вопрос, карточка — после выбора.
     """
     return SERVICE_QUESTION_INTRO
+
+
+def nail_promotion_terms(service_name: str, quoted_price: float) -> Optional[dict]:
+    """Canonical per-record terms for the selected manicure/pedicure offer."""
+    import re
+    text = re.sub(r'[_+]+', ' ', (service_name or '').lower())
+    if re.search(r'extension|наращив', text):
+        return None
+    mani, pedi = 'mani' in text or 'маникюр' in text, 'pedi' in text or 'педикюр' in text
+    direct_key = (service_name or '').lower().strip()
+    if not (mani or pedi) and direct_key not in NAILS_PROMO_KEYS:
+        return None
+    family = 'japanese' if re.search(r'japanese|япон', text) else 'russian'
+    kind = 'combo' if (mani and pedi) or 'combo' in text else 'mani' if mani else 'pedi'
+    key = f'{family}_{kind}'
+    if family == 'russian' and kind != 'combo' and re.search(r'basic|cleaning|nail polish', text):
+        key += '_basic'
+    if direct_key in NAILS_PROMO_KEYS:
+        key = direct_key
+    service = SERVICE_CATALOG[key]
+    from math import isfinite
+    if not isfinite(float(quoted_price)) or abs(float(quoted_price) - service['price']) > 0.005:
+        raise ValueError('Nail quote does not match the current promotion; review before booking')
+    return {'first_cost': service['regular_price'], 'discount': NAILS_DISCOUNT_PERCENT,
+            'cost': service['price']}

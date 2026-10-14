@@ -4289,6 +4289,8 @@ async def _maybe_create_booking(
                 # Whitelisted IG testers always create [TEST]-prefixed records.
                 if _is_ig_key(phone) and _is_ig_test_subscriber(phone[len(IG_KEY_PREFIX):]):
                     _is_test = True
+                from prices import nail_promotion_terms
+                _nail_terms = nail_promotion_terms(booking_call.service, booking_call.base_price_aed)
                 await bot_module.booking_service.save_calendar_expectation(operation_key, {
                     "staff_id": yc_staff_id, "service_ids": [yc_service_id],
                     "datetime": booking_date.isoformat(),
@@ -4328,6 +4330,7 @@ async def _maybe_create_booking(
                     ) + f" [operation:{operation_key}]",
                     is_test=_is_test,
                     duration_minutes=booking_call.duration_minutes,
+                    service_pricing=_nail_terms,
                 )
                 if isinstance(yc_result, dict) and yc_result.get("id"):
                     _yc_synced = True

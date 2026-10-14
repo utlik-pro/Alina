@@ -1256,6 +1256,7 @@ class YClientsService:
         comment: str = "",
         is_test: bool = True,
         duration_minutes: int = 60,
+        service_pricing: Optional[Dict] = None,
     ) -> Optional[Dict]:
         """Create a NEW booking in YClients.
 
@@ -1304,6 +1305,22 @@ class YClientsService:
 
         # Build services array
         services = [{"id": sid} for sid in service_ids]
+        if service_pricing is not None:
+            # Official POST /records schema: first_cost, discount (%), cost.
+            # Never distribute a single quote over several services implicitly.
+            from math import isfinite
+            required = ("first_cost", "discount", "cost")
+            try:
+                terms = {k: float(service_pricing[k]) for k in required}
+                valid = (len(services) == 1 and all(isfinite(v) and v >= 0 for v in terms.values())
+                         and terms["discount"] <= 100
+                         and abs(round(terms["first_cost"] * (1 - terms["discount"] / 100), 2)
+                                 - terms["cost"]) < 0.005)
+            except (KeyError, TypeError, ValueError):
+                valid = False
+            if not valid:
+                return {"refused": "invalid_service_pricing"}
+            services[0].update(terms)
 
         # Seance length must match the real service duration — a 90-min
         # massage written as 60 min overlaps the next slot in the calendar.
@@ -1364,7 +1381,7 @@ class YClientsService:
             # record with the service named in the comment. The admin attaches
             # the service manually — but the slot is HELD and the client is
             # not lost.
-            if payload.get("services"):
+            if payload.get("services") and service_pricing is None:
                 fb = dict(payload)
                 fb.pop("services", None)
                 fb["comment"] = (f"{comment} | УСЛУГА НЕ ПРИВЯЗАНА к мастеру в YClients — "

@@ -7,6 +7,9 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 ## Client feedback received 2026-10-14
 
+- New promotional nail records include `first_cost`, `discount=30`, and `cost`
+  in YClients. Reject a quote that differs from the canonical offer; do not retry
+  without services/pricing. Existing calendar records/catalog are not edited.
 - Live replay: `face waxing` is not facial massage. Never substitute the 370 AED
   massage card or massage slots for a waxing query. The nails `30% off` wording
   must survive final reply composition; a discounted amount alone is insufficient.
