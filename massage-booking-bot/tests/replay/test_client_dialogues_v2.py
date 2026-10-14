@@ -409,3 +409,82 @@ async def test_refusal_stops_even_a_pending_city_clarification(dialogue):
         assert out == wh.POLITE_CLOSE_LINE
         assert '?' not in out
     wh.booking_agent.process_message_with_tools.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_nails_city_phone_tomorrow_does_not_restart_city_question(dialogue):
+    """Tatyana 10 Oct: city + phone already given, then 'Tomorrow'."""
+    from services.reply_composer import asks_for_city
+    dialogue.ctx.client_data['area'] = None
+    await dialogue.turn('Manicure and pedicure', 'Which city are you in?')
+    await dialogue.turn('Abu dhabi\nKhalifa city', 'Share please your WhatsApp number dear')
+    await dialogue.turn('0500000000', 'Thank you dear!')
+    out = await dialogue.turn('Tomorrow',
+        'We have available slots for tomorrow.\nAre you in Abu Dhabi, Al Ain or Dubai dear?')
+    assert dialogue.ctx.client_data['area'] == 'abu_dhabi'
+    assert dialogue.ctx.client_data['phone']
+    assert dialogue.ctx.booking_data['date']
+    assert not asks_for_city(out)
+    assert 'which day' not in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_daytime_facts_share_identity_and_survive_restart(dialogue, monkeypatch, tmp_path):
+    from database.db import Database
+    from database.services import ClientService, MessageService
+    import agents.instagram_agent as ig
+    from services.reply_composer import asks_for_city
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'daytime.db'}")
+    await db.create_tables()
+    monkeypatch.setattr(bot, 'client_service', ClientService(db))
+    monkeypatch.setattr(bot, 'message_service', MessageService(db))
+    monkeypatch.setattr(ig, 'generate_ig_reply', AsyncMock(return_value='shadow'))
+    monkeypatch.setattr(ig, 'log_ig_turn', Mock())
+    try:
+        for text in ('Manicure and pedicure', 'Abu dhabi\nKhalifa city', '0500000000'):
+            await wh._manychat_shadow_log('555', text)
+        wh._send_to_client.assert_not_awaited()
+        client = await bot.client_service.get_or_create_client('ig_555')
+        assert client.area == 'abu_dhabi'
+        assert client.phone
+        history = await bot.message_service.get_conversation_history('ig_555')
+        assert any(m['content'] == 'Abu dhabi\nKhalifa city' for m in history)
+        wh.dialog_manager.clear_context('ig_555')
+        out = await dialogue.turn('Tomorrow', 'Are you in Abu Dhabi, Al Ain or Dubai dear?')
+        restored = wh.dialog_manager.get_context('ig_555')
+        assert restored.client_data['area'] == 'abu_dhabi'
+        assert restored.client_data['phone'] == client.phone
+        assert restored.booking_data['service_type'] == 'nails'
+        assert not asks_for_city(out)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_with_messages_still_recovers_persisted_city(dialogue):
+    bot.message_service.load_context.return_value = {
+        'recent_messages': [{'role': 'user', 'content': 'Manicure'}],
+        'client_data': {'area': None},
+    }
+    await dialogue.turn('Tomorrow', 'Are you in Abu Dhabi, Al Ain or Dubai?')
+    assert dialogue.ctx.client_data['area'] == 'abu_dhabi'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text, expected, ambiguous', [
+    ('Not Abu Dhabi, Dubai please', 'dubai', False),
+    ('Abu Dhabi or Dubai', None, True),
+    ('Sharjah', None, False),
+])
+async def test_daytime_city_changes_invalidate_old_address(dialogue, monkeypatch, text, expected, ambiguous):
+    import agents.instagram_agent as ig
+    monkeypatch.setattr(ig, 'generate_ig_reply', AsyncMock(return_value='shadow'))
+    monkeypatch.setattr(ig, 'log_ig_turn', Mock())
+    dialogue.ctx.client_data.update(area='abu_dhabi', location_details='Old villa')
+    dialogue.ctx.booking_data.update(pending_booking={'date': '2030-01-01'}, time='17:00')
+    await wh._manychat_shadow_log('555', text)
+    assert dialogue.ctx.client_data.get('area') == expected
+    assert dialogue.ctx.booking_data['area_needs_clarification'] == ambiguous
+    assert not dialogue.ctx.client_data.get('location_details')
+    assert not dialogue.ctx.booking_data.get('pending_booking')
+    assert dialogue.ctx.booking_data['time'] == '17:00'

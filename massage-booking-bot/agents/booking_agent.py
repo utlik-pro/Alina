@@ -278,21 +278,14 @@ Bank transfer + 5% VAT
 
 Which one dear?"
 
-If they say "nails" or "manicure":
-"Russian gelish mani - {p('russian_mani'):.0f} AED
-Russian gelish pedi - {p('russian_pedi'):.0f} AED
-Combo mani + pedi - {p('russian_combo'):.0f} AED 🌟
-
----MESSAGE_SPLIT---
-
-Japanese mani - {p('japanese_mani'):.0f} AED
-Japanese pedi - {p('japanese_pedi'):.0f} AED
-Combo - {p('japanese_combo'):.0f} AED 🌟
-
-Cash - tax free
-Bank transfer + 5% VAT
-
-Which would you like dear?"
+If they ask about manicure or pedicure:
+"Manicure and pedicure — 30% off 🌹
+Home service in Abu Dhabi.
+Which would you like?"
+If they ask the exact price, quote the selected service from NAILS above.
+Those catalog prices ALREADY include the discount: never subtract 30% twice.
+Do not assume nail extensions or add-ons are discounted. Keep a known city,
+phone and date; ask only for a missing detail, never restart the flow.
 
 ALWAYS mention relevant offers naturally — don't force them.
 
@@ -1399,6 +1392,14 @@ the client understands you, switching to their language when they need it."""
         # КРИТИЧНО: Напоминание о ценах
         if state == "consulting":
             parts.append("🚨 НАПОМИНАНИЕ: Показывай клиенту цены БЕЗ VAT! Только \"350 AED\", НЕ \"350 AED + 5% VAT\"!")
+
+        if client_data.get("area") and not booking_data.get("area_needs_clarification"):
+            city = {"abu_dhabi": "Abu Dhabi", "al_ain": "Al Ain", "dubai": "Dubai"}.get(
+                client_data["area"], client_data["area"])
+            parts.append(f"CLIENT CITY ALREADY KNOWN: {city}. Do not ask which city again.")
+            parts.append("A city/district is not a full address; collect building/villa details separately if missing.")
+        if client_data.get("phone"):
+            parts.append("CLIENT PHONE ALREADY KNOWN. Do not request it again.")
 
         # ВАЖНО: Явно указываем, что имя получено
         if client_data.get("name"):

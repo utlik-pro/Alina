@@ -5,6 +5,24 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Client feedback received 2026-10-14
+
+- Tatyana's 10 October example: after `Abu dhabi / Khalifa city`, phone and
+  `Tomorrow`, never ask the city again. Pass stored city/phone to the model,
+  enforce this on the final reply, retain the date independently of calendar
+  availability. Knowing the city does not replace the full visit address.
+- Daytime Instagram and nighttime booking use the same `ig_<subscriber>`
+  storage identity and per-contact lock. Persist explicit facts without sending
+  a daytime message. A city correction clears the old address and pending recap.
+- Manicure and pedicure promotion is now **30% off** (supersedes July's cancellation).
+  Current implementation applies this once to regular catalog prices for standalone
+  services and mani+pedi combos; excludes extensions and extras. Combo scope is
+  the stated implementation assumption, not a separate client confirmation.
+- Three supplied cards confirm 26 catalog prices (lashes/brows, PMU, face waxing).
+  Do not apply an additional percentage discount to these prices. Original cards
+  are in `massage-booking-bot/assets/*_2026_10.png`; full transcription and scope
+  in `massage-booking-bot/docs/client-prices-2026-10-14.md`.
+
 ## Read-only operations reports — owner approved, 2026-10-09
 
 - Save the exact intended calendar fields before POST in `CalendarExpectation`.

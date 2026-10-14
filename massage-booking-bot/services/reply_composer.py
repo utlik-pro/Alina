@@ -4,6 +4,23 @@ import re
 STYLE_INSTRUCTION = 'Write like the human Crystal Lab administrator in a natural chat.\nAnswer the latest question first, then move the booking forward with at most ONE\nnext question. Use 1–3 short messages: one complete thought per message, separated\nby ---MESSAGE_SPLIT---. Keep a price and its duration together. Do not split a\nsingle sentence or send isolated greetings, acknowledgements or emojis.\nDo not ask again for a known phone, area, service or date. Greet only at first contact.\nNo unsolicited catalogue or repeated price after a phone/hello. Use at most one\nemoji per turn. These presentation rules supersede older sales-card examples.\nA price-only question does not imply a rejected date: ask which day, never another day unless the client changed dates or a verified slot is unavailable.\nAnswer branch/home-service questions for the requested city; omit unrelated studio status or maintenance details unless directly asked.\nKeep factual booking, calendar, confirmation and payment safeguards unchanged.\n'
 
 
+# Ask about the service city only while it is unknown. Address questions remain
+# valid: knowing Abu Dhabi does not identify a building or villa.
+_CITY_REQUEST_RE = re.compile(
+    r"\b(?:which|what)\s+(?:city|emirate)\b|"
+    r"\b(?:where\s+(?:are you|do you live|are you located)|where.*you.*from)\b|"
+    r"\b(?:are you|do you live|are you located)\s+(?:based\s+)?in\s+"
+    r"(?:abu[ -]?dhabi|al[ -]?ain|dubai)\b|"
+    r"\b(?:confirm|share|tell me|provide|send).*\b(?:your city|your emirate)\b|"
+    r"\bwhich area\b(?![^?]*\b(?:building|villa|street|address|district)\b)", re.I)
+
+
+def asks_for_city(text):
+    if re.search(r'\b(?:building|villa|apartment|flat|street|full address)\b', text or '', re.I):
+        return False
+    return bool(_CITY_REQUEST_RE.search(text or ''))
+
+
 def compose_reply(text, context):
     history = getattr(context, 'recent_messages', []) or []
     returning = any(m.get('role') == 'assistant' for m in history)
@@ -71,14 +88,14 @@ def compose_reply(text, context):
                 continue
             if side_question and re.search(r'\b(?:slots|available|which .*suits|what day|which day|which time)\b', sentence, re.I):
                 continue
-            is_request = bool('?' in sentence or re.search(
+            is_request = bool('?' in sentence or asks_for_city(sentence) or re.search(
                 r'^(?:please |may i |could you )?(?:send|share|give|provide|tell me)\b', sentence, re.I))
             if is_request:
                 if side_question:
                     continue
                 if known.get('phone') and re.search(r'(?:phone|whatsapp|your)\s*(?:number)|number.*dear', sentence, re.I):
                     continue
-                if known.get('area') and re.search(r'which (?:area|city|emirate)', sentence, re.I):
+                if known.get('area') and not booking.get('area_needs_clarification') and asks_for_city(sentence):
                     continue
                 if booking.get('date') and re.search(r'which day|today or tomorrow', sentence, re.I):
                     continue
@@ -104,7 +121,8 @@ def compose_reply(text, context):
         elif not asked:
             # Nothing failed — we simply have not looked yet. Keep the funnel
             # moving instead of alarming the client about our own backend.
-            parts.append("Which day and time suit you dear? I'll check the calendar right away 🌹")
+            parts.append("What time suits you? I'll check the calendar." if booking.get('date')
+                         else "Which day and time suit you dear? I'll check the calendar right away 🌹")
     return '\n\n'.join(parts).strip() or 'Thank you 🌹'
 
 

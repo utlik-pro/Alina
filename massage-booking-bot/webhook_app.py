@@ -1124,6 +1124,14 @@ def _resolve_named_date(text_lower: str, now) -> tuple:
     wd = _weekday_target_date(text_lower, now)
     if wd:
         return wd, "weekday"
+    # A bare 'Tomorrow' must be retained before any calendar call (including
+    # when the client has not chosen a service or the calendar is unavailable).
+    chosen = affirmative_choice_text(text_lower or "")
+    today = bool(re.search(r"\b(?:today|сегодня)\b", chosen, re.I))
+    tomorrow = bool(re.search(r"\b(?:tomorrow|завтра)\b", chosen, re.I))
+    if today != tomorrow:
+        from datetime import timedelta
+        return (now + timedelta(days=int(tomorrow))).strftime("%Y-%m-%d"), "relative"
     return None, "none"
 
 
@@ -4895,6 +4903,89 @@ async def _reset_user(user_id: str, telegram_id: str):
     return deleted
 
 
+async def _capture_client_area(user_id: str, context, text: str):
+    import bot as bot_module
+    _explicit_area, _ooa_city, _area_unclear = _resolve_area_choice(text)
+    if _explicit_area or _ooa_city or _area_unclear:
+        previous_area = context.client_data.get("area")
+        _clear_location = previous_area != _explicit_area or _area_unclear
+        if _clear_location:
+            context.has_location = False
+            context.slot_truth = {}
+            context.extra_system_info = ""
+            context.booking_data.pop("pending_booking", None)
+            # A desired day/time survives; the old city's address does not.
+            for field in ("location", "location_details"):
+                context.client_data.pop(field, None)
+        dialog_manager.update_client_data(user_id, "area", _explicit_area)
+        dialog_manager.update_booking_data(user_id, "area_needs_clarification", _area_unclear)
+        dialog_manager.update_booking_data(user_id, "out_of_area", _ooa_city)
+        try:
+            await bot_module.client_service.update_client(
+                user_id, area=_explicit_area, clear_area=_explicit_area is None,
+                clear_location=_clear_location)
+        except Exception as exc:
+            logger.warning(f"couldn't persist corrected area: {exc}")
+
+    return _explicit_area, _ooa_city, _area_unclear
+
+
+async def _load_dialog_context(user_id: str, client):
+    import bot as bot_module
+    context = dialog_manager.get_or_create_context(user_id)
+    if not getattr(context, "_snapshot_loaded", False):
+        snapshot = await bot_module.message_service.load_context(user_id)
+        if snapshot:
+            context.restore(snapshot)
+        context._snapshot_loaded = True
+
+    if not context.recent_messages:
+        db_history = await bot_module.message_service.get_conversation_history(user_id)
+        if db_history:
+            for msg in db_history[-20:]:
+                context.recent_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"],
+                })
+        # Restore master preferences on a fresh context (survive a restart /
+        # delayed reply) so "same as last time" and an avoided master hold
+        # across sessions, not just within one in-memory context.
+        if getattr(client, "preferred_therapist", None) and not context.client_data.get("preferred_therapist"):
+            context.client_data["preferred_therapist"] = client.preferred_therapist
+        if getattr(client, "avoid_therapist", None) and not context.client_data.get("avoid_therapist"):
+            context.client_data["avoid_therapist"] = client.avoid_therapist
+
+    # Recover missing facts even when a snapshot already contains messages.
+    # Explicit ambiguity/out-of-area must not resurrect an older served city.
+    if not context.client_data.get("phone") and getattr(client, "phone", None):
+        context.client_data["phone"] = client.phone
+    if (not context.client_data.get("area")
+            and not context.booking_data.get("area_needs_clarification")
+            and not context.booking_data.get("out_of_area")):
+        if getattr(client, "area", None):
+            context.client_data["area"] = client.area
+            logger.info(f"area restored from DB: {client.area!r}")
+        else:
+            for _m in reversed(context.recent_messages):
+                if _m.get("role") != "user":
+                    continue
+                _recovered, _outside, _unclear = _resolve_area_choice(_m.get("content") or "")
+                if _outside or _unclear:
+                    context.booking_data.update(out_of_area=_outside, area_needs_clarification=_unclear)
+                    break
+                if _recovered:
+                    context.client_data["area"] = _recovered
+                    logger.info(f"area recovered from history: {_recovered!r}")
+                    # Backfill the column so next time it's a clean DB read.
+                    try:
+                        await bot_module.client_service.update_client(user_id, area=_recovered)
+                    except Exception:
+                        pass
+                    break
+
+    return context
+
+
 async def _process_wappi_message(phone: str, text: str, sender_name: str):
     """Background task: process WhatsApp message through AI agent."""
     try:
@@ -4927,53 +5018,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if sender_name and not client.name:
             await bot_module.client_service.update_client(telegram_id, name=sender_name)
 
-        context = dialog_manager.get_or_create_context(user_id)
-        if not getattr(context, "_snapshot_loaded", False):
-            snapshot = await bot_module.message_service.load_context(user_id)
-            if snapshot:
-                context.restore(snapshot)
-            context._snapshot_loaded = True
-
-        if not context.recent_messages:
-            db_history = await bot_module.message_service.get_conversation_history(telegram_id)
-            if db_history:
-                for msg in db_history[-20:]:
-                    context.recent_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"],
-                    })
-            # Area lives only in the in-memory context, so a Render restart /
-            # deploy (frequent during this testing sprint) or a delayed reply to
-            # the post-session survey lands on a FRESH context with area=None —
-            # and the agent re-asks "which area?" ("снова спрашивает откуда я").
-            # Restore it: (1) the persisted client.area column is authoritative;
-            # (2) fall back to the newest area mention in the reloaded history.
-            if not context.client_data.get("area"):
-                if getattr(client, "area", None):
-                    context.client_data["area"] = client.area
-                    logger.info(f"area restored from DB: {client.area!r}")
-                else:
-                    for _m in reversed(context.recent_messages):
-                        if _m.get("role") != "user":
-                            continue
-                        _recovered = detect_area(_m.get("content") or "")
-                        if _recovered:
-                            context.client_data["area"] = _recovered
-                            logger.info(f"area recovered from history: {_recovered!r}")
-                            # Backfill the column so next time it's a clean DB read.
-                            try:
-                                await bot_module.client_service.update_client(telegram_id, area=_recovered)
-                            except Exception:
-                                pass
-                            break
-
-            # Restore master preferences on a fresh context (survive a restart /
-            # delayed reply) so "same as last time" and an avoided master hold
-            # across sessions, not just within one in-memory context.
-            if getattr(client, "preferred_therapist", None) and not context.client_data.get("preferred_therapist"):
-                context.client_data["preferred_therapist"] = client.preferred_therapist
-            if getattr(client, "avoid_therapist", None) and not context.client_data.get("avoid_therapist"):
-                context.client_data["avoid_therapist"] = client.avoid_therapist
+        context = await _load_dialog_context(user_id, client)
 
         await bot_module.message_service.save_message(telegram_id, "user", text)
         dialog_manager.add_user_message(user_id, text)
@@ -5128,7 +5173,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # состояние по тексту ответа. Реплей 2026-08-19: клиент назвал «24 aug»
         # и «6 pm», а следующий ход снова спросил «Which day would you like?».
         from datetime import datetime as _dt_n, timedelta as _td_n, timezone as _tz_n
-        _said_date = _detect_explicit_date(text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
+        _said_date, _ = _resolve_named_date(text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
         if _said_date and _said_date != context.booking_data.get("date"):
             dialog_manager.update_booking_data(user_id, "date", _said_date)
             logger.info(f"клиент назвал день → {_said_date}")
@@ -5187,26 +5232,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # is exactly where the model used to resume selling (client complaint
         # 2026-08-16: «зачем спрашивать какой сервис… можно попрощаться
         # красиво и всё»). Naming one of OUR cities lifts the flag.
-        _explicit_area, _ooa_city, _area_unclear = _resolve_area_choice(text)
-        if _explicit_area or _ooa_city or _area_unclear:
-            previous_area = context.client_data.get("area")
-            _clear_location = previous_area != _explicit_area or _area_unclear
-            if _clear_location:
-                context.slot_truth = {}
-                context.extra_system_info = ""
-                context.booking_data.pop("pending_booking", None)
-                # A desired day/time survives; the old city's address does not.
-                for field in ("location", "location_details"):
-                    context.client_data.pop(field, None)
-            dialog_manager.update_client_data(user_id, "area", _explicit_area)
-            dialog_manager.update_booking_data(user_id, "area_needs_clarification", _area_unclear)
-            dialog_manager.update_booking_data(user_id, "out_of_area", _ooa_city)
-            try:
-                await bot_module.client_service.update_client(
-                    telegram_id, area=_explicit_area, clear_area=_explicit_area is None,
-                    clear_location=_clear_location)
-            except Exception as exc:
-                logger.warning(f"couldn't persist corrected area: {exc}")
+        _explicit_area, _ooa_city, _area_unclear = await _capture_client_area(user_id, context, text)
 
         if context.booking_data.get("area_needs_clarification"):
             response_text = (POLITE_CLOSE_LINE if context.booking_data.get("closed_politely") else
@@ -6577,9 +6603,33 @@ async def _manychat_shadow_log(subscriber_id: str, text: str) -> None:
     # opened from scratch («зачем по второму кругу диалог вести?»).
     try:
         import bot as bot_module
-        telegram_id = f"{IG_KEY_PREFIX}{subscriber_id}"
-        await bot_module.client_service.get_or_create_client(telegram_id)
-        await bot_module.message_service.save_message(telegram_id, "user", text)
+        user_id = f"ig_{subscriber_id}"
+        # Share the booking identity AND lock. Daytime facts must survive a
+        # restart and must not race a still-running nighttime turn.
+        lock = _wappi_locks.setdefault(f"{IG_KEY_PREFIX}{subscriber_id}", asyncio.Lock())
+        async with lock:
+            client = await bot_module.client_service.get_or_create_client(user_id)
+            context = await _load_dialog_context(user_id, client)
+            await bot_module.message_service.save_message(user_id, "user", text)
+            dialog_manager.add_user_message(user_id, text)
+            await _capture_client_area(user_id, context, text)
+            phone = _detect_phone_in_text(text)
+            if phone:
+                context.client_data["phone"] = phone
+                await bot_module.client_service.update_client(user_id, phone=phone)
+            category = _detect_service_category(text)
+            current_service = context.booking_data.get("service_type") or ""
+            if category and not (category == "massage" and (
+                    _massage_kind_known(current_service) or current_service == _COMBO_KEY)):
+                if category != current_service:
+                    context.booking_data.pop("pending_booking", None)
+                    context.booking_data["service_duration"] = None
+                context.booking_data.update(service_type=category, service_named=True)
+            from datetime import datetime, timedelta, timezone
+            date, _ = _resolve_named_date(text.lower(), datetime.now(timezone(timedelta(hours=4))))
+            if date:
+                context.booking_data["date"] = date
+            await bot_module.message_service.save_context(user_id, context.to_dict())
     except Exception as e:
         logger.warning(f"daytime inbound not persisted for {subscriber_id}: {e}")
 

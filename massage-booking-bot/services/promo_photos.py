@@ -19,18 +19,25 @@ PROMO_PHOTOS = [
         "bot_keywords": ["275", "cupping"],
         "match": "any_user",  # match if any user keyword found
     },
-    # Japanese manicure
+    # The old nail creatives predate the 30% offer; use the current text
+    # catalog until the client supplies replacement artwork.
     {
-        "file": "japanese_mani.jpg",
-        "user_keywords": ["japanese", "японский"],
-        "bot_keywords": ["japanese mani", "japanese pedi"],
+        "file": "pmu_2026_10.png",
+        "user_keywords": ["permanent", "pmu", "lashliner", "перманент"],
+        "bot_keywords": ["permanent", "pmu", "lashliner"],
         "match": "any_user",
     },
-    # General manicure/nails
     {
-        "file": "manicure.jpg",
-        "user_keywords": ["manicure", "mani", "pedi", "nails", "nail", "маникюр", "педикюр"],
-        "bot_keywords": ["manicure", "mani", "pedi", "nail"],
+        "file": "face_waxing_2026_10.png",
+        "user_keywords": ["wax", "воск"],
+        "bot_keywords": ["wax"],
+        "match": "any_user",
+    },
+    {
+        "file": "lashes_brows_2026_10.png",
+        "user_keywords": ["lash", "brow", "ресниц", "бров"],
+        "bot_keywords": ["lash", "brow"],
+        "exclude_keywords": ["permanent", "pmu", "lashliner", "wax", "перманент"],
         "match": "any_user",
     },
     # Face massage ONLY (NOT deep facial cleansing)

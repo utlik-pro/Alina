@@ -5,7 +5,7 @@ ALL prices across the system come from this file.
 To update a price: change it HERE and it updates everywhere
 (bot.py, booking_agent.py, booking_flow.py, follow_up.py, tests).
 
-Last updated: 2026-02-25
+Last verified against client cards: 2026-10-14
 """
 
 from typing import Optional
@@ -180,15 +180,34 @@ SERVICE_CATALOG = {
 }
 
 
+# Tatyana, 2026-10-10 (received 2026-10-14): manicure/pedicure -30%.
+# Explicit eligibility keeps extensions, designs, brows and PMU out of this offer.
+NAILS_DISCOUNT_PERCENT = 30
+NAILS_PROMO_KEYS = (
+    "russian_mani", "russian_pedi", "russian_combo", "japanese_mani",
+    "japanese_pedi", "japanese_combo", "russian_mani_basic", "russian_pedi_basic",
+)
+for _nail_key in NAILS_PROMO_KEYS:
+    _nail_service = SERVICE_CATALOG[_nail_key]
+    _nail_service["regular_price"] = _nail_service["price"]
+    _nail_service["price"] = round(_nail_service["regular_price"] * (100 - NAILS_DISCOUNT_PERCENT) / 100, 2)
+    _nail_service["discount_percent"] = NAILS_DISCOUNT_PERCENT
+
+
 # ═══════════════════════════════════════════════════════════
 # SPECIAL OFFERS
 # ═══════════════════════════════════════════════════════════
 
 # The FOUR advertised offers below match the client's current ad creatives
 # (photos from Tatyana, 2026-08-14) — ads (and IG prefill texts like
-# "summer promotion") point at exactly these. Nails/lamination discounts
-# are cancelled (client rule 2026-07-28: «этих офферов НЕТ»).
+# "summer promotion") point at exactly these. The nails discount was renewed on 2026-10-10;
+# lamination has only its card price, no additional percentage discount.
 SPECIAL_OFFERS = {
+    "nails_30_percent": {
+        "name": "Manicure and pedicure — 30% off",
+        "price": None,
+        "description": "Abu Dhabi home service only. The NAILS catalog already includes the 30% discount for manicure, pedicure and their combos. Do not subtract it again. Extensions and additional nail services are excluded.",
+    },
     "offer_deep_cleansing": {
         "name": "NEW OFFER - Deep Facial Cleansing (8 steps, 2 hours)",
         "ad": True,
@@ -363,7 +382,7 @@ AESTHETIC BODY CORRECTING:
 - Hips: 20 min - {p('aesthetic_hips'):.0f} AED | Stomach + hips: 30 min - {p('aesthetic_stomach_hips'):.0f} AED
 - Stomach + hips + hands: 40 min - {p('aesthetic_full'):.0f} AED
 
-NAILS:
+NAILS (manicure/pedicure and combos: 30% off ALREADY INCLUDED; do not discount again):
 - Russian gelish manicure with machine: {p('russian_mani'):.0f} AED
 - Russian gelish pedicure with machine (smart disc): {p('russian_pedi'):.0f} AED
 - Combo Russian gellish mani + pedi: {p('russian_combo'):.0f} AED
@@ -427,7 +446,7 @@ def format_special_offers_for_prompt(include_packages: bool = True) -> str:
     2026-08-15: unverified figures answered a cupping-ad lead).
     """
     p = get_price  # shorthand
-    lines = ["CURRENT SPECIAL OFFERS (August 2026 — these are the advertised ones)", "═══════════════════════════════════"]
+    lines = ["CURRENT SPECIAL OFFERS (verified October 2026)", "═══════════════════════════════════"]
 
     for key, offer in SPECIAL_OFFERS.items():
         if offer["price"] is None:
