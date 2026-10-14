@@ -7,6 +7,9 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 ## Client feedback received 2026-10-14
 
+- Live replay: `face waxing` is not facial massage. Never substitute the 370 AED
+  massage card or massage slots for a waxing query. The nails `30% off` wording
+  must survive final reply composition; a discounted amount alone is insufficient.
 - Tatyana's 10 October example: after `Abu dhabi / Khalifa city`, phone and
   `Tomorrow`, never ask the city again. Pass stored city/phone to the model,
   enforce this on the final reply, retain the date independently of calendar

@@ -533,6 +533,7 @@ _RESET_GREETING = (
 
 _NAILS_KW = ("manicure", "pedicure", "mani ", "mani+", "pedi", "nail", "gelish",
              "маникюр", "педикюр", "ногт")
+_WAXING_RE = re.compile(r"\bwax(?:ing)?\b|депиляц|воск", re.I)
 _MASSAGE_KW = ("massage", "body", "lymphatic", "cupping", "deep tissue",
                "facial", "face", "prenatal", "postpartum", "массаж", "лицо")
 
@@ -547,6 +548,8 @@ def _detect_service_category(text: str) -> Optional[str]:
     t = affirmative_choice_text(text).lower()
     if any(k in t for k in _NAILS_KW):
         return "nails"
+    if _WAXING_RE.search(t):
+        return "waxing"
     if any(k in t for k in _MASSAGE_KW):
         return "massage"
     return None
@@ -679,7 +682,7 @@ def _service_named(text: str) -> bool:
 def _is_massage_service(name: str) -> bool:
     """True for services whose 60/90-min choice changes price AND fit."""
     n = (name or "").lower()
-    if any(k in n for k in ("lash", "brow", "mani", "pedi", "nail", "cleansing", "permanent")):
+    if any(k in n for k in ("lash", "brow", "mani", "pedi", "nail", "cleansing", "permanent", "wax")):
         return False
     return any(k in n for k in ("massage", "масса", "body", "face", "facial"))
 
@@ -859,6 +862,8 @@ def _massage_kind_from_text(text: str) -> Optional[str]:
     import difflib
 
     t = affirmative_choice_text(text).lower()
+    if _WAXING_RE.search(t):
+        return None
     has_face = any(k in t for k in ("face", "facial", "лиц", "фейш", "фэйш"))
     has_body = any(k in t for k in ("body", "тел", "спин", "back"))
     if not has_face and re.search(r"lymphatic|lymph drainage|maderotherapy|wooden rollers|лимфодрен", t):
@@ -1950,6 +1955,25 @@ def _banned_prices() -> set:
             if not p.get("quotable") and p.get("price")}
 
 
+def _enforce_nails_promotion(response_text: str, context, inbound_text: str) -> str:
+    """Client's October promotion must survive the final sales/phone rewrites."""
+    bd = context.booking_data or {}
+    if (bd.get("service_type") != "nails" or bd.get("nails_promo_sent")
+            or bd.get("closed_politely") or bd.get("out_of_area")
+            or getattr(context, "state", "") == "completed"):
+        return response_text
+    eligible = re.search(r"manicure|pedicure|\bmani\b|\bpedi\b|маникюр|педикюр", inbound_text or "", re.I)
+    if not eligible or re.search(r"extension|наращив", inbound_text or "", re.I):
+        return response_text
+    topics = direct_question_topics(inbound_text)
+    if topics - {"price"} or _asks_about_time(inbound_text):
+        return response_text
+    bd["nails_promo_sent"] = True
+    if "30%" in response_text:
+        return response_text
+    return "Manicure and pedicure — 30% off.\n\n" + response_text
+
+
 def _enforce_price_sanity(response_text: str, who: str = "") -> str:
     """Последний рубеж по ценам: запрещённое не уходит, чужое — под сигнал.
 
@@ -2411,7 +2435,7 @@ def _enforce_admin_service_card(response_text: str, context,
     if not response_text:
         return response_text
     bd = context.booking_data or {}
-    if bd.get("ad_prefill") == "package":
+    if bd.get("ad_prefill") == "package" or bd.get("service_type") == "waxing" or _WAXING_RE.search(inbound_text or ""):
         return response_text
     svc = bd.get("service_type") or ""
     if svc == _COMBO_KEY or "275" in response_text:
@@ -5365,6 +5389,10 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 # then show times that actually fit.
                 logger.info("duration_first_gate: massage without duration → ask 60/90")
                 context.extra_system_info = DURATION_FIRST_GATE_MSG
+            elif _client_area and context.booking_data.get("service_type") == "waxing":
+                context.extra_system_info = (
+                    "The client selected waxing, not facial massage. Quote the FACE WAXING catalog. "
+                    "No waxing calendar has been verified: do not offer massage slots or claim availability.")
             elif _client_area:
                 try:
                     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
@@ -6126,6 +6154,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 and context.booking_data["confirmed_master"].casefold() not in response_text.casefold()):
             response_text += f"\nYour specialist will be {context.booking_data['confirmed_master']} 🌹"
 
+        response_text = _enforce_nails_promotion(response_text, context, text)
         from services.reply_composer import compose_reply, split_chat_messages
         response_text = compose_reply(response_text, context)
         if (context.booking_data or {}).get("phone_ask_pending"):

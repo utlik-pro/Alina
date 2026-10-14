@@ -488,3 +488,21 @@ async def test_daytime_city_changes_invalidate_old_address(dialogue, monkeypatch
     assert not dialogue.ctx.client_data.get('location_details')
     assert not dialogue.ctx.booking_data.get('pending_booking')
     assert dialogue.ctx.booking_data['time'] == '17:00'
+
+
+@pytest.mark.asyncio
+async def test_waxing_price_question_never_becomes_facial_massage_card(dialogue):
+    out = await dialogue.turn('How much is eyebrow waxing and full face waxing?',
+        'Eyebrow waxing — 80 AED\nFull face waxing — 200 AED')
+    assert dialogue.ctx.booking_data['service_type'] == 'waxing'
+    assert '80 AED' in out and '200 AED' in out
+    assert '370' not in out and '1650' not in out
+    assert not dialogue.ctx.booking_data.get('face_card_sent')
+
+
+@pytest.mark.asyncio
+async def test_nails_discount_survives_phone_first_composer(dialogue):
+    out = await dialogue.turn('Manicure and pedicure', 'Manicure and pedicure combo — 266 AED')
+    assert '30%' in out and '266 AED' in out
+    out = await dialogue.turn('0500000000', 'Thank you!')
+    assert '30%' not in out
