@@ -1,4 +1,5 @@
 """Calendar failure must not confirm locally or dispatch a driver."""
+import dataclasses
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -16,7 +17,7 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
     day = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime("%Y-%m-%d")
     call = BookingCall(service, 60, day, "14:00", "abu_dhabi", "cash",
                        "Test Client", price, master_id=7, address="Test villa 5")
-    ctx = SimpleNamespace(booking_data={}, client_data={},
+    ctx = SimpleNamespace(booking_data={"confirmation_offer": dataclasses.asdict(call)}, client_data={},
                           recent_messages=[{"role": "user", "content": "yes"}])
     client = SimpleNamespace(phone="971500000000", name="Test Client", location_details="Test villa 5")
     booking = SimpleNamespace(id=123, status="draft")
@@ -81,7 +82,7 @@ async def test_calendar_sync_controls_confirmation_and_dispatch(monkeypatch, out
     await db.engine.dispose()
     db2 = Database(db.database_url)
     bs.claim_calendar_attempt = BookingService(db2).claim_calendar_attempt
-    ctx2 = SimpleNamespace(booking_data={}, client_data={},
+    ctx2 = SimpleNamespace(booking_data={"confirmation_offer": dataclasses.asdict(call)}, client_data={},
                            recent_messages=[{"role": "user", "content": "yes"}])
     await wh._maybe_create_booking("test", "test", client.phone, client.name, ctx2,
                                    "Your booking is confirmed ✅", call)

@@ -39,6 +39,10 @@ def direct_question_topics(text: str) -> set[str]:
     topics = set()
     if re.search(r'whats\s*app|ватсап|вотсап', text or '', re.I) and (QUESTION_RE.search(text or '') or re.match(r'\s*(?:please\s+)?(?:send|share|give|message|write|contact)\b', text or '', re.I) or re.fullmatch(r'\s*(?:your\s+)?whats\s*app(?:\s+number)?[?.!\s]*', text or '', re.I) or re.search(r'напиш|ваш.*номер', text or '', re.I)):
         topics.add('whatsapp')
+    if re.search(r"\b(?:your|ur)\s+(?:(?:contact|phone|telephone|whatsapp)\s+)?(?:number|no\.?)\b|"
+                 r"\b(?:send|give|share)\s+(?:me\s+|for\s+me\s+)?(?:a\s+|the\s+)?(?:contact\s+)?number\b|"
+                 r"(?:дайте|пришлите|ваш)\s+(?:контактный\s+)?(?:номер|телефон)", text or "", re.I):
+        topics.add('whatsapp')
     if MEDIA_REQUEST_RE.search(text or ''):
         topics.add('media')
     if LOCATION_QUESTION_RE.search(text or ''):
@@ -71,17 +75,18 @@ def factual_answer(topics: set[str], text: str, ig_handle: str = "") -> str:
     return '\n\n'.join(lines)
 
 
-def whatsapp_contact_answer(salon_number: str, client_phone: str = "", *, on_instagram: bool = True) -> str:
+def whatsapp_contact_answer(salon_number: str, client_phone: str = "", *, on_instagram: bool = True, number_only: bool = False) -> str:
     """Give a real contact route without claiming an unsent cross-channel message."""
-    if not on_instagram:
+    if not on_instagram and not number_only:
         return "We're already chatting on WhatsApp dear. You can continue here."
     number = re.sub(r"\D", "", salon_number or "")
-    lines = ["I can't start a WhatsApp conversation for you from this Instagram chat."]
+    lines = [] if number_only else ["I can't start a WhatsApp conversation for you from this Instagram chat."]
     if re.fullmatch(r"[1-9]\d{8,14}", number):
-        lines.append(f"Please message our team on WhatsApp: https://wa.me/{number}")
+        lines.append((f"Our contact number is +{number}. WhatsApp: https://wa.me/{number}"
+                      if number_only else f"Please message our team on WhatsApp: https://wa.me/{number}"))
     else:
         lines.append("We can continue arranging your appointment here.")
     phone = re.sub(r"\D", "", client_phone or "")
-    if phone and phone != number:
+    if phone and phone != number and not number_only:
         lines.append(f"I have your number ending in {phone[-4:]}.")
     return "\n\n".join(lines)

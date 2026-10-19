@@ -1262,7 +1262,8 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
                            user_text: str = "", already_booked_sig=None,
                            group_requested: bool = False,
                            needs_phone: bool = False,
-                           is_ig: bool = False) -> str:
+                           is_ig: bool = False,
+                           confirmation_authorized: Optional[bool] = None) -> str:
     """Override the model's reply where its wording must be guaranteed:
 
     1) Reschedule — the move is applied by the team, not instantly. Never let
@@ -1331,7 +1332,7 @@ def _enforce_reply_wording(response_text: str, actions, booking_call, client_dat
         # If the client's LAST message isn't a confirmation, replace the
         # premature "booked ✅" with the recap question; _maybe_create_booking
         # applies the same check so no record is created on this turn.
-        if not _client_confirmed(user_text):
+        if not _client_confirmed(user_text) or confirmation_authorized is False:
             return _booking_recap_question(booking_call)
         # Confirmed booking reaches here. Group honesty: if a group was asked
         # for but the model dropped the extra people (no guests in the call),
@@ -1374,26 +1375,41 @@ def _booking_is_today(date_str) -> bool:
     return str(date_str)[:10] == _dt.now(_tz(_td(hours=4))).strftime("%Y-%m-%d")
 
 
-# Words that count as the client's explicit "yes" to the final recap. Checked
-# against the LAST client message only — this is the second line of defence
-# (the model shouldn't call book_appointment before a confirm at all).
-_CONFIRM_WORDS_RE = re.compile(
-    r"\b(?:yes|yep|yeah|yup|confirm(?:ed)?|sure|ok(?:ay)?|go ahead|book(?: it| me)?|"
-    r"please book|sounds good|perfect|great|deal|agreed|yalla|"
-    r"да|ага|конечно|подтверждаю|подтверди(?:те)?|давай(?:те)?|хорошо|ок|окей|"
-    r"бронируй(?:те)?|записывай(?:те)?|запиши(?:те)?|пиши(?:те)?)\b",
-    re.IGNORECASE,
-)
-
-
 def _client_confirmed(user_text: str) -> bool:
     """True if the client's message reads as an explicit go-ahead."""
-    t = (user_text or "").strip()
+    t = (user_text or "").casefold().strip()
+    # A positive emoji confirms only when it is the WHOLE answer. Mixed
+    # conditions, questions and changed details always require a new recap.
+    t = re.sub(r"[✅👍\ufe0f\U0001f3fb-\U0001f3ff]", " ", t)
+    t = re.sub(r"[,.!+\s]+", " ", t).strip()
     if not t:
+        return bool(re.search(r"[✅👍+]", user_text or ""))
+    if re.fullmatch(r"(?:(?:please|dear|thanks|thank you|my booking|the booking|пожалуйста|спасибо)\s*)+", t):
         return False
-    if "✅" in t or "👍" in t or t == "+":
-        return True
-    return _CONFIRM_WORDS_RE.search(t) is not None
+    return bool(re.fullmatch(
+        r"(?:(?:yes|yep|yeah|yup|confirm(?:ed)?|sure|ok(?:ay)?|go ahead|book(?: it| me)?|"
+        r"please|sounds good|perfect|great|deal|agreed|yalla|dear|thanks|thank you|"
+        r"my booking|the booking|да|ага|конечно|подтверждаю|подтверди(?:те)?|давай(?:те)?|"
+        r"хорошо|ок|окей|бронируй(?:те)?|записывай(?:те)?|запиши(?:те)?|пиши(?:те)?|"
+        r"пожалуйста|спасибо)\s*)+", t))
+
+
+_CONFIRMATION_FIELDS = ("service", "duration_minutes", "date", "time", "area",
+                        "payment_method", "client_name", "base_price_aed",
+                        "client_phone", "address", "master_id", "master_name", "guests")
+
+
+def _booking_confirmation_matches(context, booking_call) -> bool:
+    """Approval belongs to the exact structured offer shown on an earlier turn."""
+    offered = context.booking_data.get("confirmation_offer")
+    if not offered or context.booking_data.get("payment_needs_clarification"):
+        return False
+    return all(offered.get(k) == getattr(booking_call, k, None) for k in _CONFIRMATION_FIELDS)
+
+
+def _payment_is_conditional(text: str) -> bool:
+    return bool(_detect_payment_method(text) and re.search(
+        r"\b(?:if|unless|or|если|либо)\b", text, re.I))
 
 
 def _match_booking_by_old_slot(bookings, old_date, old_time):
@@ -1451,6 +1467,10 @@ def _booking_recap_question(booking_call) -> str:
     bits.append(f"{when} at {t}".strip())
     if price:
         bits.append(f"{int(price)} AED ({'cash — tax free' if pay == 'cash' else 'bank transfer +5% VAT'})")
+    if getattr(booking_call, "client_name", None):
+        bits.append(booking_call.client_name)
+    if getattr(booking_call, "address", None):
+        bits.append(booking_call.address)
     return f"So dear — {', '.join(bits)} 🌹 Shall I confirm?"
 
 
@@ -2903,6 +2923,16 @@ def _detect_deferred_close(text: str) -> bool:
     return bool(_DEFERRED_CLOSE_RE.search(text or ""))
 
 
+def _consultation_after_defer(text: str) -> bool:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    closes = [i for i, line in enumerate(lines) if _detect_deferred_close(line)]
+    if not closes:
+        return False
+    tail = "\n".join(lines[closes[-1] + 1:])
+    return bool(tail and (_service_named(tail) or direct_question_topics(tail)
+                         or QUESTION_RE.search(tail)))
+
+
 def _enforce_polite_close(response_text: str, context, who: str = "") -> str:
     """После «я напишу позже» воронка останавливается.
 
@@ -4033,7 +4063,7 @@ async def _maybe_create_booking(
     # LAST message isn't a confirmation, don't create the record; the wording
     # override already replaced the reply with the recap question, so the
     # client's "yes" on the next turn re-fires the tool and passes this gate.
-    if not _client_confirmed(_last_user):
+    if not _client_confirmed(_last_user) or not _booking_confirmation_matches(context, booking_call):
         logger.info(
             f"Wappi: booking deferred for {telegram_id} — awaiting explicit "
             f"confirm (last msg: {_last_user[:60]!r}). Recap question sent."
@@ -4474,6 +4504,7 @@ async def _maybe_create_booking(
     context.last_booking_sig = _new_sig
     # Запись создана — отложенный вызов больше не нужен; иначе следующее
     # «да» в том же диалоге воскресило бы его второй раз.
+    context.booking_data.pop("confirmation_offer", None)
     context.booking_data.pop("pending_booking", None)
 
     # Notify admin + auto-share the trip with the driver/logistics group.
@@ -4972,6 +5003,7 @@ async def _capture_client_area(user_id: str, context, text: str):
             context.has_location = False
             context.slot_truth = {}
             context.extra_system_info = ""
+            context.booking_data.pop("confirmation_offer", None)
             context.booking_data.pop("pending_booking", None)
             # A desired day/time survives; the old city's address does not.
             for field in ("location", "location_details"):
@@ -5084,7 +5116,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         _question_topics = direct_question_topics(text)
         _direct_question = bool(
-            _question_topics - {"price"} or _asks_about_time(text)
+            _consultation_after_defer(text)
+            or _question_topics - {"price"} or _asks_about_time(text)
             or _asks_about_massage_types(text) or _ASKS_WHICH_THERAPIST_RE.search(text)
             or (QUESTION_RE.search(text) and "price" not in _question_topics))
 
@@ -5202,20 +5235,21 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Баночное комбо ставится автоматически по рекламному префиллу, и
         # клиент должен иметь право передумать. «Face» его снимает: комбо
         # телесное, и держать его дальше значило бы считать лицевой массаж по
-        # 275 за 45 минут вместо 370 за 50. «Body» комбо, наоборот,
-        # подтверждает — снимать нечего.
+        # 275 за 45 минут вместо 370 за 50. «Body» сохраняет комбо,
+        # если клиент явно не отказался от банок.
         #
         # Обычные детекторы тут бессильны: категория для «facial please» —
         # общее «massage», а _is_massage_service комбо не признаёт, так что
         # оба апгрейда выше молчат. Найдено при подготовке прогонов, до того
         # как это увидел живой клиент.
-        if (_kind_now == "face"
+        if ((_kind_now == "face" or (_kind_now == "body" and re.search(
+                r"\b(?:not|no|without)\s+cupping\b|без\s+банок", text, re.I)))
                 and context.booking_data.get("service_type") == _COMBO_KEY):
-            dialog_manager.update_booking_data(user_id, "service_type", "face_massage")
+            dialog_manager.update_booking_data(user_id, "service_type", f"{_kind_now}_massage")
             dialog_manager.update_booking_data(user_id, "service_duration", None)
             context.booking_data["ad_prefill"] = None
             context.booking_data["offer_275_shown"] = False
-            logger.info("клиент выбрал лицо — комбо с банками снято")
+            logger.info("клиент изменил услугу — комбо с банками снято")
 
         # Facial massage has a fixed catalogue duration. Without this, a
         # fresh dialogue hits the body 60/90 gate and never loads the calendar.
@@ -5237,6 +5271,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             r"\s*(?:(?:the\s+)?day\s+after\s+tomorrow|after\s+tomorrow|tomorrow|today|послезавтра|завтра|сегодня)[.!\s]*",
             text, re.I))
         if _said_date and _said_date != context.booking_data.get("date"):
+            context.booking_data.pop("confirmation_offer", None)
             context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "date", _said_date)
             logger.info(f"клиент назвал день → {_said_date}")
@@ -5254,6 +5289,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _said_time and not context.booking_data.get("date") and context.booking_data.get("slot_offer_date"):
             dialog_manager.update_booking_data(user_id, "date", context.booking_data["slot_offer_date"])
         if _said_time and _said_time != context.booking_data.get("time"):
+            context.booking_data.pop("confirmation_offer", None)
             context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "time", _said_time)
             logger.info(f"клиент назвал время → {_said_time}")
@@ -5269,6 +5305,20 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 or _service_named(text) or "book" in text.lower()):
             dialog_manager.update_booking_data(user_id, "closed_politely", None)
             logger.info(f"клиент вернулся с делом — воронка снова открыта ({user_id})")
+
+        # Payment corrections invalidate the old approval before tool resurrection.
+        _payment_now = _detect_payment_method(text)
+        _payment_uncertain = _payment_is_conditional(text)
+        if "payment" in _question_topics and not _payment_uncertain:
+            _payment_now = None  # A payment question does not select a method.
+        if _payment_now and not _client_confirmed(text):
+            context.booking_data.pop("pending_booking", None)
+            context.booking_data.pop("confirmation_offer", None)
+            context.booking_data["payment_needs_clarification"] = _payment_uncertain
+            if _payment_uncertain:
+                context.booking_data.pop("payment_method", None)
+            else:
+                context.booking_data["payment_method"] = _payment_now
 
         # Половина дня, которую попросил клиент (правило Татьяны 2026-08-25:
         # «уточнить утром/вечер, затем окошки»). Липкая — спрашивать дважды
@@ -5319,6 +5369,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         if _ooa_now:
             context.extra_system_info = ""
             context.slot_truth = {}
+            context.booking_data.pop("confirmation_offer", None)
             context.booking_data.pop("pending_booking", None)
             response_text = _out_of_area_reply(_ooa_now, mentioned_now=bool(_ooa_city))
             await bot_module.message_service.save_message(
@@ -5356,11 +5407,12 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
 
         if context.booking_data.get("service_type") != _cur_svc:
             # A confirmation collected for the previous service is no longer valid.
+            context.booking_data.pop("confirmation_offer", None)
             context.booking_data.pop("pending_booking", None)
 
         # Explicit refusal/defer ends this turn before the model or booking tools.
         # Retain collected contact/service data for a later voluntary return.
-        if _detect_deferred_close(text):
+        if _detect_deferred_close(text) and not _consultation_after_defer(text):
             await bot_module.message_service.save_message(
                 telegram_id, "assistant", POLITE_CLOSE_LINE)
             dialog_manager.add_bot_response(user_id, POLITE_CLOSE_LINE)
@@ -5862,6 +5914,11 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             logger.error(f"Wappi [{phone}]: booking_agent timed out after 30s")
             response_text = "Sorry dear, one moment 🙏 Please repeat your message 🌹"
         booking_call: Optional[BookingCall] = actions.booking_call
+        if context.booking_data.get("payment_needs_clarification") or context.booking_data.get("closed_politely"):
+            booking_call = None
+            actions.booking_call = None
+        elif booking_call is not None and _payment_now:
+            booking_call.payment_method = _payment_now
 
         # ВОСКРЕШЕНИЕ ОТЛОЖЕННОГО ВЫЗОВА. Гейт явного подтверждения исходит из
         # того, что «клиент скажет "да" — и модель вызовет инструмент заново».
@@ -5870,7 +5927,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # модель просто пишет «booked ✅». Так вели себя ВСЕ проверенные
         # модели — и записи не создавались с 29 августа. Теперь отложенный
         # вызов сохраняется и переиспользуется на подтверждающем ходе.
-        if booking_call is None and _client_confirmed(text):
+        if (booking_call is None and _client_confirmed(text)
+                and not context.booking_data.get("payment_needs_clarification")
+                and not context.booking_data.get("closed_politely")):
             _pending = (context.booking_data or {}).get("pending_booking")
             if _pending:
                 try:
@@ -5956,6 +6015,7 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             already_booked_sig=getattr(context, "last_booking_sig", None),
             needs_phone=_needs_phone,
             is_ig=_is_ig_key(phone),
+            confirmation_authorized=_booking_confirmation_matches(context, booking_call) if booking_call else False,
         )
 
         # No invented times reach the client — every offered time must exist
@@ -5983,7 +6043,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         _facts = factual_answer(_question_topics, text, ig_handle=config.IG_PUBLIC_HANDLE)
         if "whatsapp" in _question_topics:
             _facts = whatsapp_contact_answer(config.WHATSAPP_CTA_NUMBER,
-                context.client_data.get("phone") or "", on_instagram=_is_ig_key(phone)) + ("\n\n" + _facts if _facts else "")
+                context.client_data.get("phone") or "", on_instagram=_is_ig_key(phone),
+                number_only=bool(re.search(r"number|\bur\b|номер|телефон", text, re.I))) + ("\n\n" + _facts if _facts else "")
         if _facts and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None:
             if "price" not in _question_topics and not _asks_about_time(text) and not _ASKS_WHICH_THERAPIST_RE.search(text):
                 response_text = _facts
@@ -6107,8 +6168,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # method is sticky — the client names it once ("bank transfer") and every
         # later price (recap, confirmation) must still say +5% VAT.
         _pay_known = (context.booking_data or {}).get("payment_method")
-        _pay_now = (getattr(booking_call, "payment_method", None)
-                    or (None if "payment" in _question_topics else _detect_payment_method(text)))
+        _pay_now = (None if context.booking_data.get("payment_needs_clarification") else
+                    (getattr(booking_call, "payment_method", None)
+                     or (None if "payment" in _question_topics else _detect_payment_method(text))))
         if _pay_now and _pay_now != _pay_known:
             dialog_manager.update_booking_data(user_id, "payment_method", _pay_now)
         response_text = _enforce_payment_terms(response_text, _pay_now or _pay_known)
@@ -6281,9 +6343,22 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                         else:
                             response_text += "\nWhich day would you like?"
 
+        if context.booking_data.get("payment_needs_clarification") and (
+                _payment_uncertain or _client_confirmed(text) or "payment" in _question_topics):
+            response_text = ("I can't verify the bank details here. Please choose: "
+                             "cash after the service (tax free), or bank transfer after the service (+5% VAT)?")
+        elif booking_call is not None and not context.booking_data.get("yc_sync_ok"):
+            if context.booking_data.get("pending_booking"):
+                response_text = _booking_recap_question(booking_call)
         response_text = _enforce_nails_promotion(response_text, context, text)
         from services.reply_composer import compose_reply, split_chat_messages
         response_text = compose_reply(response_text, context)
+        if context.booking_data.get("closed_politely"):
+            response_text = _enforce_polite_close(response_text, context, who=phone)
+        if (booking_call is not None and context.booking_data.get("pending_booking")
+                and "Shall I confirm?" in response_text):
+            import dataclasses as _dc_offer
+            context.booking_data["confirmation_offer"] = _dc_offer.asdict(booking_call)
         # Pin the calendar date of a single-day offer before a bare hour arrives.
         # Relative labels are resolved NOW, so a reply after midnight keeps it.
         if not context.booking_data.get("date") and _ampm_times_set(response_text):
@@ -6786,6 +6861,7 @@ async def _manychat_shadow_log(subscriber_id: str, text: str) -> None:
             if category and not (category == "massage" and (
                     _massage_kind_known(current_service) or current_service == _COMBO_KEY)):
                 if category != current_service:
+                    context.booking_data.pop("confirmation_offer", None)
                     context.booking_data.pop("pending_booking", None)
                     context.booking_data["service_duration"] = None
                 context.booking_data.update(service_type=category, service_named=True)

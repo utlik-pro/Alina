@@ -33,8 +33,8 @@ def dialogue(monkeypatch):
     monkeypatch.setattr(tl, 'log_turn', Mock())
     class Replay:
         ctx = dm.get_or_create_context('ig_555')
-        async def turn(self, text, draft):
-            wh.booking_agent.process_message_with_tools.return_value = (draft, AgentActions())
+        async def turn(self, text, draft, actions=None):
+            wh.booking_agent.process_message_with_tools.return_value = (draft, actions or AgentActions())
             wh._send_to_client.reset_mock()
             await wh._process_wappi_message('ig:555', text, 'Test')
             return '\n'.join(c.args[1] for c in wh._send_to_client.await_args_list)
@@ -666,3 +666,76 @@ async def test_time_reminder_rechecks_selected_slot(dialogue, monkeypatch, free)
     else:
         assert ("isn't available" if free is False else "can't verify") in out
         assert 'address' not in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', ['Give ur number', 'Send for me number',
+                                 'Pls send me your contact number for appointment'])
+async def test_salon_contact_without_whatsapp_keyword(dialogue, monkeypatch, text):
+    monkeypatch.setattr(wh.config, 'WHATSAPP_CTA_NUMBER', '971551933662')
+    out = await dialogue.turn(text, 'Please send your WhatsApp number dear.')
+    assert 'https://wa.me/971551933662' in out
+    assert 'your WhatsApp number' not in out
+    assert 'What would you like' not in out
+    assert "can't start" not in out
+
+
+@pytest.mark.asyncio
+async def test_defer_then_service_correction_is_answered_without_sales(dialogue, monkeypatch):
+    create = AsyncMock()
+    monkeypatch.setattr(wh, '_maybe_create_booking', create)
+    dialogue.ctx.booking_data.update(service_type='lymphatic_cupping_combo', service_duration=45,
+                                    service_named=True, ad_prefill='package', offer_275_shown=True)
+    out = await dialogue.turn('Okay I will let you know\nI need only lymphatic not cupping',
+                              'Yes, lymphatic body massage without cupping is available.\nWhich day would you like?')
+    assert out != wh.POLITE_CLOSE_LINE
+    assert 'without cupping' in out
+    assert 'which day' not in out.lower() and 'number' not in out.lower()
+    assert '275' not in out
+    assert dialogue.ctx.booking_data['service_type'] == 'body_massage'
+    assert dialogue.ctx.booking_data['closed_politely']
+    assert not create.await_args.args[-1]
+
+
+@pytest.mark.asyncio
+async def test_payment_change_requires_new_offer_then_explicit_approval(dialogue, monkeypatch):
+    import dataclasses
+    from datetime import datetime, timedelta, timezone
+    from agents.tools import BookingCall
+    day = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=2)).strftime('%Y-%m-%d')
+    call = BookingCall('face_massage', 50, day, '13:00', 'abu_dhabi',
+                       'bank_transfer', 'Test', 370, client_phone='+971500000000', address='Test villa')
+    dialogue.ctx.client_data.update(phone=call.client_phone, name='Test', area='abu_dhabi', location_details=call.address)
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_named=True, service_duration=50,
+                                    face_card_sent=True, date=day, time='13:00', payment_method='bank_transfer',
+                                    pending_booking=dataclasses.asdict(call), confirmation_offer=dataclasses.asdict(call))
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value='1:00 PM'),
+        is_slot_available=AsyncMock(return_value=True)))
+    create = AsyncMock(wraps=wh._maybe_create_booking)
+    monkeypatch.setattr(wh, '_maybe_create_booking', create)
+    out = await dialogue.turn('If it’s not ADIB , cash 👍🏻', 'Your appointment is booked!')
+    assert create.await_args.args[-1] is None
+    assert dialogue.ctx.booking_data['payment_needs_clarification']
+    assert not dialogue.ctx.booking_data.get('pending_booking')
+    assert 'Please choose' in out and 'booked' not in out
+    # Even a subsequent bare yes cannot approve an unresolved payment condition.
+    await dialogue.turn('Yes', 'Your appointment is booked!')
+    assert create.await_args.args[-1] is None
+    # The model's old transfer argument must lose to an explicit cash correction.
+    out = await dialogue.turn('Cash 👍🏻', 'Booked!', AgentActions(booking_call=call))
+    assert call.payment_method == 'cash'
+    assert 'Shall I confirm?' in out and 'cash' in out and '+5%' not in out
+    assert dialogue.ctx.booking_data['confirmation_offer']['payment_method'] == 'cash'
+    assert not dialogue.ctx.booking_data.get('yc_sync_ok')
+    # No model tool call needed: a valid approval restores the exact offered call.
+    approved = []
+    async def capture(*args):
+        candidate = args[-1]
+        assert candidate and wh._booking_confirmation_matches(args[4], candidate)
+        approved.append(candidate)
+        args[4].booking_data['yc_sync_ok'] = True
+    monkeypatch.setattr(wh, '_maybe_create_booking', capture)
+    await dialogue.turn('Yes, confirm', 'Your appointment is booked!')
+    assert len(approved) == 1 and approved[0].payment_method == 'cash'

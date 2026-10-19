@@ -5,6 +5,22 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Dialogue audit fixes — owner approved, 2026-10-19
+
+- A conditional payment message (`If it’s not ADIB, cash 👍🏻`) or changed
+  detail is not booking approval. Clear the old pending offer, clarify payment,
+  show the revised recap, and require a separate unambiguous affirmative answer.
+  Approval is bound to the structured offer actually shown on a prior turn.
+  Informational payment questions do not change the chosen payment method.
+- Generic requests (`Give ur number`, `Send for me number`) receive the
+  configured salon contact and WhatsApp link without requiring the word WhatsApp.
+- In a buffered sequence, a substantive question/correction after `I will let
+  you know` still receives an answer. Keep the booking deferred and suppress
+  sales follow-up questions. `Only lymphatic, not cupping` clears the cupping
+  combo and its promotional price.
+- These are implementation rules derived from the audited dialogues and the
+  owner's request to fix all three; they are not new quotations from customers.
+
 ## Client feedback received 2026-10-19
 
 - `fmk_00` replay: `2:pm` means 14:00, `12:am` means midnight. Persist the
