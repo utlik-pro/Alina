@@ -644,3 +644,25 @@ async def test_repeated_phone_does_not_advance_unavailable_slot(dialogue, monkey
     assert 'address' not in out
     assert ("isn't available" if free is False else "can't verify") in out
     assert dialogue.ctx.booking_data['time'] == '14:00'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('free', [True, False, None])
+async def test_time_reminder_rechecks_selected_slot(dialogue, monkeypatch, free):
+    calendar = SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value='10:00 AM'),
+        is_slot_available=AsyncMock(return_value=free))
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', calendar)
+    dialogue.ctx.client_data.update(area='al_ain', phone='+971500000000')
+    dialogue.ctx.booking_data.update(service_type='face_massage', service_duration=50,
+                                    service_named=True, face_card_sent=True,
+                                    date='2026-10-20', time='14:00')
+    out = await dialogue.turn('what time?', 'Your time is 2:00 PM today. Please type your address.')
+    calendar.is_slot_available.assert_any_await('al_ain', '2026-10-20', '14:00', 50)
+    assert '2:00 PM on Tuesday 20 October' in out and 'today' not in out.lower()
+    if free is True:
+        assert 'is available' in out and 'address' in out
+    else:
+        assert ("isn't available" if free is False else "can't verify") in out
+        assert 'address' not in out

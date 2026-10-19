@@ -5628,8 +5628,14 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                     # booking lost to a slot we actually had. The short list is
                     # a PRESENTATION choice; it must never become the truth
                     # about what exists.
+                    # A reminder about the selected hour must not turn a
+                    # previously rejected preference into an available slot.
+                    _time_reminder = bool(re.fullmatch(
+                        r"\s*(?:(?:what|which) time|what time (?:was it|did (?:i|we) (?:choose|select))|во сколько|какое время)[?!.\s]*",
+                        text, re.I))
                     _asked_time = (_detect_requested_time(text)
-                                   or (context.booking_data.get("time") if _date_only_reply else None))
+                                   or (context.booking_data.get("time")
+                                       if _date_only_reply or _time_reminder else None))
                     _asked_date = ((context.booking_data or {}).get("date")
                                    or (extra_dates[0] if extra_dates else ""))
                     if _asked_time and _asked_date:
