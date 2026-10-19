@@ -37,7 +37,7 @@ MEDIA_REQUEST_RE = re.compile(
 
 def direct_question_topics(text: str) -> set[str]:
     topics = set()
-    if re.search(r'whats\s*app|ватсап|вотсап', text or '', re.I) and (QUESTION_RE.search(text or '') or re.search(r'send|message|write|contact|number|напиш|номер', text or '', re.I)):
+    if re.search(r'whats\s*app|ватсап|вотсап', text or '', re.I) and (QUESTION_RE.search(text or '') or re.match(r'\s*(?:please\s+)?(?:send|share|give|message|write|contact)\b', text or '', re.I) or re.fullmatch(r'\s*(?:your\s+)?whats\s*app(?:\s+number)?[?.!\s]*', text or '', re.I) or re.search(r'напиш|ваш.*номер', text or '', re.I)):
         topics.add('whatsapp')
     if MEDIA_REQUEST_RE.search(text or ''):
         topics.add('media')

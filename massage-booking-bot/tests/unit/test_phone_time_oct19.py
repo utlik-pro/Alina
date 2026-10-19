@@ -22,3 +22,8 @@ def test_whatsapp_answer_uses_only_business_number():
     assert 'ending in 0000' in answer
     assert 'http' not in whatsapp_contact_answer('', '+971500000000')
     assert 'already chatting' in whatsapp_contact_answer('971551933662',on_instagram=False)
+
+
+def test_supplied_whatsapp_number_is_not_a_request_to_change_channel():
+    assert 'whatsapp' not in direct_question_topics('My WhatsApp number is 0500000000')
+    assert 'whatsapp' in direct_question_topics('Please send your WhatsApp number')
