@@ -6243,8 +6243,33 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 else:
                     response_text = f"Thank you, I've saved your WhatsApp number ending in {_phone_in_msg[-4:]}."
                     if context.state != "completed":
-                        if context.booking_data.get("date") and context.booking_data.get("time"):
-                            response_text += "\n" + _next_step_question(context)
+                        service = context.booking_data.get("service_type") or ""
+                        if not service:
+                            response_text += "\nWhich service would you like?"
+                        elif _is_massage_service(service) and not _massage_kind_known(service):
+                            response_text += "\nWould you like body massage or face massage?"
+                        elif _is_massage_service(service) and not context.booking_data.get("service_duration"):
+                            response_text += "\nWould you like 60 or 90 minutes?"
+                        elif not context.client_data.get("area"):
+                            response_text += "\nAre you in Abu Dhabi, Al Ain or Dubai?"
+                        elif context.booking_data.get("date") and context.booking_data.get("time"):
+                            day, hour = context.booking_data["date"], context.booking_data["time"]
+                            free = None
+                            if bot_module.yclients_service:
+                                try:
+                                    free = await bot_module.yclients_service.is_slot_available(
+                                        context.client_data["area"], day, hour,
+                                        int(context.booking_data.get("service_duration") or 60))
+                                except Exception as exc:
+                                    logger.warning(f"phone-ack slot check failed: {exc}")
+                            when = f"{_to_ampm(hour)} on {_nice_day(day)}"
+                            if free is True:
+                                context.slot_truth[day] = (context.slot_truth.get(day) or set()) | {hour}
+                                response_text += "\n" + _next_step_question(context)
+                            elif free is False:
+                                response_text += f"\n{when} isn't available for your session. Would another time on that day suit you?"
+                            else:
+                                response_text += f"\nI can't verify availability for {when} right now. Your appointment is not confirmed yet."
                         elif context.booking_data.get("date"):
                             response_text += "\nWhat time suits you?"
                         else:

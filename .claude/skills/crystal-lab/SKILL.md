@@ -17,6 +17,8 @@ description: Canonical business rules, gotchas and verification checklist for th
   wa.me link; never claim a message was sent or promise an unimplemented handoff.
 - A supplied client number is YOUR contact, never OUR salon number. A salon
   number echoed into the chat must never overwrite the saved client phone.
+- A phone acknowledgement must ask for missing service/duration before time;
+  with a chosen slot, re-check it before advancing to address/name/payment.
 - Validate with the same customer sequence on a reserved smoke contact. Do not
   message that real client again or create another real appointment during testing.
 

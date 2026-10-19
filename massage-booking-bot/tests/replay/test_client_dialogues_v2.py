@@ -613,3 +613,34 @@ async def test_salon_phone_never_overwrites_customer_phone(dialogue, monkeypatch
     assert dialogue.ctx.client_data['phone'] == '+971500000000'
     assert "salon's WhatsApp number" in out
     assert not any(c.kwargs.get('phone') == '+971551933662' for c in bot.client_service.update_client.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_phone_ack_does_not_skip_unknown_massage_duration(dialogue):
+    dialogue.ctx.client_data.update(area='al_ain')
+    dialogue.ctx.booking_data.update(service_type='body_massage', service_named=True,
+                                    body_card_sent=True, date='2026-10-20')
+    out = await dialogue.turn('0500000000', 'Would you like 60 or 90 minutes?')
+    assert 'your WhatsApp number' in out
+    assert '60 or 90' in out
+    assert 'what time' not in out.lower()
+    assert not dialogue.ctx.booking_data.get('service_duration')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('free', [False, None])
+async def test_repeated_phone_does_not_advance_unavailable_slot(dialogue, monkeypatch, free):
+    calendar = SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value='10:00 AM'),
+        is_slot_available=AsyncMock(return_value=free))
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(bot, 'yclients_service', calendar)
+    dialogue.ctx.client_data.update(area='al_ain', phone='+971500000000')
+    dialogue.ctx.booking_data.update(service_type='body_massage', service_duration=60,
+                                    service_named=True, body_card_sent=True,
+                                    date='2026-10-20', time='14:00')
+    out = await dialogue.turn('0500000000', 'Thank you. Please type your address.')
+    assert 'your WhatsApp number' in out and '2:00 PM' in out
+    assert 'address' not in out
+    assert ("isn't available" if free is False else "can't verify") in out
+    assert dialogue.ctx.booking_data['time'] == '14:00'
