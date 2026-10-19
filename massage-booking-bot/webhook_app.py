@@ -17,6 +17,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from loguru import logger
+from services.customer_intent import whatsapp_contact_answer
 from services.customer_intent import (affirmative_choice_text, direct_question_topics,
                                       factual_answer, QUESTION_RE)
 
@@ -714,6 +715,11 @@ def _detect_phone_in_text(text: str) -> Optional[str]:
     if not m:
         return None
     return "+971" + "".join(m.groups())
+
+
+def _is_salon_phone(phone: str) -> bool:
+    configured = _detect_phone_in_text(config.WHATSAPP_CTA_NUMBER or "")
+    return bool(configured and phone == configured)
 
 
 _OUT_OF_AREA_RE = re.compile(
@@ -1483,7 +1489,7 @@ def _detect_requested_time(text: str) -> Optional[str]:
     Deliberately narrow: a bare number is NOT a time ("60 min", "22 August",
     "350 AED", a phone number), so a match needs either a colon or an am/pm.
     """
-    t = text or ""
+    t = re.sub(r"\b(1[0-2]|[1-9])\s*:\s*(am|pm)\b", r"\1:00 \2", text or "", flags=re.I)
     m = _TIME_COLON_RE.search(t)
     if m:
         hour, minute, mer = int(m.group(1)), int(m.group(2)), (m.group(3) or "").lower()
@@ -2689,11 +2695,12 @@ async def _enforce_stored_time_kept(response_text: str, inbound_text: str,
     stored = bd.get("time")
     if not response_text or not stored:
         return response_text
-    if _detect_requested_time(inbound_text) or _asks_about_time(inbound_text):
+    if (direct_question_topics(inbound_text) - {"price"}) or _detect_requested_time(inbound_text) or _asks_about_time(inbound_text):
         return response_text          # клиент сам говорит о времени — не наш случай
     offered = _ampm_times_set(response_text)
-    if len(offered) < 2 or any(_hhmm_tuple(t) == _hhmm_tuple(stored) for t in offered):
-        return response_text          # не список, или выбранное время в нём есть
+    if len(offered) < 2 and not re.search(
+            r"which (?:one|time).*\?|what time.*\?", response_text, re.I):
+        return response_text
     area = cd.get("area")
     svc = getattr(bot_module, "yclients_service", None)
     if not area or not svc:
@@ -2713,7 +2720,9 @@ async def _enforce_stored_time_kept(response_text: str, inbound_text: str,
     when = "today" if date == today else ("tomorrow" if date == tomorrow else f"on {_nice_day(date)}")
     if free:
         logger.info(f"stored-time gate: {stored} {date} свободно — список заменён подтверждением ({who})")
-        return f"{_to_ampm(stored)} is available {when} 🌹\n{_next_step_question(context)}"
+        price_lines = [line for line in response_text.splitlines()
+                       if re.search(r"\bAED\b", line, re.I) and not _ampm_times_set(line)]
+        return "\n".join(price_lines + [f"{_to_ampm(stored)} is available {when} 🌹", _next_step_question(context)])
     logger.info(f"stored-time gate: {stored} {date} занято — сказано прямо перед списком ({who})")
     return f"{_to_ampm(stored)} isn't free {when} for {duration} min dear 🙏\n{response_text}"
 
@@ -5242,6 +5251,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 logger.info(f"голый день «{text.strip()}» → {_corr}")
 
         _said_time = _detect_requested_time(text)
+        if _said_time and not context.booking_data.get("date") and context.booking_data.get("slot_offer_date"):
+            dialog_manager.update_booking_data(user_id, "date", context.booking_data["slot_offer_date"])
         if _said_time and _said_time != context.booking_data.get("time"):
             context.booking_data.pop("pending_booking", None)
             dialog_manager.update_booking_data(user_id, "time", _said_time)
@@ -5273,7 +5284,8 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
             logger.info(f"пожелание по звонку сохранено: {_cb!r}")
 
         _phone_in_msg = _detect_phone_in_text(text)
-        if _phone_in_msg and _phone_in_msg != (context.client_data or {}).get("phone"):
+        if (_phone_in_msg and not _is_salon_phone(_phone_in_msg)
+                and _phone_in_msg != (context.client_data or {}).get("phone")):
             dialog_manager.update_client_data(user_id, "phone", _phone_in_msg)
             try:
                 await bot_module.client_service.update_client(
@@ -5963,6 +5975,9 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         # Direct questions take precedence over promotional rewrites. Safety and
         # calendar checks above/below still apply; deferred cards remain unsent.
         _facts = factual_answer(_question_topics, text, ig_handle=config.IG_PUBLIC_HANDLE)
+        if "whatsapp" in _question_topics:
+            _facts = whatsapp_contact_answer(config.WHATSAPP_CTA_NUMBER,
+                context.client_data.get("phone") or "", on_instagram=_is_ig_key(phone)) + ("\n\n" + _facts if _facts else "")
         if _facts and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None:
             if "price" not in _question_topics and not _asks_about_time(text) and not _ASKS_WHICH_THERAPIST_RE.search(text):
                 response_text = _facts
@@ -6216,9 +6231,36 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
                 and booking_call is None and actions.cancel_call is None and actions.reschedule_call is None):
             response_text = _enforce_no_invented_links(_facts, who=phone)
 
+        # Contact questions and supplied numbers must survive every sales/time gate.
+        if booking_call is None and actions.cancel_call is None and actions.reschedule_call is None:
+            if _question_topics == {"whatsapp"}:
+                response_text = _facts
+            elif _phone_in_msg and re.fullmatch(r"[+\d\s().-]+", text.strip()):
+                if _is_salon_phone(_phone_in_msg):
+                    response_text = "That's our salon's WhatsApp number. " + (
+                        "I still have your own contact number saved." if context.client_data.get("phone")
+                        else "What is your own WhatsApp number?")
+                else:
+                    response_text = f"Thank you, I've saved your WhatsApp number ending in {_phone_in_msg[-4:]}."
+                    if context.state != "completed":
+                        if context.booking_data.get("date") and context.booking_data.get("time"):
+                            response_text += "\n" + _next_step_question(context)
+                        elif context.booking_data.get("date"):
+                            response_text += "\nWhat time suits you?"
+                        else:
+                            response_text += "\nWhich day would you like?"
+
         response_text = _enforce_nails_promotion(response_text, context, text)
         from services.reply_composer import compose_reply, split_chat_messages
         response_text = compose_reply(response_text, context)
+        # Pin the calendar date of a single-day offer before a bare hour arrives.
+        # Relative labels are resolved NOW, so a reply after midnight keeps it.
+        if not context.booking_data.get("date") and _ampm_times_set(response_text):
+            offered_date, _ = _resolve_named_date(response_text.lower(), _dt_n.now(_tz_n(_td_n(hours=4))))
+            if offered_date and offered_date in context.slot_truth:
+                context.booking_data["slot_offer_date"] = offered_date
+            else:
+                context.booking_data.pop("slot_offer_date", None)
         if (context.booking_data or {}).get("phone_ask_pending"):
             dialog_manager.update_booking_data(user_id, "phone_ask_pending", False)
             if (not (context.client_data or {}).get("phone")
@@ -6705,7 +6747,7 @@ async def _manychat_shadow_log(subscriber_id: str, text: str) -> None:
             dialog_manager.add_user_message(user_id, text)
             await _capture_client_area(user_id, context, text)
             phone = _detect_phone_in_text(text)
-            if phone:
+            if phone and not _is_salon_phone(phone):
                 context.client_data["phone"] = phone
                 await bot_module.client_service.update_client(user_id, phone=phone)
             category = _detect_service_category(text)

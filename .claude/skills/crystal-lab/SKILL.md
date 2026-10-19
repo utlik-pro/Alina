@@ -5,6 +5,21 @@ description: Canonical business rules, gotchas and verification checklist for th
 
 # Crystal Lab — client knowledge base (single source of truth)
 
+## Client feedback received 2026-10-19
+
+- `fmk_00` replay: `2:pm` means 14:00, `12:am` means midnight. Persist the
+  parsed time. A supplied phone or a service change must not re-offer a list
+  containing the already selected time; check that same slot for the new duration.
+- Retain the absolute date of a single-day calendar offer before a client replies
+  with only an hour, including across midnight. A client-selected date wins.
+- "Can you send me a message on WhatsApp?" receives a truthful contact answer:
+  the Instagram flow does not initiate WhatsApp chats. Give the configured salon
+  wa.me link; never claim a message was sent or promise an unimplemented handoff.
+- A supplied client number is YOUR contact, never OUR salon number. A salon
+  number echoed into the chat must never overwrite the saved client phone.
+- Validate with the same customer sequence on a reserved smoke contact. Do not
+  message that real client again or create another real appointment during testing.
+
 ## Client feedback received 2026-10-14
 
 - Live replay: after the photo request is answered, a bare `After tomorrow`

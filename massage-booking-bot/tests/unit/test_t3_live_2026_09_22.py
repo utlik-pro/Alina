@@ -92,11 +92,12 @@ def test_stored_time_busy_is_said_before_the_alternatives(monkeypatch):
     assert reply in out
 
 
-def test_stored_time_gate_stays_out_when_the_client_talks_about_time_or_the_list_has_it(monkeypatch):
+def test_stored_time_gate_stays_out_only_when_client_requests_alternatives(monkeypatch):
     import bot
     monkeypatch.setattr(bot, "yclients_service", SimpleNamespace(is_slot_available=AsyncMock(return_value=True)))
     lst = "Today we have 5:30 PM, 6:00 PM or 7:00 PM 🌹"
-    assert asyncio.run(wh._enforce_stored_time_kept(lst, "60 min", _ctx_full())) == lst
+    out = asyncio.run(wh._enforce_stored_time_kept(lst, "60 min", _ctx_full()))
+    assert "5:30 PM is available" in out and "6:00 PM" not in out
     other = "Today we have 6:00 PM or 7:00 PM 🌹"
     assert asyncio.run(wh._enforce_stored_time_kept(other, "7 pm please", _ctx_full())) == other
     assert asyncio.run(wh._enforce_stored_time_kept(other, "what time", _ctx_full())) == other

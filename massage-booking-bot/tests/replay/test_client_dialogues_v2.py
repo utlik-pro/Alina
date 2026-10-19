@@ -565,3 +565,51 @@ async def test_after_tomorrow_then_nine_pm_uses_that_calendar_day(dialogue, monk
         assert 'is available' not in out
     await dialogue.turn('Good night tomorrow i txt you', 'Of course dear, good night.')
     assert dialogue.ctx.booking_data['date'] == target
+
+@pytest.mark.asyncio
+async def test_oct19_real_dialogue_keeps_time_and_contact_roles(dialogue, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    tomorrow = (datetime.now(timezone(timedelta(hours=4))) + timedelta(days=1)).strftime('%Y-%m-%d')
+    calendar = SimpleNamespace(
+        get_available_slots_summary=AsyncMock(return_value='10:00 AM, 12:00 PM, 2:00 PM'),
+        is_slot_available=AsyncMock(return_value=True))
+    monkeypatch.setattr(wh.config, 'MOCK_YCLIENTS', False)
+    monkeypatch.setattr(wh.config, 'WHATSAPP_CTA_NUMBER', '971551933662')
+    monkeypatch.setattr(bot, 'yclients_service', calendar)
+    dialogue.ctx.client_data.update(area='al_ain', phone='+971500000000')
+    dialogue.ctx.booking_data.update(service_type='body_massage', service_named=True,
+                                    service_duration=60, body_card_sent=True, offer_275_shown=True)
+    await dialogue.turn('60min', 'Tomorrow we have 10:00 AM, 12:00 PM or 2:00 PM. Which suits you?')
+    assert dialogue.ctx.booking_data['slot_offer_date'] == tomorrow
+    out = await dialogue.turn('2:pm', 'Tomorrow 2:00 PM is available. Please type your address.')
+    assert dialogue.ctx.booking_data['time'] == '14:00'
+    assert dialogue.ctx.booking_data['date'] == tomorrow
+    calendar.is_slot_available.assert_any_await('al_ain', tomorrow, '14:00', 60)
+    out = await dialogue.turn('Can you send me a message on WhatsApp?',
+                              'Yes dear, write here please. Tomorrow 2:00 PM is available. Please type your address.')
+    assert "can't start" in out and 'https://wa.me/971551933662' in out
+    assert 'ending in 0000' in out
+    assert 'available' not in out and 'address' not in out
+    out = await dialogue.turn('0500000000',
+                              'Yes dear, this is our WhatsApp number. Tomorrow we have 10:00 AM, 12:00 PM or 2:00 PM. Which one shall I book?')
+    assert 'your WhatsApp number' in out and not re.search(r'\bour WhatsApp number', out)
+    assert '10:00' not in out and '12:00' not in out
+    assert 'address in Al Ain' in out
+    out = await dialogue.turn('Face massgae',
+                              'Face massage 50 min — 370 AED. Tomorrow we have 10:00 AM, 12:00 PM or 2:00 PM. Which time suits you?')
+    assert dialogue.ctx.booking_data['service_duration'] == 50
+    assert dialogue.ctx.booking_data['time'] == '14:00'
+    assert dialogue.ctx.booking_data['date'] == tomorrow
+    calendar.is_slot_available.assert_any_await('al_ain', tomorrow, '14:00', 50)
+    assert '10:00' not in out and '12:00' not in out
+    assert '2:00 PM' in out
+
+
+@pytest.mark.asyncio
+async def test_salon_phone_never_overwrites_customer_phone(dialogue, monkeypatch):
+    monkeypatch.setattr(wh.config, 'WHATSAPP_CTA_NUMBER', '971551933662')
+    dialogue.ctx.client_data.update(phone='+971500000000', area='al_ain')
+    out = await dialogue.turn('97155 193 3662', 'I have saved your number.')
+    assert dialogue.ctx.client_data['phone'] == '+971500000000'
+    assert "salon's WhatsApp number" in out
+    assert not any(c.kwargs.get('phone') == '+971551933662' for c in bot.client_service.update_client.await_args_list)

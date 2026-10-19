@@ -37,6 +37,8 @@ MEDIA_REQUEST_RE = re.compile(
 
 def direct_question_topics(text: str) -> set[str]:
     topics = set()
+    if re.search(r'whats\s*app|ватсап|вотсап', text or '', re.I) and (QUESTION_RE.search(text or '') or re.search(r'send|message|write|contact|number|напиш|номер', text or '', re.I)):
+        topics.add('whatsapp')
     if MEDIA_REQUEST_RE.search(text or ''):
         topics.add('media')
     if LOCATION_QUESTION_RE.search(text or ''):
@@ -67,3 +69,19 @@ def factual_answer(topics: set[str], text: str, ig_handle: str = "") -> str:
         if re.search(r'\b(?:card|terminal)\b|терминал|карт', text, re.I):
             lines.append('A card terminal is available on request; please let us know if you need one.')
     return '\n\n'.join(lines)
+
+
+def whatsapp_contact_answer(salon_number: str, client_phone: str = "", *, on_instagram: bool = True) -> str:
+    """Give a real contact route without claiming an unsent cross-channel message."""
+    if not on_instagram:
+        return "We're already chatting on WhatsApp dear. You can continue here."
+    number = re.sub(r"\D", "", salon_number or "")
+    lines = ["I can't start a WhatsApp conversation for you from this Instagram chat."]
+    if re.fullmatch(r"[1-9]\d{8,14}", number):
+        lines.append(f"Please message our team on WhatsApp: https://wa.me/{number}")
+    else:
+        lines.append("We can continue arranging your appointment here.")
+    phone = re.sub(r"\D", "", client_phone or "")
+    if phone and phone != number:
+        lines.append(f"I have your number ending in {phone[-4:]}.")
+    return "\n\n".join(lines)
