@@ -6355,6 +6355,15 @@ async def _process_wappi_message(phone: str, text: str, sender_name: str):
         response_text = compose_reply(response_text, context)
         if context.booking_data.get("closed_politely"):
             response_text = _enforce_polite_close(response_text, context, who=phone)
+        # Preserve the actual service answer after all promotional/closing filters.
+        # Production replay: the model/composer kept prices but lost "without cupping".
+        if (_consultation_after_defer(text)
+                and context.booking_data.get("service_type") == "body_massage"
+                and re.search(r"lymph|лимф", text, re.I)
+                and re.search(r"\b(?:not|no|without)\s+cupping\b|без\s+банок", text, re.I)
+                and not (re.search(r"lymph|лимф", response_text, re.I)
+                         and re.search(r"(?:without|no|not)\s+cupping|без\s+банок", response_text, re.I))):
+            response_text = "Yes, we can do lymphatic drainage massage without cupping.\n" + response_text
         if (booking_call is not None and context.booking_data.get("pending_booking")
                 and "Shall I confirm?" in response_text):
             import dataclasses as _dc_offer

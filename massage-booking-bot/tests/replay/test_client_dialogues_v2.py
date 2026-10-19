@@ -681,13 +681,17 @@ async def test_salon_contact_without_whatsapp_keyword(dialogue, monkeypatch, tex
 
 
 @pytest.mark.asyncio
-async def test_defer_then_service_correction_is_answered_without_sales(dialogue, monkeypatch):
+@pytest.mark.parametrize("draft", [
+    "Yes, lymphatic body massage without cupping is available.\nWhich day would you like?",
+    "Yes dear\n60 min - 350 AED\n90 min - 460 AED",
+])
+async def test_defer_then_service_correction_is_answered_without_sales(dialogue, monkeypatch, draft):
     create = AsyncMock()
     monkeypatch.setattr(wh, '_maybe_create_booking', create)
     dialogue.ctx.booking_data.update(service_type='lymphatic_cupping_combo', service_duration=45,
                                     service_named=True, ad_prefill='package', offer_275_shown=True)
     out = await dialogue.turn('Okay I will let you know\nI need only lymphatic not cupping',
-                              'Yes, lymphatic body massage without cupping is available.\nWhich day would you like?')
+                              draft)
     assert out != wh.POLITE_CLOSE_LINE
     assert 'without cupping' in out
     assert 'which day' not in out.lower() and 'number' not in out.lower()

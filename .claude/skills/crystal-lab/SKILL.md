@@ -17,7 +17,8 @@ description: Canonical business rules, gotchas and verification checklist for th
 - In a buffered sequence, a substantive question/correction after `I will let
   you know` still receives an answer. Keep the booking deferred and suppress
   sales follow-up questions. `Only lymphatic, not cupping` clears the cupping
-  combo and its promotional price.
+  combo and its promotional price. The final sent reply must explicitly retain
+  the answer "lymphatic drainage without cupping", even if the model only returns prices.
 - These are implementation rules derived from the audited dialogues and the
   owner's request to fix all three; they are not new quotations from customers.
 
